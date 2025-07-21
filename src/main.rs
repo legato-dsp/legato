@@ -43,40 +43,17 @@ where
 
     audio_graph.add_edge(clock_two, adsr_two);
 
+    let gain = audio_graph.add_node(Box::new(Gain::new(0.3)));
+
     let mixer = audio_graph.add_node(Box::new(Mixer {}));
 
     audio_graph.add_edge(adsr_id, mixer);
 
     audio_graph.add_edge(adsr_two, mixer);
 
-    let delay_line = audio_graph.add_node(Box::new(CombFilter::new(12000, 0.8)));
+    audio_graph.add_edge(mixer, gain);
 
-    let delay_line_two = audio_graph.add_node(Box::new(CombFilter::new(22000, 0.4)));
-
-    let master_bus = audio_graph.add_node(Box::new(Mixer {}));
-
-    audio_graph.add_edge(mixer, delay_line);
-    audio_graph.add_edge(delay_line, delay_line_two);
-
-
-    let dry = audio_graph.add_node(Box::new(Gain::new(0.6)));
-
-    audio_graph.add_edge(mixer, dry);
-
-    audio_graph.add_edge(dry, master_bus);
-
-    audio_graph.add_edge(delay_line_two, master_bus);
-
-    let limiter = audio_graph.add_node(Box::new(HardClipper::new(0.8)));
-
-    let master_gain = audio_graph.add_node(Box::new(Gain::new(0.2)));
-
-    audio_graph.add_edge(master_bus, master_gain);
-
-    audio_graph.add_edge(master_gain, limiter);
-
-    audio_graph.set_sink_index(limiter);
-
+    audio_graph.set_sink_index(gain);
 
     let stream = device.build_output_stream(
         config,

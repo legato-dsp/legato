@@ -17,7 +17,7 @@ impl<const N: usize, const C: usize> Clock<N, C> {
             sample_rate,
             is_ticking: true,
             tick_period_samples,
-            samples_accum: 0,
+            samples_accum: tick_period_samples, // so this fires immediately
         }
     }
 }
@@ -51,6 +51,7 @@ impl<const N: usize, const C: usize> Node<N, C> for Clock<N, C> {
         }
 
         self.samples_accum += N as u64;
+        
         if self.samples_accum >= self.tick_period_samples {
             *output = Bang::Bang;
             self.samples_accum -= self.tick_period_samples;
