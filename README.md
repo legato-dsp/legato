@@ -1,11 +1,6 @@
 # mini-graph
 
-This repo serves mostly as a learning exercise for structuring larger projects, or a less opinionated audio graph framework for rolling your own nodes. For something more feature complete, I would suggest FunDSP, which has support for things like SIMD instructions, and  large library of already made DSP building blocks.
-
-The general DX revolves around the creation of nodes that implement the process trait, which lets users quickly build a graph of heap allocated nodes (looking into a no_std alternative). For audio purposes, I would suggest allocating these either in a seperate thread of before your audio thread is started, in order to avoid any pops or cracks from missed audio frames. These nodes and edges are then topologically sorted, so that their dependencies compute before them. Each node then takes all of it's inputs, and writes to its associated output buffer. There is finally a sink index, that CPAL can pull from. Inputs are ordered implicitly by the order in which the graph was created.
-
-I am planning on writing a MIDI/Parameter/Bang system or something similar to PureData's midi building blocks, and I am also looking at eventually adding SIMD support or mutlithreading(perhaps computing graph branches with no shared dependencies?), although these are considerations for the future. 
-
+This project is aimed around creating a minimal audio graph in Rust, useful for experimentation or prototyping a larger audio application. I wanted a more lightweight DX than FunDSP, but FunDSP is far more feature complete. For the time being, I would suggest using that for any real audio applications.
 
 ### Example Node
 
@@ -16,7 +11,7 @@ use crate::node::Node;
 use crate::buffer::Frame;
 
 pub struct Gain<const FRAME_SIZE: usize> {
-    gain: f32 // Arc<AtomicF32> might be more helpful. If you need an atomic f32 there is an easy trick
+    gain: f32 // For nodes using input's from other nodes, keep it here, but you can also easily make this an Arc<Atomic> and share to manipulate elsewhere
 }
 impl<const N: usize> Gain<N> {
     pub fn new(gain: f32) -> Self {
@@ -37,3 +32,11 @@ impl <const N: usize, const C: usize> Node<N, C> for Gain<N> {
     }
 }
 ```
+
+### Planned Features
+
+- Using Graphs as audio nodes themselves, allowing to say create a large reverb graph and use that as its own node
+- Audio/midi input nodes
+- Proc macro for quickly generating graphs for prototyping
+- Sized/fixed graph for no_std environments, final deployments, etc.
+- Hopefully some sort of SIMD acceleration for more expensive operations like reverb, fft, etc.
