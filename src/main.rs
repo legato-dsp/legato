@@ -5,6 +5,7 @@ use mini_graph::mini_graph::bang::Bang;
 use mini_graph::mini_graph::write::write_data;
 use mini_graph::nodes::audio::gain::Gain;
 use mini_graph::nodes::audio::mixer::Mixer;
+use mini_graph::nodes::audio::moog::MoogFilter;
 use mini_graph::nodes::bang::clock::Clock;
 use mini_graph::nodes::audio::{adsr::ADSR, osc::*};
 use assert_no_alloc::*;
@@ -31,7 +32,7 @@ where
 
     let clock_two = audio_graph.add_node(Box::new(Clock::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE, Duration::from_secs_f32(2.0 / 3.0))));
 
-    let iterator_one = audio_graph.add_node(Box::new(BangIter::<FRAME_SIZE, CHANNEL_COUNT>::new(&[Bang::BangF32(440.0), Bang::BangF32(523.251), Bang::BangF32(783.991)])));
+    let iterator_one = audio_graph.add_node(Box::new(BangIter::<FRAME_SIZE, CHANNEL_COUNT>::new(&[Bang::BangF32(440.0 / 2.0), Bang::BangF32(523.251 / 2.0), Bang::BangF32(783.991 / 2.0)])));
 
     let iterator_two = audio_graph.add_node(Box::new(BangIter::<FRAME_SIZE, CHANNEL_COUNT>::new(&[Bang::BangF32(440.0 * 2.0), Bang::BangF32(523.251 * 2.0), Bang::BangF32(783.991 * 2.0)])));
 
@@ -60,7 +61,11 @@ where
 
     let mixer = audio_graph.add_node(Box::new(Mixer {}));
 
-    audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer), (mixer, gain)]);
+    let filter = audio_graph.add_node(Box::new(
+        MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
+    ));
+
+    audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer), (mixer, filter), (filter, gain)]);
 
     audio_graph.set_sink_index(gain);
 

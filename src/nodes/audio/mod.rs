@@ -6,3 +6,4 @@ pub mod gate;
 pub mod hard_clipper;
 pub mod mixer;
 pub mod osc;
+pub mod moog;
