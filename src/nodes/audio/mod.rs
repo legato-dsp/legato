@@ -7,3 +7,4 @@ pub mod hard_clipper;
 pub mod mixer;
 pub mod osc;
 pub mod moog;
+pub mod filters;

@@ -44,6 +44,7 @@ impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> MoogFilter<BUFFER_SIZ
 
         new_filter
     }
+    #[inline(always)]
     pub fn set_cutoff_q(&mut self, cutoff: f32, q: f32){
         // Tunings taken from FunDSP
         self.cutoff = cutoff;
@@ -59,25 +60,34 @@ impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> MoogFilter<BUFFER_SIZ
 
 impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> Node<BUFFER_SIZE, CHANNEL_COUNT> for MoogFilter<BUFFER_SIZE, CHANNEL_COUNT> {
     fn process(&mut self, inputs: &[Frame<BUFFER_SIZE, CHANNEL_COUNT>], output: &mut Frame<BUFFER_SIZE, CHANNEL_COUNT>) {
-        if let Some(input) = inputs.get(0) {
-            for n in 0..BUFFER_SIZE {
-                for c in 0..CHANNEL_COUNT {
-                    let filter = &mut self.filters[c];
-    
-                    let x = -self.rez * filter.s3 + input[c][n];
-    
-                    filter.s0 = (x + filter.px) * self.p - self.k * filter.s0;
-                    filter.s1 = (filter.s0 + filter.ps0) * self.p - self.k * filter.s1;
-                    filter.s2 = (filter.s1 + filter.ps1) * self.p - self.k * filter.s2;
-                    filter.s3 = ((filter.s2 + filter.ps2) * self.p - self.k * filter.s3).tanh();
-    
-                    filter.px = x;
-                    filter.ps0 = filter.s0;
-                    filter.ps1 = filter.s1;
-                    filter.ps2 = filter.s2;
-    
-                    output[c][n] = filter.s3;
-                }
+        let input = match inputs.get(0) {
+            Some(input) => input,
+            None => return,
+        };
+        
+        let cutoff = inputs.get(1);
+
+        for n in 0..BUFFER_SIZE {
+            if let Some(cutoff_frame) = cutoff {
+                let new_cutoff = cutoff_frame[0][n];
+                self.set_cutoff_q(new_cutoff, self.q); // use current Q
+            }
+
+            for c in 0..CHANNEL_COUNT {
+                let filter = &mut self.filters[c];
+                let x = -self.rez * filter.s3 + input[c][n];
+
+                filter.s0 = (x + filter.px) * self.p - self.k * filter.s0;
+                filter.s1 = (filter.s0 + filter.ps0) * self.p - self.k * filter.s1;
+                filter.s2 = (filter.s1 + filter.ps1) * self.p - self.k * filter.s2;
+                filter.s3 = ((filter.s2 + filter.ps2) * self.p - self.k * filter.s3).tanh();
+
+                filter.px = x;
+                filter.ps0 = filter.s0;
+                filter.ps1 = filter.s1;
+                filter.ps2 = filter.s2;
+
+                output[c][n] = filter.s3;
             }
         }
     }

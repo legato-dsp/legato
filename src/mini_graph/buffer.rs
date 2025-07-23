@@ -1,4 +1,3 @@
-
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 
@@ -9,7 +8,6 @@ pub struct Buffer<const BUFFER_SIZE: usize> {
 }
 
 impl<const N: usize> Buffer<N> {
-    /// A silent **Buffer**.
     pub const SILENT: Self = Buffer { data: [0.0; N] };
 }
 

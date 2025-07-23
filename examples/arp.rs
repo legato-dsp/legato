@@ -4,14 +4,16 @@ use mini_graph::mini_graph::audio_graph::DynamicAudioGraph;
 use mini_graph::mini_graph::bang::Bang;
 use mini_graph::mini_graph::write::write_data;
 use mini_graph::nodes::audio::gain::Gain;
+use mini_graph::nodes::audio::hard_clipper::HardClipper;
 use mini_graph::nodes::audio::mixer::Mixer;
 use mini_graph::nodes::audio::moog::MoogFilter;
-use mini_graph::nodes::bang::clock::Clock;
+use mini_graph::nodes::control::clock::Clock;
 use mini_graph::nodes::audio::{adsr::ADSR, osc::*};
 use assert_no_alloc::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, BuildStreamError, FromSample, SampleRate, SizedSample, StreamConfig};
-use mini_graph::nodes::bang::iter::BangIter;
+use mini_graph::nodes::control::iter::BangIter;
+use mini_graph::nodes::control::lfo::Lfo;
 
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
@@ -46,6 +48,8 @@ where
 
     let gain = audio_graph.add_node(Box::new(Gain::new(0.3)));
 
+    let lfo = audio_graph.add_node(Box::new(Lfo::new(0.5 , 400.0, 2400.0, 0.0, SAMPLE_RATE as f32)));
+
     audio_graph.add_edges(&[
         (clock_one, iterator_one), 
         (iterator_one, osc_one),
@@ -65,9 +69,11 @@ where
         MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
     ));
 
-    audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer), (mixer, filter), (filter, gain)]);
+    let clipper = audio_graph.add_node(Box::new(HardClipper::new(0.9)));
 
-    audio_graph.set_sink_index(gain);
+    audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer), (mixer, filter), (filter, gain), (lfo, filter), (gain, clipper)]);
+
+    audio_graph.set_sink_index(clipper);
 
     let stream = device.build_output_stream(
         config,
