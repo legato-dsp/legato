@@ -5,9 +5,9 @@ use crate::mini_graph::{buffer::Frame, node::Node};
 
 #[derive(Copy, Clone)]
 pub enum FilterType {
-    Lowpass,
-    Bandpass,
-    Highpass,
+    LowPass,
+    BandPass,
+    HighPass,
     Notch,
     Peak,
     AllPass,
@@ -70,7 +70,7 @@ impl<const C: usize> Svf<C> {
         self.gain = gain;
 
         match filter_type {
-            FilterType::Lowpass => {
+            FilterType::LowPass => {
                 let g = (PI * self.cutoff / self.sample_rate).tan();
                 let k = 1.0 / self.q;
 
@@ -81,7 +81,7 @@ impl<const C: usize> Svf<C> {
                 self.coefficients.m1 = 0.0;
                 self.coefficients.m2 = 1.0;
             },
-            FilterType::Bandpass => {
+            FilterType::BandPass => {
                 let g = (PI * self.cutoff / self.sample_rate).tan();
                 let k = 1.0 / self.q;
 
@@ -92,6 +92,101 @@ impl<const C: usize> Svf<C> {
                 self.coefficients.m1 = 1.0;
                 self.coefficients.m2 = 0.0;
             },
+            FilterType::HighPass => {
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = -k;
+                self.coefficients.m2 = -1.0;
+            }
+            FilterType::BandPass => {
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 0.0;
+                self.coefficients.m1 = 1.0;
+                self.coefficients.m2 = 0.0;
+            }
+            FilterType::Notch => {
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = -k;
+                self.coefficients.m2 = 0.0;
+            }
+            FilterType::Peak => {
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = -k;
+                self.coefficients.m2 = -2.0;
+            }
+            FilterType::AllPass => {
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = -2.0 * k;
+                self.coefficients.m2 = 0.0;
+            }
+            FilterType::Bell => {
+                let a = f32::powf(
+                    10.0,
+                    self.gain / 40.0,
+                );
+                let g = (PI * self.cutoff / self.sample_rate).tan();
+
+                let k = 1.0 / (self.q * a);
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = k * (a * a - 1.0);
+                self.coefficients.m2 = 0.0;
+            }
+            FilterType::LowShelf => {
+                let a = f32::powf(
+                    10.0,
+                    self.gain / 40.0,
+                );
+                let g = (PI * self.cutoff / self.sample_rate).tan() / f32::sqrt(a);
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = 1.0;
+                self.coefficients.m1 = k * (a - 1.0);
+                self.coefficients.m2 = a * a - 1.0;
+            }
+            FilterType::HighShelf => {
+                let a = f32::powf(
+                    10.0,
+                    self.gain / 40.0,
+                );
+                let g = (PI * self.cutoff / self.sample_rate).tan() * f32::sqrt(a);
+
+                let k = 1.0 / self.q;
+                self.coefficients.a1 = 1.0 / (1.0 + g * (g + k));
+                self.coefficients.a2 = g * self.coefficients.a1;
+                self.coefficients.a3 = g * self.coefficients.a2;
+                self.coefficients.m0 = a * a;
+                self.coefficients.m1 = k * (1.0 - a) * a;
+                self.coefficients.m2 = 1.0 - a * a;
+            }
             _ => ()
         }
     }
