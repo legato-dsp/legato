@@ -3,10 +3,12 @@ use std::time::Duration;
 use mini_graph::mini_graph::audio_graph::DynamicAudioGraph;
 use mini_graph::mini_graph::bang::Bang;
 use mini_graph::mini_graph::write::write_data;
+use mini_graph::nodes::audio;
 use mini_graph::nodes::audio::gain::Gain;
 use mini_graph::nodes::audio::hard_clipper::HardClipper;
 use mini_graph::nodes::audio::mixer::Mixer;
 use mini_graph::nodes::audio::moog::MoogFilter;
+use mini_graph::nodes::audio::filters::{Svf, FilterType};
 use mini_graph::nodes::control::clock::Clock;
 use mini_graph::nodes::audio::{adsr::ADSR, osc::*};
 use assert_no_alloc::*;
@@ -48,7 +50,7 @@ where
 
     let gain = audio_graph.add_node(Box::new(Gain::new(0.3)));
 
-    let lfo = audio_graph.add_node(Box::new(Lfo::new(0.5 , 400.0, 2400.0, 0.0, SAMPLE_RATE as f32)));
+    let lfo = audio_graph.add_node(Box::new(Lfo::new(4.0 , 200.0, 4800.0, 0.0, SAMPLE_RATE as f32)));
 
     audio_graph.add_edges(&[
         (clock_one, iterator_one), 
@@ -65,9 +67,11 @@ where
 
     let mixer = audio_graph.add_node(Box::new(Mixer {}));
 
-    let filter = audio_graph.add_node(Box::new(
-        MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
-    ));
+    // let filter = audio_graph.add_node(Box::new(
+    //     MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
+    // ));
+
+    let filter = audio_graph.add_node(Box::new(Svf::new(SAMPLE_RATE as f32, FilterType::Lowpass, 1200.0, 1.0, 0.4)));
 
     let clipper = audio_graph.add_node(Box::new(HardClipper::new(0.9)));
 
