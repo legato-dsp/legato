@@ -69,7 +69,7 @@ where
     //     MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
     // ));
 
-    let filter = audio_graph.add_node(Box::new(Svf::new(SAMPLE_RATE as f32, FilterType::Lowpass, 1200.0, 1.0, 0.4)));
+    let filter = audio_graph.add_node(Box::new(Svf::new(SAMPLE_RATE as f32, FilterType::LowPass, 1200.0, 1.0, 0.4)));
 
     let clipper = audio_graph.add_node(Box::new(HardClipper::new(0.9)));
 
@@ -80,8 +80,7 @@ where
     let stream = device.build_output_stream(
         config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            // assert_no_alloc( || write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph))
-            write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph)
+            assert_no_alloc( || write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph))
         },
         |err| eprintln!("An output stream error occured: {}", err),
         None,

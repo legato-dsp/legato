@@ -1,4 +1,5 @@
 use crate::mini_graph::bang::Bang;
+use crate::mini_graph::node::Node;
 
 pub trait AudioGraph<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> {
     fn next_block(&mut self) -> &Frame<BUFFER_SIZE, CHANNEL_COUNT>;
@@ -21,9 +22,9 @@ pub struct DynamicAudioGraph<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usiz
     // Bang Work Buffers
     bang_inputs_buffer: Vec<Bang>, // A preallocated vector that contains a node's inputs
     bang_output_buffers: Vec<Bang>,
-    // Sort order that is invalidated when adding a new edge
+    // Cached sort order that is invalidated when adding a new edge
     sort_order: Vec<usize>,
-    // Index that our DAC pulls samples from
+    // Index that our node delivers the final sample from
     sink_index: usize,
 }
 
@@ -69,8 +70,8 @@ impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> DynamicAudioGraph<BUF
     }
 
     #[inline(always)]
-    pub fn next_block(&mut self) -> &Frame<BUFFER_SIZE, CHANNEL_COUNT> {
-        for &node_index in &self.sort_order {
+    pub fn next_block(&mut self, inputs: Option<&[Frame<BUFFER_SIZE,CHANNEL_COUNT>]>) -> &Frame<BUFFER_SIZE, CHANNEL_COUNT> {
+        for (i, &node_index) in self.sort_order.iter().enumerate() {
             let node = &mut self.graph.nodes[node_index];
             
             let incoming_nodes = &self.graph.incoming[node_index];
@@ -85,6 +86,9 @@ impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> DynamicAudioGraph<BUF
 
             node.handle_bang(&self.bang_inputs_buffer.as_slice(), &mut self.bang_output_buffers[node_index]);
 
+            // Here, we clear our preallocated buffer of inputs for a node
+            // Then, we push all of the samples from each input that the current node is dependent on
+
             self.audio_inputs_buffer.clear();
             self.audio_inputs_buffer.reserve(incoming_nodes.len());
 
@@ -92,9 +96,28 @@ impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> DynamicAudioGraph<BUF
                 self.audio_inputs_buffer.push(self.audio_output_buffers[src]);
             }
 
+            // Also, if our node has inputs, and it is the first in the sort order, we use that instead
+            // This models something like a reverb graph being used as a node, with an input from say live audio or a sample
+
+            if i == 0 {
+                if let Some(input) = inputs {
+                    node.process(input, &mut self.audio_output_buffers[node_index]);
+                    continue;
+                }
+            }
             node.process(&self.audio_inputs_buffer, &mut self.audio_output_buffers[node_index]);
         }
 
         &self.audio_output_buffers[self.sink_index]
+    }
+}
+
+
+impl<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> Node<BUFFER_SIZE, CHANNEL_COUNT> for DynamicAudioGraph<BUFFER_SIZE, CHANNEL_COUNT> {
+    fn process(&mut self, inputs: &[Frame<BUFFER_SIZE, CHANNEL_COUNT>], output: &mut Frame<BUFFER_SIZE, CHANNEL_COUNT>) {
+        let next_block = self.next_block(Some(inputs));
+        for (output, input) in output.iter_mut().zip(next_block) {
+            *output = *input;
+        }
     }
 }

@@ -16,7 +16,7 @@ where
     T: SizedSample + FromSample<f64>,
 {    
     
-    let next_pipeline_buffer = audio_graph.next_block();
+    let next_pipeline_buffer = audio_graph.next_block(None);
 
     for (frame_index, frame) in output.chunks_mut(CHANNEL_COUNT).enumerate() {
         for (channel, sample) in frame.iter_mut().enumerate() {
