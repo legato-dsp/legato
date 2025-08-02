@@ -1,6 +1,6 @@
 pub mod adsr;
 pub mod comb_filter;
-pub mod delay_line;
+pub mod delay;
 pub mod gain;
 pub mod gate;
 pub mod hard_clipper;
