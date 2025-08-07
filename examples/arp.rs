@@ -26,7 +26,7 @@ where
 
     let clock_one = audio_graph.add_node(AddNodeProps::Clock { sample_rate: SAMPLE_RATE, rate: Duration::from_secs_f32(0.5) });
     
-    let clock_two = audio_graph.add_node(AddNodeProps::Clock { sample_rate: SAMPLE_RATE, rate: Duration::from_secs_f32(0.5) });
+    let clock_two = audio_graph.add_node(AddNodeProps::Clock { sample_rate: SAMPLE_RATE, rate: Duration::from_secs_f32(2.0 / 3.0) });
 
     let iterator_one = audio_graph.add_node(AddNodeProps::Iter { values: &[Bang::BangF32(440.0 / 2.0), Bang::BangF32(523.251 / 2.0), Bang::BangF32(783.991 / 2.0)] });
 
