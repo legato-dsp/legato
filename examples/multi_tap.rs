@@ -24,40 +24,40 @@ where
 {
     let mut audio_graph = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(32);
 
-    let clock_one = audio_graph.add_node(AddNodeProps::Clock {
+    let clock_one = audio_graph.add_audio_unit(AddNodeProps::Clock {
         sample_rate: SAMPLE_RATE,
         rate: Duration::from_secs_f32(0.5),
     });
 
-    let clock_two = audio_graph.add_node(AddNodeProps::Clock {
+    let clock_two = audio_graph.add_audio_unit(AddNodeProps::Clock {
         sample_rate: SAMPLE_RATE,
         rate: Duration::from_secs_f32(2.0 / 3.0),
     });
 
-    let iterator_one = audio_graph.add_node(AddNodeProps::Iter {
+    let iterator_one = audio_graph.add_audio_unit(AddNodeProps::Iter {
         values: &[Bang::BangF32(440.0 / 2.0), Bang::BangF32(523.251 / 2.0), Bang::BangF32(783.991 / 2.0)],
     });
 
-    let iterator_two = audio_graph.add_node(AddNodeProps::Iter {
+    let iterator_two = audio_graph.add_audio_unit(AddNodeProps::Iter {
         values: &[Bang::BangF32(440.0 * 2.0), Bang::BangF32(523.251 * 2.0), Bang::BangF32(783.991 * 2.0)],
     });
 
-    let adsr_one = audio_graph.add_node(AddNodeProps::ADSR {
+    let adsr_one = audio_graph.add_audio_unit(AddNodeProps::ADSR {
         sample_rate: SAMPLE_RATE,
     });
 
-    let adsr_two = audio_graph.add_node(AddNodeProps::ADSR {
+    let adsr_two = audio_graph.add_audio_unit(AddNodeProps::ADSR {
         sample_rate: SAMPLE_RATE,
     });
 
-    let osc_one = audio_graph.add_node(AddNodeProps::Oscillator {
+    let osc_one = audio_graph.add_audio_unit(AddNodeProps::Oscillator {
         freq: 440.0,
         sample_rate: SAMPLE_RATE,
         phase: 0.0,
         wave: Wave::SawWave,
     });
 
-    let osc_two = audio_graph.add_node(AddNodeProps::Oscillator {
+    let osc_two = audio_graph.add_audio_unit(AddNodeProps::Oscillator {
         freq: 440.0,
         sample_rate: SAMPLE_RATE,
         phase: 0.0,
@@ -76,38 +76,38 @@ where
         (clock_two, adsr_two),
     ]);
 
-    let mixer = audio_graph.add_node(AddNodeProps::Mixer);
+    let mixer = audio_graph.add_audio_unit(AddNodeProps::Mixer);
 
     audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer)]);
 
     let delay_name = "delay_bus";
     let delay_capacity = (SAMPLE_RATE * 2) as usize;
 
-    let write_one = audio_graph.add_node(AddNodeProps::DelayWrite {
+    let write_one = audio_graph.add_audio_unit(AddNodeProps::DelayWrite {
         delay_line_name: delay_name,
         capacity: delay_capacity,
         name: delay_name,
     });
 
-    let tap_one = audio_graph.add_node(AddNodeProps::DelayTap {
+    let tap_one = audio_graph.add_audio_unit(AddNodeProps::DelayTap {
         name: delay_name,
         sample_offset: (2.0 / 3.0) * SAMPLE_RATE as f32,
         gain: 0.8,
     });
 
-    let tap_two = audio_graph.add_node(AddNodeProps::DelayTap {
+    let tap_two = audio_graph.add_audio_unit(AddNodeProps::DelayTap {
         name: delay_name,
         sample_offset: 1.0 * SAMPLE_RATE as f32,
         gain: 0.6,
     });
 
-    let tap_three = audio_graph.add_node(AddNodeProps::DelayTap {
+    let tap_three = audio_graph.add_audio_unit(AddNodeProps::DelayTap {
         name: delay_name,
         sample_offset: (3.0 / 2.0) * SAMPLE_RATE as f32,
         gain: 0.4,
     });
 
-    let mixer_two = audio_graph.add_node(AddNodeProps::Mixer);
+    let mixer_two = audio_graph.add_audio_unit(AddNodeProps::Mixer);
 
     audio_graph.add_edges(&[
         (mixer, mixer_two),        

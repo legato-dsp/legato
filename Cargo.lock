@@ -509,6 +509,7 @@ dependencies = [
  "hashbrown",
  "heapless",
  "indexmap",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -698,6 +699,12 @@ checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
 dependencies = [
  "plotters-backend",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 
 [[package]]
 name = "proc-macro-crate"

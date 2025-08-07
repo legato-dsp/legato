@@ -21,19 +21,19 @@ where
 {
     let mut audio_graph = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(4);
 
-    let osc_id = audio_graph.add_node(AddNodeProps::Oscillator { freq: 440.0, sample_rate: SAMPLE_RATE, phase: 0.0, wave: Wave::SinWave });
+    let osc_id = audio_graph.add_audio_unit(AddNodeProps::Oscillator { freq: 440.0, sample_rate: SAMPLE_RATE, phase: 0.0, wave: Wave::SinWave });
 
     audio_graph.set_sink_index(osc_id);
 
     let mut audio_graph_two = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(4);
 
-    let lfo_id = audio_graph_two.add_node(AddNodeProps::Lfo { freq: 1.0, offset: 2400.0, amp: 1600.0 , phase: 0.0, sample_rate: SAMPLE_RATE as f32});
+    let lfo_id = audio_graph_two.add_audio_unit(AddNodeProps::Lfo { freq: 1.0, offset: 2400.0, amp: 1600.0 , phase: 0.0, sample_rate: SAMPLE_RATE as f32});
 
-    let filter_id = audio_graph_two.add_node(AddNodeProps::Filter { sample_rate: SAMPLE_RATE as f32, filter_type: FilterType::LowPass, cutoff: 2400.0, gain: 0.6, q: 0.3 });
+    let filter_id = audio_graph_two.add_audio_unit(AddNodeProps::Filter { sample_rate: SAMPLE_RATE as f32, filter_type: FilterType::LowPass, cutoff: 2400.0, gain: 0.6, q: 0.3 });
 
     audio_graph_two.add_edge(lfo_id, filter_id);
 
-    let graph_id = audio_graph_two.add_node(AddNodeProps::Graph { graph: audio_graph });
+    let graph_id = audio_graph_two.add_audio_unit(AddNodeProps::Graph { graph: audio_graph });
 
     audio_graph_two.add_edge(graph_id, filter_id);
 

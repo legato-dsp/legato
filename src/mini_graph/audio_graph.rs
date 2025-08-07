@@ -17,6 +17,7 @@ use crate::nodes::control::clock::Clock;
 use crate::nodes::control::iter::BangIter;
 use crate::nodes::control::lfo::Lfo;
 use crate::nodes::control::log::Log;
+use crate::nodes::control::signal::{build_signal, Param};
 
 pub trait AudioGraph<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> {
     fn next_block(&mut self) -> &Frame<BUFFER_SIZE, CHANNEL_COUNT>;
@@ -141,8 +142,9 @@ impl<const N: usize, const C: usize> AudioContext<N, C>{
     }
 }
 
-/// A resizable audio graph for experimentation. Pre-allocated, but not realtime safe, as the vector could grow.
-/// We will soon add a fixed size, no_std graph for better real-time performance 
+/// A resizable audio graph for experimentation. Pre-allocated, but not realtime safe, as the underlying vectors can grow.
+/// We will soon add a fixed size, no_std graph for better real-time performance, or more suitable for
+///  sub-graph development.
 pub struct DynamicAudioGraph<const N: usize, const C: usize> {
     graph: DynamicGraph<AudioUnit<N, C>>,
     audio_context: AudioContext<N, C>,
@@ -230,16 +232,17 @@ pub enum AddNodeProps<const N: usize, const C: usize> {
 
 
 pub trait AudioGraphApi<const N: usize, const C: usize> {
-    fn add_node(&mut self, props: AddNodeProps<N, C>) -> usize;
+    fn add_audio_unit(&mut self, props: AddNodeProps<N, C>) -> usize;
+    fn add_control_unit(&mut self, min: f32, max: f32, initial: f32) -> (usize, Param);
 }
 
 impl<const N: usize, const C: usize> AudioGraphApi<N, C> for DynamicAudioGraph<N, C> {
-    fn add_node(&mut self, props: AddNodeProps<N, C>) -> usize {
+    // This probably won't scale well, perhaps a macro in the future?
+    fn add_audio_unit(&mut self, props: AddNodeProps<N, C>) -> usize {
         let node: AudioUnit<N, C> = match props {
             AddNodeProps::ADSR { sample_rate } => AudioUnit::AudioNode {
                 node: Box::new(ADSR::new(sample_rate)),
             },
-
             AddNodeProps::Filter { sample_rate, filter_type, cutoff, gain, q } => AudioUnit::AudioNode {
                 node: Box::new(Svf::new(sample_rate, filter_type, cutoff, gain, q)),
             },
@@ -274,6 +277,7 @@ impl<const N: usize, const C: usize> AudioGraphApi<N, C> for DynamicAudioGraph<N
             AddNodeProps::MidiToF => AudioUnit::AudioNode {
                 node: Box::new(Log {}),
             },
+            // Delay Nodes
             AddNodeProps::DelayWrite { delay_line_name, capacity, name } => {
                 let index = self.audio_context.add_delay_line(delay_line_name, capacity);
                 let new_node = DelayWrite::new(name, index);
@@ -294,7 +298,11 @@ impl<const N: usize, const C: usize> AudioGraphApi<N, C> for DynamicAudioGraph<N
         self.invalidate_sort_order();
         index
     }
+    // Slightly different signature here, although the Signal is technically a node.
+    fn add_control_unit(&mut self, min: f32, max: f32, initial: f32) -> (usize, Param) {
+        let (node, param ) = build_signal(min, max, initial);
+        let index = self.graph.add_node(AudioUnit::AudioNode { node: Box::new(node) });
+        self.invalidate_sort_order();
+        (index, param)
+    }
 }
-
-
-
