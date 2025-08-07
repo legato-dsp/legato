@@ -182,7 +182,6 @@ impl<const N: usize, const C: usize> DynamicAudioGraph<N, C> {
             Ok(order) => self.sort_order = order,
             Err(_) => panic!("Cycle detected in audio graph"),
         }
-        println!("{:?}", self.sort_order);
     }
 
     #[inline(always)]
