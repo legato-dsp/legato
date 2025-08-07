@@ -1,5 +1,6 @@
 use mini_graph::mini_graph::audio_graph::{AddNodeProps, AudioGraphApi, DynamicAudioGraph};
 use mini_graph::mini_graph::write::write_data;
+use mini_graph::nodes::audio::filters::FilterType;
 use mini_graph::nodes::audio::osc::Wave;
 
 use assert_no_alloc::*;
@@ -18,17 +19,31 @@ fn run<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<(), Buil
 where
     T: SizedSample + FromSample<f64>,
 {
-    let mut audio_graph = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(32);
+    let mut audio_graph = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(4);
 
     let osc_id = audio_graph.add_node(AddNodeProps::Oscillator { freq: 440.0, sample_rate: SAMPLE_RATE, phase: 0.0, wave: Wave::SinWave });
 
     audio_graph.set_sink_index(osc_id);
 
+    let mut audio_graph_two = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(4);
+
+    let lfo_id = audio_graph_two.add_node(AddNodeProps::Lfo { freq: 1.0, offset: 2400.0, amp: 1600.0 , phase: 0.0, sample_rate: SAMPLE_RATE as f32});
+
+    let filter_id = audio_graph_two.add_node(AddNodeProps::Filter { sample_rate: SAMPLE_RATE as f32, filter_type: FilterType::LowPass, cutoff: 2400.0, gain: 0.6, q: 0.3 });
+
+    audio_graph_two.add_edge(lfo_id, filter_id);
+
+    let graph_id = audio_graph_two.add_node(AddNodeProps::Graph { graph: audio_graph });
+
+    audio_graph_two.add_edge(graph_id, filter_id);
+
+    audio_graph_two.set_sink_index(filter_id);
+
     // Build CPAL output stream
     let stream = device.build_output_stream(
         config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc(|| write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph))
+            assert_no_alloc(|| write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph_two))
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,

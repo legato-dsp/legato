@@ -68,7 +68,7 @@ impl<N> Graph<N> for DynamicGraph<N> {
         id
     }
     fn add_edge(&mut self, from: usize, to: usize) {
-        if (from == to) { return };
+        if from == to { return };
         self.outgoing[from].insert(to);
         self.incoming[to].insert(from);
     }

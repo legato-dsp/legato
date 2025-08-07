@@ -86,7 +86,6 @@ impl<const N: usize, const C: usize> AudioContext<N, C>{
                 let output = &mut self.audio_output_buffers[*node_index];
 
                 if let Some(inputs) = override_inputs {
-                    println!("override!");
                     node.process(inputs, output);
                 }
                 else {
@@ -183,6 +182,7 @@ impl<const N: usize, const C: usize> DynamicAudioGraph<N, C> {
             Ok(order) => self.sort_order = order,
             Err(_) => panic!("Cycle detected in audio graph"),
         }
+        println!("{:?}", self.sort_order);
     }
 
     #[inline(always)]
@@ -291,7 +291,9 @@ impl<const N: usize, const C: usize> AudioGraphApi<N, C> for DynamicAudioGraph<N
                 node: Box::new(graph),
             },
         };
-        self.graph.add_node(node)
+        let index = self.graph.add_node(node);
+        self.invalidate_sort_order();
+        index
     }
 }
 

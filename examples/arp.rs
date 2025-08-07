@@ -1,20 +1,14 @@
 use std::time::Duration;
 
-use mini_graph::mini_graph::audio_graph::DynamicAudioGraph;
+use mini_graph::mini_graph::audio_graph::{DynamicAudioGraph, AddNodeProps, AudioGraphApi};
 use mini_graph::mini_graph::bang::Bang;
 use mini_graph::mini_graph::write::write_data;
-use mini_graph::nodes::audio::gain::Gain;
-use mini_graph::nodes::audio::hard_clipper::HardClipper;
-use mini_graph::nodes::audio::mixer::Mixer;
-use mini_graph::nodes::audio::filters::{Svf, FilterType};
-use mini_graph::nodes::control::clock::Clock;
-use mini_graph::nodes::audio::{adsr::ADSR, osc::*};
+use mini_graph::nodes::audio::filters::{FilterType};
+use mini_graph::mini_graph::*;
 use assert_no_alloc::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, BuildStreamError, FromSample, SampleRate, SizedSample, StreamConfig};
-use mini_graph::nodes::control::iter::BangIter;
-use mini_graph::nodes::control::lfo::Lfo;
-
+use mini_graph::nodes::audio::osc::Wave;
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
 #[global_allocator]
@@ -30,25 +24,25 @@ where
 {
     let mut audio_graph = DynamicAudioGraph::<FRAME_SIZE, CHANNEL_COUNT>::with_capacity(32);
 
-    let clock_one = audio_graph.add_node(Box::new(Clock::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE, Duration::from_secs_f32(0.5))));
+    let clock_one = audio_graph.add_node(AddNodeProps::Clock { sample_rate: SAMPLE_RATE, rate: Duration::from_secs_f32(0.5) });
+    
+    let clock_two = audio_graph.add_node(AddNodeProps::Clock { sample_rate: SAMPLE_RATE, rate: Duration::from_secs_f32(0.5) });
 
-    let clock_two = audio_graph.add_node(Box::new(Clock::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE, Duration::from_secs_f32(2.0 / 3.0))));
+    let iterator_one = audio_graph.add_node(AddNodeProps::Iter { values: &[Bang::BangF32(440.0 / 2.0), Bang::BangF32(523.251 / 2.0), Bang::BangF32(783.991 / 2.0)] });
 
-    let iterator_one = audio_graph.add_node(Box::new(BangIter::<FRAME_SIZE, CHANNEL_COUNT>::new(&[Bang::BangF32(440.0 / 2.0), Bang::BangF32(523.251 / 2.0), Bang::BangF32(783.991 / 2.0)])));
+    let iterator_two = audio_graph.add_node(AddNodeProps::Iter { values: &[Bang::BangF32(440.0 * 2.0), Bang::BangF32(523.251 * 2.0), Bang::BangF32(783.991 * 2.0)] });
 
-    let iterator_two = audio_graph.add_node(Box::new(BangIter::<FRAME_SIZE, CHANNEL_COUNT>::new(&[Bang::BangF32(440.0 * 2.0), Bang::BangF32(523.251 * 2.0), Bang::BangF32(783.991 * 2.0)])));
+    let adsr_one = audio_graph.add_node(AddNodeProps::ADSR { sample_rate: SAMPLE_RATE });
 
-    let adsr_one = audio_graph.add_node(Box::new(ADSR::new(SAMPLE_RATE)));
+    let adsr_two = audio_graph.add_node(AddNodeProps::ADSR { sample_rate: SAMPLE_RATE });
 
-    let adsr_two = audio_graph.add_node(Box::new(ADSR::new(SAMPLE_RATE)));
+    let osc_one = audio_graph.add_node(AddNodeProps::Oscillator { freq: 440.0, sample_rate: SAMPLE_RATE, phase: 0.0, wave: Wave::SawWave });
 
-    let osc_one = audio_graph.add_node(Box::new(Oscillator::new(440.0, SAMPLE_RATE, 0.0, Wave::SawWave)));
+    let osc_two = audio_graph.add_node(AddNodeProps::Oscillator { freq: 440.0, sample_rate: SAMPLE_RATE, phase: 0.0, wave: Wave::SawWave });
 
-    let osc_two = audio_graph.add_node(Box::new(Oscillator::new(440.0, SAMPLE_RATE, 0.0, Wave::SawWave)));
+    let gain = audio_graph.add_node(AddNodeProps::Gain { gain: 0.3 });
 
-    let gain = audio_graph.add_node(Box::new(Gain::new(0.3)));
-
-    let lfo = audio_graph.add_node(Box::new(Lfo::new(4.0 , 200.0, 4800.0, 0.0, SAMPLE_RATE as f32)));
+    let lfo = audio_graph.add_node(AddNodeProps::Lfo { freq: 2.0, offset: 2400.0, amp: 800.0, phase: 0.0, sample_rate: SAMPLE_RATE as f32 });
 
     audio_graph.add_edges(&[
         (clock_one, iterator_one), 
@@ -63,15 +57,11 @@ where
         ]
     );
 
-    let mixer = audio_graph.add_node(Box::new(Mixer {}));
+    let mixer = audio_graph.add_node(AddNodeProps::Mixer);
 
-    // let filter = audio_graph.add_node(Box::new(
-    //     MoogFilter::<FRAME_SIZE, CHANNEL_COUNT>::new(SAMPLE_RATE)
-    // ));
+    let filter = audio_graph.add_node(AddNodeProps::Filter { sample_rate: SAMPLE_RATE as f32, filter_type: FilterType::LowPass, cutoff: 1200.0, q: 1.0, gain: 0.4});
 
-    let filter = audio_graph.add_node(Box::new(Svf::new(SAMPLE_RATE as f32, FilterType::LowPass, 1200.0, 1.0, 0.4)));
-
-    let clipper = audio_graph.add_node(Box::new(HardClipper::new(0.9)));
+    let clipper = audio_graph.add_node(AddNodeProps::HardClipper { limit: 0.9 });
 
     audio_graph.add_edges(&[(adsr_one, mixer), (adsr_two, mixer), (mixer, filter), (filter, gain), (lfo, filter), (gain, clipper)]);
 
@@ -80,9 +70,9 @@ where
     let stream = device.build_output_stream(
         config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc( || write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph))
+            assert_no_alloc(|| write_data::<FRAME_SIZE, CHANNEL_COUNT, f32>(data, &mut audio_graph))
         },
-        |err| eprintln!("An output stream error occured: {}", err),
+        |err| eprintln!("An output stream error occurred: {}", err),
         None,
     )?;
 
