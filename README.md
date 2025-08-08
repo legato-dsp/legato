@@ -2,6 +2,10 @@
 
 This project is aimed around creating a minimal audio graph in Rust, useful for experimentation or prototyping a larger audio application. I wanted a more lightweight DX than FunDSP, but FunDSP is far more feature complete. For the time being, I would suggest using that for any real audio applications.
 
+### Getting Started
+
+There is a flake.nix with the required dependencies. I normally use direnv allow, and have the dependencies taken care of for me.
+
 ### Example Node
 
 You can define a basic gain node like so:
