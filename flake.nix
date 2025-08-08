@@ -27,6 +27,7 @@
             rustPackages.clippy 
             linuxKernel.packages.linux_zen.perf
             jack2
+            ffmpeg_6-full
             ];
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
         };

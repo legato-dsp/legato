@@ -13,6 +13,7 @@ use crate::nodes::audio::gain::Gain;
 use crate::nodes::audio::hard_clipper::HardClipper;
 use crate::nodes::audio::mixer::Mixer;
 use crate::nodes::audio::osc::{Oscillator, Wave};
+use crate::nodes::audio::sampler::Sampler;
 use crate::nodes::control::clock::Clock;
 use crate::nodes::control::iter::BangIter;
 use crate::nodes::control::lfo::Lfo;
@@ -227,7 +228,8 @@ pub enum AddNodeProps<const N: usize, const C: usize> {
     Lfo { freq: f32, offset: f32, amp: f32, phase: f32, sample_rate: f32 },
     Log,
     MidiToF,
-    Graph { graph: DynamicAudioGraph<N, C> }
+    Graph { graph: DynamicAudioGraph<N, C> },
+    Sampler { node: Sampler<N, C>}
 }
 
 
@@ -293,6 +295,7 @@ impl<const N: usize, const C: usize> AudioGraphApi<N, C> for DynamicAudioGraph<N
             AddNodeProps::Graph { graph } => AudioUnit::AudioNode {
                 node: Box::new(graph),
             },
+            AddNodeProps::Sampler { node } => AudioUnit::IONode { node: Box::new(node) }
         };
         let index = self.graph.add_node(node);
         self.invalidate_sort_order();

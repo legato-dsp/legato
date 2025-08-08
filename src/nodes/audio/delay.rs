@@ -1,4 +1,4 @@
-use crate::mini_graph::{buffer::Frame, node::{AudioNode, DelayTapNode, DelayWriteNode}};
+use crate::mini_graph::{buffer::Frame, node::{DelayTapNode, DelayWriteNode}};
 
 /// For now, we are assuming that the delay line is single threaded,
 /// and since we have readers after the writer, we are using unsafe 
@@ -12,7 +12,8 @@ pub fn lerp(v0: f32,  v1: f32, t: f32) -> f32 {
 pub struct DelayLine<const N: usize, const C: usize> {
     buffers: [Vec<f32>; C],
     capacity: usize,
-    write_pos: usize,}
+    write_pos: usize,
+}
 
 impl<const N: usize, const C: usize> DelayLine<N, C> {
     pub fn new(capacity: usize) -> Self {

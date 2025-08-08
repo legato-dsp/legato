@@ -14,6 +14,7 @@ hashbrown = { version = "0.15.4", features = ["inline-more"] }
 indexmap = "2.10.0"
 heapless = "0.8.0"
 portable-atomic = { version = "1.11.1", features = ["float"] }
+arc-swap = "1.7.1"
 
 
 [dev-dependencies]
