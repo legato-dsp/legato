@@ -1,10 +1,6 @@
 use mini_graph::{Port, PortError};
 use mini_graph_macros::Port;
 
-
-
-
-
 #[test]
 fn macro_port_test_basic() {
     #[derive(Port, PartialEq, Debug)]
@@ -20,7 +16,3 @@ fn macro_port_test_basic() {
     assert_eq!(OscillatorInputs::from_index(1), Ok(OscillatorInputs::FM));
     assert_eq!(OscillatorInputs::from_index(2), Err(PortError::InvalidPort));
 }
-
-
-
-

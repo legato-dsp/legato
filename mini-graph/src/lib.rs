@@ -2,10 +2,10 @@
 // pub mod nodes;
 // pub mod utils;
 
+mod nodes;
+
 use core::fmt;
 use core::ops::{Deref, DerefMut};
-
-use mini_graph_macros::Port;
 
 pub type Frame<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> = [Buffer<BUFFER_SIZE>; CHANNEL_COUNT];
 #[derive(Clone, Copy)]
@@ -54,6 +54,33 @@ impl<const N: usize> DerefMut for Buffer<N> {
     }
 }
 
+pub trait ReadPort<const N: usize, const C: usize> {
+    fn get_frame<P: Port>(&self, port: P) -> Option<&Frame<N, C>>;
+
+    fn get_buf<P: Port>(&self, port: P, ch: usize) -> Option<&Buffer<N>>;
+
+    fn get_sample<P: Port>(&self, port: P, ch: usize, i: usize) -> Option<f32>;
+}
+
+type Inputs<const N: usize, const C: usize> = [Frame<N, C>];
+
+impl<const N: usize, const C: usize> ReadPort<N, C> for Inputs<N, C> {
+    #[inline(always)]
+    fn get_frame<P: Port>(&self, port: P) -> Option<&Frame<N, C>> {
+        self.get(port.into_index())
+    }
+
+    #[inline(always)]
+    fn get_buf<P: Port>(&self, port: P, ch: usize) -> Option<&Buffer<N>> {
+        self.get_frame(port).map(|f| &f[ch])
+    }
+
+    #[inline(always)]
+    fn get_sample<P: Port>(&self, port: P, ch: usize, i: usize) -> Option<f32> {
+        self.get_buf(port, ch).map(|b| b[i])
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum PortError {
     InvalidPort
@@ -71,31 +98,7 @@ pub trait Port {
 }
 
 trait Node<const N: usize, const C: usize> {
-    type Inputs: Port;
+    type InputPorts: Port;
 
-    fn process(&mut self, ctx: &AudioContext, inputs: &[Frame<N, C>], output: &mut Frame<N, C>){}
+    fn process(&mut self, ctx: &AudioContext, inputs: &Inputs<N, C>, output: &mut Frame<N, C>);
 }
-
-#[derive(Port, PartialEq, Debug)]
-enum OscillatorInputs {
-    Freq,
-    FM,
-}
-
-struct Oscillator {
-    phase: f32,
-}
-impl<const N: usize, const C: usize> Node<N, C> for Oscillator {
-    type Inputs = OscillatorInputs;
-
-    fn process(&mut self, ctx: &AudioContext, inputs: &[Frame<N, C>], output: &mut Frame<N, C>) {
-        let freq = inputs.get(OscillatorInputs::Freq.into_index());
-        let fm = inputs.get(OscillatorInputs::FM.into_index());
-
-
-    }
-}
-
-
-
-
