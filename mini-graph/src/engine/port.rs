@@ -1,15 +1,17 @@
 use crate::engine::buffer::{zero_frame, Frame};
 
 
-enum PortBehavior {
-    Default, // Take the first sample
+pub enum PortBehavior {
+    Default, // Input: Take the first sample, Output: Fill the frame
     Sum,
     SumNormalized,
+    Mute
 } 
 
-struct Port {
-    name: &'static str,
-    in_behavior: PortBehavior,
+pub struct Port {
+    pub name: &'static str,
+    pub index: usize,
+    pub behavior: PortBehavior,
 }
 
 #[inline(always)]
@@ -39,10 +41,12 @@ pub fn handle_input<const N: usize, const C: usize>(inputs: &[Frame<N, C>], outp
                     output[c][n] /= denom;
                 }
             }
-        }
+        },
+        PortBehavior::Mute => zero_frame(output),
     }
 }
 
+// Utility function for port behavior
 #[inline(always)]
 fn zero_and_sum_frame<const N: usize, const C: usize>(frames: &[Frame<N, C>], output: &mut Frame<N, C>) {
         zero_frame(output);
