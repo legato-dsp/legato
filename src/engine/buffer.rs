@@ -1,9 +1,5 @@
-
 use core::fmt;
 use core::ops::{Deref, DerefMut};
-
-pub type Frame<const BUFFER_SIZE: usize, const CHANNEL_COUNT: usize> = [Buffer<BUFFER_SIZE>; CHANNEL_COUNT];
-
 #[derive(Clone, Copy)]
 pub struct Buffer<const BUFFER_SIZE: usize> {
     data: [f32; BUFFER_SIZE],
@@ -50,29 +46,30 @@ impl<const N: usize> DerefMut for Buffer<N> {
     }
 }
 
-pub trait Silent {
-    fn silent() -> Self;
+pub struct Frame<const BUFFER_SIZE: usize> {
+    data: [Buffer<BUFFER_SIZE>]
 }
 
-impl<const N: usize> Silent for Buffer<N> {
-    #[inline(always)]
-    fn silent() -> Self {
-        Self::SILENT
+
+impl<'a, const BUFFER_SIZE: usize> Deref for Frame<BUFFER_SIZE> {
+    type Target = [Buffer<BUFFER_SIZE>];
+    fn deref(&self) -> &Self::Target {
+        &self.data[..]
     }
 }
 
-impl<const N: usize, const C: usize> Silent for Frame<N, C> {
-    fn silent() -> Self {
-        [Buffer::SILENT; C]
+impl<'a, const BUFFER_SIZE: usize> DerefMut for Frame<BUFFER_SIZE> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data[..]
     }
 }
 
-
-#[inline(always)]
-pub fn zero_frame<const N: usize, const C: usize>(frame: &mut Frame<N, C>){
-    for c in 0..C {
-        for n in 0..N {
-            frame[c][n] = 0.0;
+pub fn zero_frame<const BUFFER_SIZE: usize>(frame: &mut Frame<BUFFER_SIZE>){
+    for channel in frame.iter_mut() {
+        for b_idx in 0..BUFFER_SIZE {
+            channel[b_idx] = 0.0
         }
     }
 }
+
+
