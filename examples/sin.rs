@@ -1,4 +1,4 @@
-use legato::{backend::write_data_cpal, engine::runtime::{build_runtime, Runtime}};
+use legato::{backend::write_data_cpal, engine::{graph::Connection, runtime::{build_runtime, Nodes, Runtime, RuntimeBuilder}}};
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Device};
 use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
 
@@ -26,10 +26,18 @@ fn run<const N: usize, const C: usize>(device: &Device, config: &StreamConfig, m
 
 
 fn main(){
-    let runtime: Runtime::<BLOCK_SIZE, CHANNEL_COUNT> = build_runtime(CAPACITY, SAMPLE_RATE);
+    let mut runtime: Runtime::<BLOCK_SIZE, CHANNEL_COUNT> = build_runtime(CAPACITY, SAMPLE_RATE);
+
+    let a = runtime.add_node_api(Nodes::Osc);
+
+    let b = runtime.add_node_api(Nodes::Stereo);
+
+    let _ = runtime.add_edge(Connection { source_key: a, sink_key: b, source_port_index: 0, sink_port_index: 0 });
+
+    runtime.set_sink_key(b).expect("Bad sink key!");
 
     let host = cpal::host_from_id(cpal::HostId::Jack)
-    .expect("JACK host not available");
+        .expect("JACK host not available");
 
     let device = host.default_output_device().unwrap();
 

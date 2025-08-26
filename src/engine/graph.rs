@@ -6,7 +6,8 @@ use crate::engine::node::Node;
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
     BadConnection,
-    CycleDetected
+    CycleDetected,
+    NodeDoesNotExist
 }
 
 new_key_type! { pub struct NodeKey; }
@@ -55,7 +56,14 @@ impl<const N: usize> AudioGraph<N> {
             .insert(key, IndexSet::with_capacity(MAXIMUM_INPUTS));
         self.outgoing_edges
             .insert(key, IndexSet::with_capacity(MAXIMUM_INPUTS));
+
+        let _ = self.invalidate_topo_sort();
+
         key
+    }
+
+    pub fn exists(&self, key: NodeKey) -> bool {
+        self.nodes.get(key).is_some()
     }
 
     #[inline(always)]
@@ -70,6 +78,10 @@ impl<const N: usize> AudioGraph<N> {
 
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    pub fn get_nodes_and_runtime_info(&mut self) -> (&Vec<NodeKey>, &mut SlotMap<NodeKey, AudioNode<N>>, &SecondaryMap<NodeKey, IndexSet<Connection>>) {
+        (&self.topo_sorted, &mut self.nodes, &self.incoming_edges)
     }
 
     /// Removes a node and all edges incident to it.
@@ -205,7 +217,7 @@ impl<const N: usize> AudioGraph<N> {
         }
 
         if self.topo_sorted.len() == self.nodes.len() {
-            // I think this is acceptable, as it should not be happening in realtime, but we can refactor this soon
+            // I think this is acceptable for the time being, as it should not be happening in realtime, but we can refactor this soon
             Ok(self.topo_sorted.clone())
         } else {
             Err(GraphError::CycleDetected)
@@ -425,6 +437,14 @@ mod test {
         let a = graph.add_node(Box::new(ExampleNode::default()));
         let res = graph.add_edge(Connection { source_key: a, sink_key: a, sink_port_index: 0, source_port_index: 0});
         assert_eq!(res, Err(CycleDetected));
+    }
+    
+    #[test]
+    fn single_node_order(){
+        let mut graph = AudioGraph::<256>::with_capacity(1);
+        let a = graph.add_node(Box::new(ExampleNode::default()));
+
+        assert_eq!(graph.topo_sorted, vec![a])
     }
 
     #[test]
