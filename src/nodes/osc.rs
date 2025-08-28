@@ -1,12 +1,12 @@
 use std::ops::Add;
 
-use generic_array::{ArrayLength, GenericArray};
-use typenum::{Sum, Unsigned, U0, U1, U2};
+use generic_array::{ArrayLength, arr};
+use typenum::{Sum, Unsigned, U0, U2};
 
 use crate::engine::node::Node;
 use crate::engine::audio_context::AudioContext;
 use crate::engine::buffer::{Buffer};
-use crate::engine::port::{Port, PortBehavior, Ported};
+use crate::engine::port::{Mono, Port, PortBehavior, Ports, Stereo};
 
 pub enum Wave {
     Sin,
@@ -15,44 +15,73 @@ pub enum Wave {
     Square,
 }
 
-pub struct Oscillator {
+pub struct Oscillator<Ai, Ci, O>
+where
+    Ai: Unsigned + Add<Ci>,
+    Ci: Unsigned,
+    O: Unsigned + ArrayLength,
+    Sum<Ai, Ci>: Unsigned + ArrayLength,
+{
     freq: f32,
     phase: f32,
     wave: Wave,
+    ports: Ports<Ai, Ci, O>
 }
 
-impl Oscillator {
-    const INPUTS: [Port;2] = [
-        Port {
-            name: "fm",
-            index: 0,
-            behavior: PortBehavior::Default, 
-        },
-        Port {
-            name: "freq",
-            index: 1,
-            behavior: PortBehavior::Default,
-        }
-    ];
 
-    const OUTUTS: [Port; 1] = [
-        Port {
-            name: "audio",
-            index: 0,
-            behavior: PortBehavior::Default,
-        }
-    ];
+type AudioIn = U0;
+type ControlIn = U2;
 
-    pub fn new(freq: f32, phase: f32, wave: Wave) -> Self {
+type OscMono = Oscillator<AudioIn, ControlIn, Mono>;
+type OscStereo = Oscillator<AudioIn, ControlIn, Stereo>;
+
+impl Ports<AudioIn, ControlIn, Mono> {
+    fn new() -> Self {
+        let inputs = arr![
+            Port { name: "fm",   index: 0, behavior: PortBehavior::Default },
+            Port { name: "freq", index: 1, behavior: PortBehavior::Default },
+        ];
+        let outputs = arr![
+            Port { name: "audio", index: 0, behavior: PortBehavior::Default }
+        ];
+        Self {
+            inputs,
+            outputs
+        }
+    }
+}
+
+impl Ports<AudioIn, ControlIn, Stereo> {
+    fn new() -> Self {
+        let inputs = arr![
+            Port { name: "fm",   index: 0, behavior: PortBehavior::Default },
+            Port { name: "freq", index: 1, behavior: PortBehavior::Default },
+        ];
+        let outputs = arr![
+            Port { name: "L", index: 0, behavior: PortBehavior::Default },
+            Port { name: "R", index: 1, behavior: PortBehavior::Default }
+        ];
+        Self {
+            inputs,
+            outputs
+        }
+    }
+}
+
+impl<Ai, Ci, O> Oscillator<Ai, Ci, O>
+where
+    Ai: Unsigned + Add<Ci>,
+    Ci: Unsigned,
+    O: Unsigned + ArrayLength,
+    Sum<Ai, Ci>: Unsigned + ArrayLength,
+{
+    pub fn new(freq: f32, phase: f32, wave: Wave, ports: Ports<Ai, Ci, O>) -> Self {
         Self {
             freq,
             phase,
-            wave
+            wave,
+            ports
         }
-    }
-
-    pub fn default() -> Self {
-        Self::new(440.0, 0.0, Wave::Sin)
     }
 
     pub fn set_wave_form(&mut self, wave: Wave){
@@ -73,10 +102,16 @@ impl Oscillator {
     }
 }
 
-impl<const N: usize> Node<N> for Oscillator {
+impl<const N: usize, Ai, Ci, O> Node<N, Ai, Ci, O> for Oscillator<Ai, Ci, O>
+where 
+    Ai: Unsigned + Add<Ci>,
+    Ci: Unsigned,
+    O: Unsigned + ArrayLength,
+    Sum<Ai, Ci>: Unsigned + ArrayLength
+{
     fn process(&mut self, ctx: &AudioContext , input: &[Buffer<N>], output: &mut [Buffer<N>]) {
-        debug_assert_eq!(input.len(), Self::INPUTS.len());
-        debug_assert_eq!(output.len(), Self::OUTUTS.len());
+        debug_assert_eq!(input.len(), <Sum<Ai, Ci>>::USIZE );
+        debug_assert_eq!(output.len(), O::USIZE);
         let sample_rate = ctx.get_sample_rate();
         for i in 0..N {
             let sample = self.tick_osc(sample_rate);
@@ -84,25 +119,32 @@ impl<const N: usize> Node<N> for Oscillator {
                 buf[i] = sample;
             }
         }
-
     }
 }
 
-impl<Ai, Ci, O> Ported<Ai, Ci, O> for Oscillator
-where 
-    Ai: Unsigned + Add<Ci>, 
-    Ci: Unsigned, 
-    O: Unsigned + ArrayLength,
-    Sum<Ai, Ci>: Unsigned + ArrayLength
-{
-    fn get_input_ports(&self) ->  &'static GenericArray<Port, Sum<Ai, Ci>> {
-
-    }
-    fn get_output_ports(&self) -> &'static GenericArray<Port, O> {
-
+impl Default for OscMono {
+    fn default() -> Self {
+        let ports = Ports::<AudioIn, ControlIn, Mono>::new();
+        Self {
+            freq: 440.0,
+            phase: 0.0,
+            wave: Wave::Sin,
+            ports
+        }
     }
 }
 
+impl Default for OscStereo {
+    fn default() -> Self {
+        let ports = Ports::<AudioIn, ControlIn, Stereo>::new();
+        Self {
+            freq: 440.0,
+            phase: 0.0,
+            wave: Wave::Sin,
+            ports
+        }
+    }
+}
 
 #[inline(always)]
 fn sin_amp_from_phase(phase: &f32) -> f32 {
