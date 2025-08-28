@@ -17,8 +17,6 @@ impl<const N: usize> Node<N> for Stereo {
     }
 }
 
-
-
 impl PortedErased for Stereo {
     fn get_inputs(&self) -> &[Port] {
         &[
