@@ -1,90 +1,95 @@
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    Device,
-};
-use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
-use legato::engine::builder::RuntimeBuilder;
-use legato::{
-    backend::write_data_cpal,
-    engine::{
-        builder::Nodes,
-        graph::Connection,
-        runtime::{build_runtime, Runtime},
-    },
-};
+// use cpal::{
+//     traits::{DeviceTrait, HostTrait, StreamTrait},
+//     Device,
+// };
+// use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
+// use legato::engine::builder::RuntimeBuilder;
+// use legato::{
+//     backend::write_data_cpal,
+//     engine::{
+//         builder::Nodes,
+//         graph::Connection,
+//         runtime::{build_runtime, Runtime},
+//     },
+// };
 
-use assert_no_alloc::*;
+// use assert_no_alloc::*;
 
-#[cfg(debug_assertions)]
-#[global_allocator]
-static A: AllocDisabler = AllocDisabler;
+// #[cfg(debug_assertions)]
+// #[global_allocator]
+// static A: AllocDisabler = AllocDisabler;
 
-// TODO: We configure this somewhere?
+// // TODO: We configure this somewhere?
 
-const SAMPLE_RATE: u32 = 48_000;
-const BLOCK_SIZE: usize = 1024;
+// const SAMPLE_RATE: u32 = 48_000;
+// const BLOCK_SIZE: usize = 1024;
 
-const DECIMATION_FACTOR: f32 = 32.0;
+// const DECIMATION_FACTOR: f32 = 32.0;
 
-// 32 seems nice, we likely get a size that could have some vectorization wins?
-const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
-const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
+// // 32 seems nice, we likely get a size that could have some vectorization wins?
+// const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
+// const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 
-const CAPACITY: usize = 16;
-const CHANNEL_COUNT: usize = 2;
+// const CAPACITY: usize = 16;
+// const CHANNEL_COUNT: usize = 2;
 
-assert_eq!(BLOCK_SIZE % DECIMATION_FACTOR, 0);
+// assert_eq!(BLOCK_SIZE % DECIMATION_FACTOR, 0);
 
-fn run<const AF: usize, const CF: usize, const C: usize>(
-    device: &Device,
-    config: &StreamConfig,
-    mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> {
-    let stream = device.build_output_stream(
-        &config,
-        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            // assert_no_alloc(|| {
-            //     write_data_cpal::<N, C, f32>(data, &mut runtime)
-            // })
-            write_data_cpal::<AF, CF, C, f32>(data, &mut runtime)
-        },
-        |err| eprintln!("An output stream error occurred: {}", err),
-        None,
-    )?;
+// fn run<const AF: usize, const CF: usize, const C: usize>(
+//     device: &Device,
+//     config: &StreamConfig,
+//     mut runtime: Runtime<AF, CF, C>,
+// ) -> Result<(), BuildStreamError> {
+//     let stream = device.build_output_stream(
+//         &config,
+//         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+//             // assert_no_alloc(|| {
+//             //     write_data_cpal::<N, C, f32>(data, &mut runtime)
+//             // })
+//             write_data_cpal::<AF, CF, C, f32>(data, &mut runtime)
+//         },
+//         |err| eprintln!("An output stream error occurred: {}", err),
+//         None,
+//     )?;
 
-    stream.play().unwrap();
+//     stream.play().unwrap();
 
-    std::thread::park();
+//     std::thread::park();
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-fn main() {
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, CHANNEL_COUNT> =
-        build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
+// fn main() {
+//     let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, CHANNEL_COUNT> =
+//         build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
 
-    let a = runtime.add_node_api(Nodes::OscMono);
+//     let a = runtime.add_node_api(Nodes::OscMono);
 
-    let b = runtime.add_node_api(Nodes::Stereo);
+//     let b = runtime.add_node_api(Nodes::Stereo);
 
-    let _ = runtime.add_edge(Connection {
-        source_key: a,
-        sink_key: b,
-        source_port_index: 0,
-        sink_port_index: 0,
-    });
+//     let _ = runtime.add_edge(Connection {
+//         source_key: a,
+//         sink_key: b,
+//         source_port_index: 0,
+//         sink_port_index: 0,
+//     });
 
-    runtime.set_sink_key(b).expect("Bad sink key!");
+//     runtime.set_sink_key(b).expect("Bad sink key!");
 
-    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
+//     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
-    let device = host.default_output_device().unwrap();
+//     let device = host.default_output_device().unwrap();
 
-    let config = StreamConfig {
-        channels: CHANNEL_COUNT as u16,
-        sample_rate: SampleRate(SAMPLE_RATE as u32),
-        buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
-    };
+//     let config = StreamConfig {
+//         channels: CHANNEL_COUNT as u16,
+//         sample_rate: SampleRate(SAMPLE_RATE as u32),
+//         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
+//     };
 
-    run(&device, &config, runtime).expect("Runtime panic!");
+//     run(&device, &config, runtime).expect("Runtime panic!");
+// }
+
+
+fn main(){
+    todo!()
 }

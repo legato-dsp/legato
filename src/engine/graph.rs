@@ -1,4 +1,4 @@
-use crate::engine::node::Node;
+use crate::engine::{node::Node, port::PortRate};
 use indexmap::IndexSet;
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
 use std::collections::VecDeque;
@@ -13,11 +13,16 @@ pub enum GraphError {
 new_key_type! { pub struct NodeKey; }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct ConnectionEntry {
+    pub node_key: NodeKey,
+    pub port_index: usize,
+    pub port_rate: PortRate,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Connection {
-    pub source_key: NodeKey,
-    pub sink_key: NodeKey,
-    pub source_port_index: usize,
-    pub sink_port_index: usize,
+    pub source: ConnectionEntry,
+    pub sink: ConnectionEntry,
 }
 
 const MAXIMUM_INPUTS: usize = 8;
@@ -99,7 +104,7 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
 
         if let Some(outgoing) = self.outgoing_edges.remove(key) {
             for con in outgoing.iter() {
-                if let Some(in_set) = self.incoming_edges.get_mut(con.sink_key) {
+                if let Some(in_set) = self.incoming_edges.get_mut(con.sink.node_key) {
                     in_set.shift_remove(con);
                 }
             }
@@ -107,7 +112,7 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
 
         if let Some(incoming) = self.incoming_edges.remove(key) {
             for con in incoming.iter() {
-                if let Some(out_set) = self.outgoing_edges.get_mut(con.source_key) {
+                if let Some(out_set) = self.outgoing_edges.get_mut(con.source.node_key) {
                     out_set.shift_remove(con);
                 }
             }
@@ -122,19 +127,19 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
     }
 
     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
-        if !self.nodes.contains_key(connection.source_key)
-            || !self.nodes.contains_key(connection.sink_key)
+        if !self.nodes.contains_key(connection.source.node_key)
+            || !self.nodes.contains_key(connection.sink.node_key)
         {
             return Err(GraphError::BadConnection);
         }
 
-        match self.outgoing_edges.get_mut(connection.source_key) {
+        match self.outgoing_edges.get_mut(connection.source.node_key) {
             Some(adjacencies) => {
                 adjacencies.insert(connection);
             }
             None => return Err(GraphError::BadConnection),
         }
-        match self.incoming_edges.get_mut(connection.sink_key) {
+        match self.incoming_edges.get_mut(connection.sink.node_key) {
             Some(adjacencies) => {
                 adjacencies.insert(connection);
             }
@@ -154,7 +159,7 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
 
     pub fn remove_edge(&mut self, connection: Connection) -> Result<(), GraphError> {
         let mut adj_remove_status = true;
-        match self.outgoing_edges.get_mut(connection.source_key) {
+        match self.outgoing_edges.get_mut(connection.source.node_key) {
             Some(adjacencies) => {
                 if !adjacencies.shift_remove(&connection) {
                     adj_remove_status = false;
@@ -162,7 +167,7 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
             }
             None => return Err(GraphError::BadConnection),
         }
-        match self.incoming_edges.get_mut(connection.sink_key) {
+        match self.incoming_edges.get_mut(connection.sink.node_key) {
             Some(adjacencies) => {
                 if !adjacencies.shift_remove(&connection) {
                     adj_remove_status = false;
@@ -213,10 +218,10 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
             self.topo_sorted.push(node_key);
             if let Some(connections) = self.outgoing_edges.get(node_key) {
                 for con in connections {
-                    if let Some(v) = self.indegree.get_mut(con.sink_key) {
+                    if let Some(v) = self.indegree.get_mut(con.sink.node_key) {
                         *v -= 1;
                         if *v == 0 {
-                            self.no_incoming_edges_queue.push_back(con.sink_key);
+                            self.no_incoming_edges_queue.push_back(con.sink.node_key);
                         }
                     }
                 }
@@ -241,84 +246,100 @@ mod test {
 
     use crate::engine::audio_context::AudioContext;
     use crate::engine::graph::GraphError::CycleDetected;
-    use crate::engine::graph::{AudioGraph, Connection};
+    use crate::engine::graph::{AudioGraph, Connection, ConnectionEntry};
     use crate::engine::node::Node;
-    use crate::engine::port::{Mono, Port, PortBehavior, PortRate, PortedErased};
+    use crate::engine::port::{AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, Mono, MultipleInputBehavior, PortMeta, PortRate, PortedErased, UpsampleAlg};
 
     use super::NodeKey;
 
-    pub struct ExamplePorts<Ai, Ci, O>
+    pub struct ExamplePorts<Ai, Ao, Ci, Co>
     where
-        Ai: Unsigned + Add<Ci>,
-        Ci: Unsigned,
-        O: Unsigned + ArrayLength,
-        Sum<Ai, Ci>: Unsigned + ArrayLength,
+        Ai: ArrayLength,
+        Ao: ArrayLength,
+        Ci: ArrayLength,
+        Co: ArrayLength
     {
-        pub inputs: GenericArray<Port, Sum<Ai, Ci>>,
-        pub outputs: GenericArray<Port, O>,
+        pub audio_inputs: Option<GenericArray<AudioInputPort, Ai>>,
+        pub audio_outputs: Option<GenericArray<AudioOutputPort, Ao>>,
+        pub control_inputs: Option<GenericArray<ControlInputPort, Ci>>,
+        pub control_outputs: Option<GenericArray<ControlOutputPort, Co>>,   
     }
 
-    struct ExampleNode<Ai, Ci, O>
+    struct ExampleNode<Ai, Ao, Ci, Co>
     where
-        Ai: Unsigned + Add<Ci>,
-        Ci: Unsigned,
-        O: Unsigned + ArrayLength,
-        Sum<Ai, Ci>: Unsigned + ArrayLength,
+        Ai: ArrayLength,
+        Ao: ArrayLength,
+        Ci: ArrayLength,
+        Co: ArrayLength
     {
-        ports: ExamplePorts<Ai, Ci, O>,
+        ports: ExamplePorts<Ai, Ao, Ci, Co>
     }
 
     type AudioIn = U1;
+    type AudioOut = U1;
     type ControlIn = U0;
+    type ControlOut = U0;
 
-    impl ExamplePorts<AudioIn, ControlIn, Mono> {
+    impl ExamplePorts<AudioIn, AudioOut, ControlIn, ControlOut> {
         fn new() -> Self {
-            let inputs = arr![Port {
-                name: "audio",
-                index: 0,
-                behavior: PortBehavior::Default,
-                rate: PortRate::Audio
-            },];
-            let outputs = arr![Port {
-                name: "audio",
-                index: 0,
-                behavior: PortBehavior::Default,
-                rate: PortRate::Audio
+            let ai = arr![AudioInputPort {
+                meta: PortMeta {
+                    name: "audio",
+                    index: 0,
+                },
+                input_behavior: MultipleInputBehavior::Default,
+                resample: UpsampleAlg::Lerp,
             }];
-            Self { inputs, outputs }
+            let ao = arr![AudioOutputPort {
+                meta: PortMeta {
+                    name: "audio",
+                    index: 0,
+                },
+            }];
+            Self { 
+                audio_inputs: Some(ai), 
+                audio_outputs: Some(ao), 
+                control_inputs: None, 
+                control_outputs: None }
         }
     }
 
-    type MonoExample = ExampleNode<AudioIn, ControlIn, Mono>;
+    type MonoExample = ExampleNode<AudioIn, AudioOut, ControlIn, ControlOut>;
 
     impl Default for MonoExample {
         fn default() -> Self {
-            let ports = ExamplePorts::<AudioIn, ControlIn, Mono>::new();
+            let ports = ExamplePorts::new();
             Self { ports }
         }
     }
 
-    impl<Ai, Ci, O> PortedErased for ExampleNode<Ai, Ci, O>
+    impl<Ai, Ao, Ci, Co> PortedErased for ExampleNode<Ai, Ao, Ci, Co>
     where
-        Ai: Unsigned + Add<Ci>,
-        Ci: Unsigned,
-        O: Unsigned + ArrayLength,
-        Sum<Ai, Ci>: Unsigned + ArrayLength,
+        Ai: ArrayLength,
+        Ao: ArrayLength,
+        Ci: ArrayLength,
+        Co: ArrayLength
     {
-        fn get_inputs(&self) -> &[Port] {
-            &self.ports.inputs
+        fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {
+            self.ports.audio_inputs.as_ref().map(GenericArray::as_slice)        
         }
-        fn get_outputs(&self) -> &[Port] {
-            &self.ports.outputs
+        fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]> {
+            self.ports.audio_outputs.as_ref().map(GenericArray::as_slice)        
+        }
+        fn get_control_inputs(&self) -> Option<&[ControlInputPort]> {
+            self.ports.control_inputs.as_ref().map(GenericArray::as_slice)        
+        }
+        fn get_control_outputs(&self) -> Option<&[ControlOutputPort]> {
+            self.ports.control_outputs.as_ref().map(GenericArray::as_slice)        
         }
     }
 
-    impl<const AF: usize, const CF: usize, Ai, Ci, O> Node<AF, CF> for ExampleNode<Ai, Ci, O>
+    impl<const AF: usize, const CF: usize, Ai, Ao, Ci, Co> Node<AF, CF> for ExampleNode<Ai, Ao, Ci, Co>
     where
-        Ai: Unsigned + Add<Ci>,
-        Ci: Unsigned,
-        O: Unsigned + ArrayLength,
-        Sum<Ai, Ci>: Unsigned + ArrayLength,
+        Ai: ArrayLength,
+        Ao: ArrayLength,
+        Ci: ArrayLength,
+        Co: ArrayLength
     {
         fn process(
             &mut self,
@@ -341,7 +362,7 @@ mod test {
         for (src, outs) in &g.outgoing_edges {
             for con in outs.iter() {
                 let i = *pos.get(&src).expect("missing src");
-                let j = *pos.get(&con.sink_key).expect("missing sink");
+                let j = *pos.get(&con.sink.node_key).expect("missing sink");
                 assert!(i < j, "edge violates topological order");
             }
         }
@@ -357,18 +378,30 @@ mod test {
 
         graph
             .add_edge(Connection {
-                source_key: a,
-                sink_key: b,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
         graph
             .add_edge(Connection {
-                source_key: b,
-                sink_key: c,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
 
@@ -385,18 +418,30 @@ mod test {
 
         let e1 = graph
             .add_edge(Connection {
-                source_key: a,
-                sink_key: b,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .expect("Could not add e1");
         let e2 = graph
-            .add_edge(Connection {
-                source_key: b,
-                sink_key: c,
-                sink_port_index: 0,
-                source_port_index: 0,
+           .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .expect("Could not add e2");
 
@@ -435,34 +480,58 @@ mod test {
 
         graph
             .add_edge(Connection {
-                source_key: a,
-                sink_key: b,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
         graph
             .add_edge(Connection {
-                source_key: b,
-                sink_key: c,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
         graph
             .add_edge(Connection {
-                source_key: d,
-                sink_key: c,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: d,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
         graph
-            .add_edge(Connection {
-                source_key: c,
-                sink_key: e,
-                sink_port_index: 0,
-                source_port_index: 0,
+           .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: e,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
 
@@ -477,18 +546,30 @@ mod test {
 
         let _ = graph
             .add_edge(Connection {
-                source_key: a,
-                sink_key: b,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
-        // Bad edge, contains Err from cycle
-        let _ = graph.add_edge(Connection {
-            source_key: b,
-            sink_key: a,
-            sink_port_index: 0,
-            source_port_index: 0,
+        // Should return error from cycle
+        graph.add_edge(Connection {
+            source: ConnectionEntry {
+                node_key: b,
+                port_index: 0,
+                port_rate: PortRate::Audio
+            },
+            sink: ConnectionEntry {
+                node_key: a,
+                port_index: 0,
+                port_rate: PortRate::Audio
+            }
         });
 
         let res = graph.invalidate_topo_sort();
@@ -500,10 +581,16 @@ mod test {
         let mut graph = AudioGraph::<256, 16>::with_capacity(1);
         let a = graph.add_node(Box::new(MonoExample::default()));
         let res = graph.add_edge(Connection {
-            source_key: a,
-            sink_key: a,
-            sink_port_index: 0,
-            source_port_index: 0,
+            source: ConnectionEntry {
+                node_key: a,
+                port_index: 0,
+                port_rate: PortRate::Audio
+            },
+            sink: ConnectionEntry {
+                node_key: a,
+                port_index: 0,
+                port_rate: PortRate::Audio
+            }
         });
         assert_eq!(res, Err(CycleDetected));
     }
@@ -525,27 +612,37 @@ mod test {
 
         graph
             .add_edge(Connection {
-                source_key: a,
-                sink_key: b,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
         graph
             .add_edge(Connection {
-                source_key: b,
-                sink_key: c,
-                sink_port_index: 0,
-                source_port_index: 0,
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
             })
             .unwrap();
 
-        // Remove middle node; edges should be purged
         let _ = graph.remove_node(b).expect("node existed");
 
         assert_is_valid_topo(&mut graph);
 
-        // No incoming/outgoing entries left for the removed node
         assert!(graph.incoming_connections(b).is_none());
         assert!(graph.outgoing_connections(b).is_none());
     }
@@ -555,18 +652,24 @@ mod test {
         let mut graph = AudioGraph::<256, 16>::with_capacity(2);
         let a = graph.add_node(Box::new(MonoExample::default()));
 
-        // Spoof a bad key
+        // Add a bad key, should throw error when we add an edge
         let nonexistent_key = {
             let temp = graph.add_node(Box::new(MonoExample::default()));
             let _ = graph.remove_node(temp);
             temp
         };
         let res = graph.add_edge(Connection {
-            source_key: a,
-            sink_key: nonexistent_key,
-            sink_port_index: 0,
-            source_port_index: 0,
-        });
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                },
+                sink: ConnectionEntry {
+                    node_key: nonexistent_key,
+                    port_index: 0,
+                    port_rate: PortRate::Audio
+                }
+            });
         assert_eq!(
             res.unwrap_err(),
             crate::engine::graph::GraphError::BadConnection
