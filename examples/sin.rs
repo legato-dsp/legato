@@ -41,9 +41,7 @@ fn run<const AF: usize, const CF: usize, const C: usize>(
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc(|| {
-                write_data_cpal::<AF, CF, C, f32>(data, &mut runtime)
-            })
+            assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,
@@ -64,21 +62,26 @@ fn main() {
 
     let b = runtime.add_node_api(Nodes::Stereo);
 
-    let _ = runtime.add_edge(Connection { 
+    let _ = runtime.add_edge(Connection {
         source: ConnectionEntry {
             node_key: a,
             port_index: 0,
             port_rate: PortRate::Audio,
-        }, 
-        sink: ConnectionEntry { 
-            node_key: b, 
-            port_index: 0, 
-            port_rate: PortRate::Audio }
+        },
+        sink: ConnectionEntry {
+            node_key: b,
+            port_index: 0,
+            port_rate: PortRate::Audio,
+        },
     });
 
     runtime.set_sink_key(b).expect("Bad sink key!");
 
+    #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
+
+    #[cfg(target_os = "macos")]
+    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
 
     let device = host.default_output_device().unwrap();
 

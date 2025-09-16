@@ -248,7 +248,10 @@ mod test {
     use crate::engine::graph::GraphError::CycleDetected;
     use crate::engine::graph::{AudioGraph, Connection, ConnectionEntry};
     use crate::engine::node::Node;
-    use crate::engine::port::{AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, Mono, MultipleInputBehavior, PortMeta, PortRate, PortedErased, UpsampleAlg};
+    use crate::engine::port::{
+        AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, Mono,
+        MultipleInputBehavior, PortMeta, PortRate, PortedErased, UpsampleAlg,
+    };
 
     use super::NodeKey;
 
@@ -257,12 +260,12 @@ mod test {
         Ai: ArrayLength,
         Ao: ArrayLength,
         Ci: ArrayLength,
-        Co: ArrayLength
+        Co: ArrayLength,
     {
         pub audio_inputs: Option<GenericArray<AudioInputPort, Ai>>,
         pub audio_outputs: Option<GenericArray<AudioOutputPort, Ao>>,
         pub control_inputs: Option<GenericArray<ControlInputPort, Ci>>,
-        pub control_outputs: Option<GenericArray<ControlOutputPort, Co>>,   
+        pub control_outputs: Option<GenericArray<ControlOutputPort, Co>>,
     }
 
     struct ExampleNode<Ai, Ao, Ci, Co>
@@ -270,9 +273,9 @@ mod test {
         Ai: ArrayLength,
         Ao: ArrayLength,
         Ci: ArrayLength,
-        Co: ArrayLength
+        Co: ArrayLength,
     {
-        ports: ExamplePorts<Ai, Ao, Ci, Co>
+        ports: ExamplePorts<Ai, Ao, Ci, Co>,
     }
 
     type AudioIn = U1;
@@ -296,11 +299,12 @@ mod test {
                     index: 0,
                 },
             }];
-            Self { 
-                audio_inputs: Some(ai), 
-                audio_outputs: Some(ao), 
-                control_inputs: None, 
-                control_outputs: None }
+            Self {
+                audio_inputs: Some(ai),
+                audio_outputs: Some(ao),
+                control_inputs: None,
+                control_outputs: None,
+            }
         }
     }
 
@@ -318,19 +322,28 @@ mod test {
         Ai: ArrayLength,
         Ao: ArrayLength,
         Ci: ArrayLength,
-        Co: ArrayLength
+        Co: ArrayLength,
     {
         fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {
-            self.ports.audio_inputs.as_ref().map(GenericArray::as_slice)        
+            self.ports.audio_inputs.as_ref().map(GenericArray::as_slice)
         }
         fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]> {
-            self.ports.audio_outputs.as_ref().map(GenericArray::as_slice)        
+            self.ports
+                .audio_outputs
+                .as_ref()
+                .map(GenericArray::as_slice)
         }
         fn get_control_inputs(&self) -> Option<&[ControlInputPort]> {
-            self.ports.control_inputs.as_ref().map(GenericArray::as_slice)        
+            self.ports
+                .control_inputs
+                .as_ref()
+                .map(GenericArray::as_slice)
         }
         fn get_control_outputs(&self) -> Option<&[ControlOutputPort]> {
-            self.ports.control_outputs.as_ref().map(GenericArray::as_slice)        
+            self.ports
+                .control_outputs
+                .as_ref()
+                .map(GenericArray::as_slice)
         }
     }
 
@@ -339,7 +352,7 @@ mod test {
         Ai: ArrayLength,
         Ao: ArrayLength,
         Ci: ArrayLength,
-        Co: ArrayLength
+        Co: ArrayLength,
     {
         fn process(
             &mut self,
@@ -381,13 +394,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         graph
@@ -395,13 +408,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
 
@@ -421,27 +434,27 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .expect("Could not add e1");
         let e2 = graph
-           .add_edge(Connection {
+            .add_edge(Connection {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .expect("Could not add e2");
 
@@ -483,13 +496,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         graph
@@ -497,13 +510,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         graph
@@ -511,27 +524,27 @@ mod test {
                 source: ConnectionEntry {
                     node_key: d,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         graph
-           .add_edge(Connection {
+            .add_edge(Connection {
                 source: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: e,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
 
@@ -549,13 +562,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         // Should return error from cycle
@@ -563,13 +576,13 @@ mod test {
             source: ConnectionEntry {
                 node_key: b,
                 port_index: 0,
-                port_rate: PortRate::Audio
+                port_rate: PortRate::Audio,
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio
-            }
+                port_rate: PortRate::Audio,
+            },
         });
 
         let res = graph.invalidate_topo_sort();
@@ -584,13 +597,13 @@ mod test {
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio
+                port_rate: PortRate::Audio,
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio
-            }
+                port_rate: PortRate::Audio,
+            },
         });
         assert_eq!(res, Err(CycleDetected));
     }
@@ -615,13 +628,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
         graph
@@ -629,13 +642,13 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio
+                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio
-                }
+                    port_rate: PortRate::Audio,
+                },
             })
             .unwrap();
 
@@ -659,17 +672,17 @@ mod test {
             temp
         };
         let res = graph.add_edge(Connection {
-                source: ConnectionEntry {
-                    node_key: a,
-                    port_index: 0,
-                    port_rate: PortRate::Audio
-                },
-                sink: ConnectionEntry {
-                    node_key: nonexistent_key,
-                    port_index: 0,
-                    port_rate: PortRate::Audio
-                }
-            });
+            source: ConnectionEntry {
+                node_key: a,
+                port_index: 0,
+                port_rate: PortRate::Audio,
+            },
+            sink: ConnectionEntry {
+                node_key: nonexistent_key,
+                port_index: 0,
+                port_rate: PortRate::Audio,
+            },
+        });
         assert_eq!(
             res.unwrap_err(),
             crate::engine::graph::GraphError::BadConnection
