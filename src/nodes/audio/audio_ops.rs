@@ -13,7 +13,7 @@ where
 }
 
 impl<Ao> ApplyOp<Ao> where Ao: ArrayLength {
-    pub fn default(op: fn(f32, f32) -> f32, b: f32) -> Self {
+    pub fn new(op: fn(f32, f32) -> f32, b: f32) -> Self {
         Self {
             op,
             b,
@@ -37,6 +37,8 @@ impl<const AF: usize, const CF: usize, C> Node<AF, CF> for ApplyOp<C> where C: A
         ) {
         debug_assert_eq!(C::USIZE, ai.len());
         debug_assert_eq!(C::USIZE, ao.len());
+
+        // TODO: Control!
 
         for n in 0..AF {
             for c in 0..C::USIZE {

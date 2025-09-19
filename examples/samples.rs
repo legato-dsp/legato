@@ -102,6 +102,8 @@ fn main() {
     });
 
 
+
+    
     runtime.set_sink_key(sampler).expect("Bad sink key!");
 
     #[cfg(target_os = "linux")]
