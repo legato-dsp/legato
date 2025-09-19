@@ -92,6 +92,10 @@ fn main() {
 
     let mixer = runtime.add_node_api(Nodes::TwoTrackStereoMixer).unwrap();
 
+    let delay_gain = runtime
+        .add_node_api(Nodes::MultStereo { props: 0.8 })
+        .unwrap();
+
     runtime
         .add_edge(Connection {
             source: ConnectionEntry {
@@ -156,6 +160,36 @@ fn main() {
         .add_edge(Connection {
             source: ConnectionEntry {
                 node_key: delay_read,
+                port_index: 0,
+                port_rate: PortRate::Audio,
+            },
+            sink: ConnectionEntry {
+                node_key: delay_gain,
+                port_index: 0,
+                port_rate: PortRate::Audio,
+            },
+        })
+        .unwrap();
+
+    runtime
+        .add_edge(Connection {
+            source: ConnectionEntry {
+                node_key: delay_read,
+                port_index: 1,
+                port_rate: PortRate::Audio,
+            },
+            sink: ConnectionEntry {
+                node_key: delay_gain,
+                port_index: 1,
+                port_rate: PortRate::Audio,
+            },
+        })
+        .unwrap();
+
+    runtime
+        .add_edge(Connection {
+            source: ConnectionEntry {
+                node_key: delay_gain,
                 port_index: 0,
                 port_rate: PortRate::Audio,
             },
@@ -170,7 +204,7 @@ fn main() {
     runtime
         .add_edge(Connection {
             source: ConnectionEntry {
-                node_key: delay_read,
+                node_key: delay_gain,
                 port_index: 1,
                 port_rate: PortRate::Audio,
             },
