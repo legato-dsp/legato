@@ -47,7 +47,8 @@ fn run<const AF: usize, const CF: usize, const C: usize>(
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            // assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            write_data_cpal(data, &mut runtime);
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,

@@ -87,6 +87,8 @@ where
         let read_pos = (self.write_pos[channel] as f32 - offset).rem_euclid(self.capacity as f32);
 
         let pos_floor = read_pos.floor() as usize;
+        let pos_floor = pos_floor.min(self.capacity - 1); // clamp to valid index
+
         let next_sample = (pos_floor + 1) % self.capacity; // TODO: can we have some sort of mask if we make the delay a power of 2?
 
         let buffer = &self.buffers[channel];

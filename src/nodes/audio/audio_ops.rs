@@ -1,4 +1,3 @@
-use assert_no_alloc::permit_alloc;
 use generic_array::ArrayLength;
 use typenum::{U0, U1};
 
