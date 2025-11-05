@@ -1,14 +1,13 @@
-use std::{cell::UnsafeCell, iter::Cycle, ops::Add, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use arc_swap::ArcSwapOption;
-use generic_array::GenericArray;
+use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
     engine::{
-        audio_context::{AudioContext, DelayLineKey},
+        audio_context::DelayLineKey,
         graph::NodeKey,
         node::Node,
-        port::Mono,
         runtime::Runtime,
     },
     nodes::audio::{
@@ -105,7 +104,7 @@ pub trait RuntimeBuilder<const AF: usize> {
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError>;
 }
 
-impl<const AF: usize, const CF: usize, const C: usize> RuntimeBuilder<AF> for Runtime<AF, CF, C> {
+impl<const AF: usize, const CF: usize, C> RuntimeBuilder<AF> for Runtime<AF, CF, C> where C: ArrayLength {
     fn add_node_api(
         &mut self,
         node: Nodes<AF>,

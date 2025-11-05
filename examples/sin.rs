@@ -3,6 +3,7 @@ use cpal::{
     Device,
 };
 use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
+use generic_array::ArrayLength;
 use legato::engine::{builder::RuntimeBuilder, graph::ConnectionEntry, port::PortRate};
 use legato::{
     backend::write_data_cpal,
@@ -14,6 +15,7 @@ use legato::{
 };
 
 use assert_no_alloc::*;
+use typenum::U2;
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -33,11 +35,11 @@ const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 const CAPACITY: usize = 16;
 const CHANNEL_COUNT: usize = 2;
 
-fn run<const AF: usize, const CF: usize, const C: usize>(
+fn run<const AF: usize, const CF: usize, C>(
     device: &Device,
     config: &StreamConfig,
     mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> {
+) -> Result<(), BuildStreamError> where C: ArrayLength + Send {
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -55,7 +57,7 @@ fn run<const AF: usize, const CF: usize, const C: usize>(
 }
 
 fn main() {
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, CHANNEL_COUNT> =
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2> =
         build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
 
     let (a, _) = runtime

@@ -30,7 +30,9 @@ use crate::{
 /// there is a bit of complixity with the overlapping and
 /// partioning logic required. I would appreciate some help
 /// designing a generalized solution for the above frequency domain
-/// problem.
+/// problem. From my understanding, its something along the lines 
+/// of splitting a long impulse response into a bunch of smaller power of 2
+/// chunks, and having a spectral delay line that then synchronizes these.
 
 pub struct FirFilter<C>
 where

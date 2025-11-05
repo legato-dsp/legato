@@ -1,4 +1,4 @@
-use std::task::Context;
+use std::marker::PhantomData;
 
 use crate::engine::{
     audio_context::AudioContext,
@@ -6,12 +6,13 @@ use crate::engine::{
     graph::{AudioGraph, AudioNode, Connection, GraphError, NodeKey},
     port::PortRate,
 };
+use generic_array::ArrayLength;
 use slotmap::SecondaryMap;
 
 // Arbitrary max init. inputs
 pub const MAX_INITIAL_INPUTS: usize = 32;
 
-pub struct Runtime<const AF: usize, const CF: usize, const CHANNELS: usize> {
+pub struct Runtime<const AF: usize, const CF: usize, C> where C: ArrayLength {
     // Audio context containing sample rate, control rate, etc.
     context: AudioContext<AF>,
     graph: AudioGraph<AF, CF>,
@@ -23,8 +24,9 @@ pub struct Runtime<const AF: usize, const CF: usize, const CHANNELS: usize> {
     control_inputs_scratch_buffers: Vec<Buffer<CF>>,
     // An optional sink key for chaining graphs as nodes, delivering f32 values, etc.
     sink_key: Option<NodeKey>,
+    phantom: PhantomData<C>,
 }
-impl<'a, const AF: usize, const CF: usize, const CHANNELS: usize> Runtime<AF, CF, CHANNELS> {
+impl<'a, const AF: usize, const CF: usize, C> Runtime<AF, CF, C> where C: ArrayLength {
     pub fn new(context: AudioContext<AF>, graph: AudioGraph<AF, CF>) -> Self {
         let audio_sources = SecondaryMap::with_capacity(graph.len());
         let control_sources = SecondaryMap::with_capacity(graph.len());
@@ -36,6 +38,7 @@ impl<'a, const AF: usize, const CF: usize, const CHANNELS: usize> Runtime<AF, CF
             audio_inputs_scratch_buffers: vec![Buffer::<AF>::SILENT; MAX_INITIAL_INPUTS],
             control_inputs_scratch_buffers: vec![Buffer::<CF>::SILENT; MAX_INITIAL_INPUTS],
             sink_key: None,
+            phantom: PhantomData::<C>
         }
     }
     pub fn add_node(&mut self, node: AudioNode<AF, CF>) -> NodeKey {
@@ -147,13 +150,13 @@ impl<'a, const AF: usize, const CF: usize, const CHANNELS: usize> Runtime<AF, CF
     }
 }
 
-pub fn build_runtime<const AF: usize, const CF: usize, const CHANNEL_SIZE: usize>(
+pub fn build_runtime<const AF: usize, const CF: usize, C> (
     initial_capacity: usize,
     sample_rate: f32,
     control_rate: f32,
-) -> Runtime<AF, CF, CHANNEL_SIZE> {
+)   -> Runtime<AF, CF, C> where C: ArrayLength {
     let graph = AudioGraph::with_capacity(initial_capacity);
     let context = AudioContext::new(sample_rate, control_rate);
 
-    Runtime::new(context, graph)
+    Runtime::<AF, CF, C>::new(context, graph)
 }

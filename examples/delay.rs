@@ -6,6 +6,7 @@ use cpal::{
     Device,
 };
 use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
+use generic_array::ArrayLength;
 use legato::{
     backend::write_data_cpal,
     engine::{
@@ -18,6 +19,7 @@ use legato::{
 use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 
 use assert_no_alloc::*;
+use typenum::{U2, Unsigned};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -35,13 +37,12 @@ const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
 const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 
 const CAPACITY: usize = 16;
-const CHANNEL_COUNT: usize = 2;
 
-fn run<const AF: usize, const CF: usize, const C: usize>(
+fn run<const AF: usize, const CF: usize, C>(
     device: &Device,
     config: &StreamConfig,
     mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> {
+) -> Result<(), BuildStreamError> where C: ArrayLength + Send {
     let stream = device.build_output_stream(
         &config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -60,7 +61,8 @@ fn run<const AF: usize, const CF: usize, const C: usize>(
 }
 
 fn main() {
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, CHANNEL_COUNT> =
+    // Use U2 to define two channels
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2> =
         build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
 
     let data = Arc::new(ArcSwapOption::new(None));
@@ -262,7 +264,7 @@ fn main() {
     let device = host.default_output_device().unwrap();
 
     let config = StreamConfig {
-        channels: CHANNEL_COUNT as u16,
+        channels: U2::U16,
         sample_rate: SampleRate(SAMPLE_RATE as u32),
         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
     };

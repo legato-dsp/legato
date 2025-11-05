@@ -6,3 +6,4 @@ pub mod osc;
 pub mod oversample;
 pub mod sampler;
 pub mod stereo;
+pub mod subgraph;
