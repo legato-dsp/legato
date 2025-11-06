@@ -9,16 +9,26 @@ use crate::{
     },
 };
 
+/// A naive FIR filter implementation.
+/// 
 /// TODO: A ring buffer and per sample is convenient,
 /// but this would likely have much better performance
 /// if we rewrite this as a fixed size down the line, for
 /// auto-vectorization, and maybe eventually
 /// some SIMD/intrinsics.
+/// 
+/// My "dream DX", is something like a ringbuffer that we can use
+/// in multiple places, that gives packed SIMD values, 
+/// and an optional remainder as well. Bonus points for doing
+/// SIMD linear interp, hermite interp, etc.
+/// 
+/// We can probably easily use FMA operations here as well down the line, 
+/// but I will take a peak at this once the functionality is in place.
 ///
 /// It's also worth noting that this operation in the
 /// time domain is O(n * m).
 ///
-/// This is only effiecient with small kernels,
+/// This is only a good approach with small kernels,
 /// for larger kernels, the operation is better in the frequency
 /// domain, which we might implement later. But, doing FFT on the
 /// input has a larger overhead until we reach fairly large kernel sizes.
@@ -33,12 +43,15 @@ use crate::{
 /// problem. From my understanding, its something along the lines 
 /// of splitting a long impulse response into a bunch of smaller power of 2
 /// chunks, and having a spectral delay line that then synchronizes these.
+/// 
+/// For designing FIR filters, I have really been enjoying Numpy/SciPy. 
+/// When you use the UV manager suddeny I don't mind working with Python again.
 
 pub struct FirFilter<C>
 where
     C: ArrayLength,
 {
-    kernel: Vec<f32>,
+    coeffs: Vec<f32>,
     buffers: GenericArray<RingBuffer, C>,
     ports: Ports<C, C, U0, U0>,
 }
@@ -47,10 +60,10 @@ impl<C> FirFilter<C>
 where
     C: ArrayLength,
 {
-    pub fn new(kernel: Vec<f32>) -> Self {
-        let length = kernel.len();
+    pub fn new(coeffs: Vec<f32>) -> Self {
+        let length = coeffs.len();
         Self {
-            kernel,
+            coeffs,
             buffers: GenericArray::generate(|_| RingBuffer::with_capacity(length)),
             ports: Ports {
                 audio_inputs: Some(generate_audio_inputs()),
@@ -79,11 +92,11 @@ where
 
             let input = ai[c];
             let out = &mut ao[c];
-
+            // I don't think the auto-vectorization gods can save me here
             for (n, &x) in input.iter().enumerate() {
                 buffer.push(x);
                 let mut y = 0.0;
-                for (k, &h) in self.kernel.iter().enumerate() {
+                for (k, &h) in self.coeffs.iter().enumerate() {
                     y += h * buffer.get(k);
                 }
                 out[n] = y;
