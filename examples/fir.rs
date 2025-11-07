@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc, time::Duration};
 
 use arc_swap::ArcSwapOption;
 use cpal::{
@@ -13,9 +13,9 @@ use legato::{
         builder::Nodes,
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
-        runtime::{build_runtime, Runtime},
+        runtime::{Runtime, build_runtime},
     },
-    nodes::utils::port_utils::generate_audio_outputs,
+    nodes::utils::{port_utils::generate_audio_outputs, render::render},
 };
 use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 
@@ -210,19 +210,21 @@ fn main() {
 
     runtime.set_sink_key(fir).expect("Bad sink key!");
 
-    #[cfg(target_os = "linux")]
-    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
+    // #[cfg(target_os = "linux")]
+    // let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
 
-    let device = host.default_output_device().unwrap();
+    // let device = host.default_output_device().unwrap();
 
-    let config = StreamConfig {
-        channels: CHANNEL_COUNT as u16,
-        sample_rate: SampleRate(SAMPLE_RATE),
-        buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
-    };
+    // let config = StreamConfig {
+    //     channels: CHANNEL_COUNT as u16,
+    //     sample_rate: SampleRate(SAMPLE_RATE),
+    //     buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
+    // };
 
-    run(&device, &config, runtime).expect("Runtime panic!");
+    let path = Path::new("example.wav");
+
+    render(runtime, path, SAMPLE_RATE, Duration::from_secs(5)).unwrap();
 }
