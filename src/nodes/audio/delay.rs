@@ -45,7 +45,7 @@ where
         let buffers = GenericArray::generate(|_| vec![0.0; capacity]);
         Self {
             buffers,
-            capacity: capacity,
+            capacity,
             write_pos: GenericArray::generate(|_| 0),
         }
     }

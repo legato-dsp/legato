@@ -4,7 +4,6 @@ use cpal::{
 };
 use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
 use generic_array::ArrayLength;
-use legato::engine::{builder::RuntimeBuilder, graph::ConnectionEntry, port::PortRate};
 use legato::{
     backend::write_data_cpal,
     engine::{
@@ -13,9 +12,17 @@ use legato::{
         runtime::{build_runtime, Runtime},
     },
 };
+use legato::{
+    engine::{
+        builder::RuntimeBuilder,
+        graph::ConnectionEntry,
+        port::{PortRate, Ports},
+    },
+    nodes::utils::port_utils::generate_audio_outputs,
+};
 
 use assert_no_alloc::*;
-use typenum::U2;
+use typenum::{U0, U2};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -35,15 +42,20 @@ const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 const CAPACITY: usize = 16;
 const CHANNEL_COUNT: usize = 2;
 
-fn run<const AF: usize, const CF: usize, C>(
+fn run<const AF: usize, const CF: usize, C, Ci>(
     device: &Device,
     config: &StreamConfig,
-    mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> where C: ArrayLength + Send {
+    mut runtime: Runtime<AF, CF, C, Ci>,
+) -> Result<(), BuildStreamError>
+where
+    C: ArrayLength + Send,
+    Ci: ArrayLength + Send,
+{
     let stream = device.build_output_stream(
-        &config,
+        config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            // assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            write_data_cpal(data, &mut runtime);
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,
@@ -57,8 +69,17 @@ fn run<const AF: usize, const CF: usize, C>(
 }
 
 fn main() {
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2> =
-        build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2, U0> = build_runtime(
+        CAPACITY,
+        SAMPLE_RATE as f32,
+        CONTROL_RATE,
+        Ports {
+            audio_inputs: None,
+            audio_outputs: Some(generate_audio_outputs()),
+            control_inputs: None,
+            control_outputs: None,
+        },
+    );
 
     let (a, _) = runtime
         .add_node_api(Nodes::OscMono)
@@ -93,7 +114,7 @@ fn main() {
 
     let config = StreamConfig {
         channels: CHANNEL_COUNT as u16,
-        sample_rate: SampleRate(SAMPLE_RATE as u32),
+        sample_rate: SampleRate(SAMPLE_RATE),
         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
     };
 

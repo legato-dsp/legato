@@ -13,8 +13,8 @@ pub struct AudioContext<const N: usize> {
 impl<const N: usize> AudioContext<N> {
     pub fn new(sample_rate: f32, control_rate: f32) -> Self {
         Self {
-            sample_rate: sample_rate,
-            control_rate: control_rate,
+            sample_rate,
+            control_rate,
             delay_lines: SlotMap::default(),
         }
     }

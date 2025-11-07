@@ -84,7 +84,7 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
         self.nodes.len()
     }
 
-    pub fn get_nodes_and_runtime_info(
+    pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
     ) -> (
         &Vec<NodeKey>,
@@ -239,10 +239,9 @@ impl<const AF: usize, const CF: usize> AudioGraph<AF, CF> {
 
 #[cfg(test)]
 mod test {
-    use std::ops::Add;
 
     use generic_array::{arr, ArrayLength, GenericArray};
-    use typenum::{Sum, Unsigned, U0, U1};
+    use typenum::{U0, U1};
 
     use crate::engine::audio_context::AudioContext;
     use crate::engine::graph::GraphError::CycleDetected;

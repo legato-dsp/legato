@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use cpal::{
@@ -10,16 +10,17 @@ use generic_array::ArrayLength;
 use legato::{
     backend::write_data_cpal,
     engine::{
-        builder::{Nodes},
+        builder::Nodes,
         graph::{Connection, ConnectionEntry},
-        port::PortRate,
+        port::{PortRate, Ports},
         runtime::{build_runtime, Runtime},
     },
+    nodes::utils::port_utils::generate_audio_outputs,
 };
 use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 
 use assert_no_alloc::*;
-use typenum::U2;
+use typenum::{U0, U2};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -39,15 +40,20 @@ const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 const CAPACITY: usize = 16;
 const CHANNEL_COUNT: usize = 2;
 
-fn run<const AF: usize, const CF: usize, C>(
+fn run<const AF: usize, const CF: usize, C, Ci>(
     device: &Device,
     config: &StreamConfig,
-    mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> where C: ArrayLength + Send {
+    mut runtime: Runtime<AF, CF, C, Ci>,
+) -> Result<(), BuildStreamError>
+where
+    C: ArrayLength + Send,
+    Ci: ArrayLength + Send,
+{
     let stream = device.build_output_stream(
-        &config,
+        config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            // assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
+            write_data_cpal(data, &mut runtime);
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,
@@ -61,8 +67,17 @@ fn run<const AF: usize, const CF: usize, C>(
 }
 
 fn main() {
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2> =
-        build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2, U0> = build_runtime(
+        CAPACITY,
+        SAMPLE_RATE as f32,
+        CONTROL_RATE,
+        Ports {
+            audio_inputs: None,
+            audio_outputs: Some(generate_audio_outputs()),
+            control_inputs: None,
+            control_outputs: None,
+        },
+    );
 
     let data = Arc::new(ArcSwapOption::new(None));
     let backend = AudioSampleBackend::new(data.clone());
@@ -71,81 +86,81 @@ fn main() {
     // Here is a cool tool, the blog post is great as well: https://fiiir.com/
     let coeffs: Vec<f32> = vec![
         0.0,
-        -0.000005844052064368,
-        -0.000023820134943225,
-        -0.000054014799697821,
-        -0.000095582479747764,
-        -0.000146488652240137,
-        -0.000203195486496576,
-        -0.000260312240141828,
-        -0.000310242125590523,
-        -0.000342864778695147,
-        -0.000345297969930517,
-        -0.000301783157890913,
-        -0.000193736507668975,
+        -0.000_005_844_052,
+        -0.000_023_820_136,
+        -0.000_054_014_8,
+        -0.000_095_582_48,
+        -0.000_146_488_66,
+        -0.000_203_195_5,
+        -0.000_260_312_23,
+        -0.000_310_242_12,
+        -0.000_342_864_78,
+        -0.000_345_297_97,
+        -0.000_301_783_15,
+        -0.000_193_736_5,
         0.0,
-        0.000302683516790705,
-        0.00073896146790474,
-        0.0013339353699943,
-        0.00211202142599331,
-        0.003095649626814402,
-        0.004303859403838475,
-        0.005750863568281213,
-        0.007444662160847579,
-        0.009385792950955006,
-        0.011566304999335716,
-        0.013969035618708839,
-        0.01656725931600208,
-        0.019324760360190832,
-        0.02219635935780855,
-        0.025128899832021673,
-        0.028062674748091803,
-        0.030933246829661972,
-        0.03367359204427679,
-        0.03621647442207788,
-        0.038496943856761,
-        0.04045483789687657,
-        0.042037164583643,
-        0.04320024652348417,
-        0.04391151654101618,
-        0.044150871927461845,
-        0.04391151654101618,
-        0.04320024652348417,
-        0.042037164583643004,
-        0.04045483789687657,
-        0.038496943856761,
-        0.03621647442207789,
-        0.03367359204427679,
-        0.03093324682966199,
-        0.028062674748091803,
-        0.02512889983202168,
-        0.022196359357808556,
-        0.019324760360190832,
-        0.01656725931600209,
-        0.013969035618708835,
-        0.011566304999335721,
-        0.00938579295095501,
-        0.007444662160847576,
-        0.005750863568281216,
-        0.004303859403838477,
-        0.003095649626814402,
-        0.002112021425993311,
-        0.001333935369994301,
-        0.000738961467904741,
-        0.000302683516790706,
+        0.000_302_683_5,
+        0.000_738_961_45,
+        0.001_333_935_4,
+        0.002_112_021_4,
+        0.003_095_649_6,
+        0.004_303_859_5,
+        0.005_750_863_3,
+        0.007_444_662,
+        0.009_385_793,
+        0.011_566_305,
+        0.013_969_036,
+        0.016_567_26,
+        0.019_324_76,
+        0.022_196_36,
+        0.025_128_9,
+        0.028_062_675,
+        0.030_933_246,
+        0.033_673_592,
+        0.036_216_475,
+        0.038_496_945,
+        0.040_454_84,
+        0.042_037_163,
+        0.043_200_247,
+        0.043_911_517,
+        0.044_150_87,
+        0.043_911_517,
+        0.043_200_247,
+        0.042_037_163,
+        0.040_454_84,
+        0.038_496_945,
+        0.036_216_475,
+        0.033_673_592,
+        0.030_933_246,
+        0.028_062_675,
+        0.025_128_9,
+        0.022_196_36,
+        0.019_324_76,
+        0.016_567_26,
+        0.013_969_036,
+        0.011_566_305,
+        0.009_385_793,
+        0.007_444_662,
+        0.005_750_863_3,
+        0.004_303_859_5,
+        0.003_095_649_6,
+        0.002_112_021_4,
+        0.001_333_935_4,
+        0.000_738_961_45,
+        0.000_302_683_5,
         0.0,
-        -0.000193736507668975,
-        -0.000301783157890913,
-        -0.000345297969930516,
-        -0.000342864778695147,
-        -0.000310242125590522,
-        -0.000260312240141827,
-        -0.000203195486496576,
-        -0.000146488652240137,
-        -0.000095582479747764,
-        -0.000054014799697822,
-        -0.000023820134943225,
-        -0.000005844052064368,
+        -0.000_193_736_5,
+        -0.000_301_783_15,
+        -0.000_345_297_97,
+        -0.000_342_864_78,
+        -0.000_310_242_12,
+        -0.000_260_312_23,
+        -0.000_203_195_5,
+        -0.000_146_488_66,
+        -0.000_095_582_48,
+        -0.000_054_014_8,
+        -0.000_023_820_136,
+        -0.000_005_844_052,
         0.0,
     ];
 
@@ -159,7 +174,7 @@ fn main() {
         })
         .expect("Could not add sampler");
 
-    let _ = backend
+    backend
         .load_file("./samples/amen.wav")
         .expect("Could not load amen sample!");
 
@@ -205,7 +220,7 @@ fn main() {
 
     let config = StreamConfig {
         channels: CHANNEL_COUNT as u16,
-        sample_rate: SampleRate(SAMPLE_RATE as u32),
+        sample_rate: SampleRate(SAMPLE_RATE),
         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
     };
 

@@ -8,3 +8,5 @@ A few features are still planned:
 - SIMD integration for hot paths like FIR, interpolation, etc.
 - Tuned NixOS images
 - MIDI context and graph
+- Fancy docs and examples
+- Symponia integration instead of FFMPEG

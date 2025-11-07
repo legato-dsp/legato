@@ -90,28 +90,25 @@ where
     ) {
         permit_alloc(|| {
             // 128 bytes allocated in the load_full. Can we do better?
-            match self.data.load_full() {
-                Some(buf) => {
-                    let len = buf[0].len();
-                    for n in 0..AF {
-                        let i = self.read_pos + n;
-                        for c in 0..Ao::USIZE {
-                            ao[c][n] = if i < len {
-                                buf[c][i]
-                            } else if self.is_looping {
-                                buf[c][i % len]
-                            } else {
-                                0.0
-                            };
-                        }
+            if let Some(buf) = self.data.load_full() {
+                let len = buf[0].len();
+                for n in 0..AF {
+                    let i = self.read_pos + n;
+                    for c in 0..Ao::USIZE {
+                        ao[c][n] = if i < len {
+                            buf[c][i]
+                        } else if self.is_looping {
+                            buf[c][i % len]
+                        } else {
+                            0.0
+                        };
                     }
-                    self.read_pos = if self.is_looping {
-                        (self.read_pos + AF) % len // If we're looping, wrap around
-                    } else {
-                        (self.read_pos + AF).min(len) // If we're not looping, cap at the end
-                    };
                 }
-                None => (),
+                self.read_pos = if self.is_looping {
+                    (self.read_pos + AF) % len // If we're looping, wrap around
+                } else {
+                    (self.read_pos + AF).min(len) // If we're not looping, cap at the end
+                };
             }
         })
     }

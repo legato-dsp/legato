@@ -12,14 +12,15 @@ use legato::{
     engine::{
         builder::{AddNodeResponse, Nodes},
         graph::{Connection, ConnectionEntry},
-        port::PortRate,
+        port::{PortRate, Ports},
         runtime::{build_runtime, Runtime},
     },
+    nodes::utils::port_utils::generate_audio_outputs,
 };
 use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 
 use assert_no_alloc::*;
-use typenum::{U2, Unsigned};
+use typenum::{Unsigned, U0, U2};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -38,13 +39,17 @@ const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 
 const CAPACITY: usize = 16;
 
-fn run<const AF: usize, const CF: usize, C>(
+fn run<const AF: usize, const CF: usize, C, Ci>(
     device: &Device,
     config: &StreamConfig,
-    mut runtime: Runtime<AF, CF, C>,
-) -> Result<(), BuildStreamError> where C: ArrayLength + Send {
+    mut runtime: Runtime<AF, CF, C, Ci>,
+) -> Result<(), BuildStreamError>
+where
+    C: ArrayLength + Send,
+    Ci: ArrayLength + Send,
+{
     let stream = device.build_output_stream(
-        &config,
+        config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             // assert_no_alloc(|| write_data_cpal::<AF, CF, C, f32>(data, &mut runtime))
             write_data_cpal(data, &mut runtime);
@@ -62,8 +67,17 @@ fn run<const AF: usize, const CF: usize, C>(
 
 fn main() {
     // Use U2 to define two channels
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2> =
-        build_runtime(CAPACITY, SAMPLE_RATE as f32, CONTROL_RATE);
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2, U0> = build_runtime(
+        CAPACITY,
+        SAMPLE_RATE as f32,
+        CONTROL_RATE,
+        Ports {
+            audio_inputs: None,
+            audio_outputs: Some(generate_audio_outputs()),
+            control_inputs: None,
+            control_outputs: None,
+        },
+    );
 
     let data = Arc::new(ArcSwapOption::new(None));
     let backend = AudioSampleBackend::new(data.clone());
@@ -74,7 +88,7 @@ fn main() {
         })
         .expect("Could not add sampler");
 
-    let _ = backend
+    backend
         .load_file("./samples/amen.wav")
         .expect("Could not load amen sample!");
 
@@ -86,9 +100,7 @@ fn main() {
 
     let res = delay_write_key_res.unwrap();
 
-    let delay_key = match res {
-        AddNodeResponse::DelayWrite(delay_key) => delay_key,
-    };
+    let AddNodeResponse::DelayWrite(delay_key) = res;
 
     let (delay_read, _) = runtime
         .add_node_api(Nodes::DelayReadStereo {
@@ -265,7 +277,7 @@ fn main() {
 
     let config = StreamConfig {
         channels: U2::U16,
-        sample_rate: SampleRate(SAMPLE_RATE as u32),
+        sample_rate: SampleRate(SAMPLE_RATE),
         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
     };
 

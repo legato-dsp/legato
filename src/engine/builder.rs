@@ -4,12 +4,7 @@ use arc_swap::ArcSwapOption;
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
-    engine::{
-        audio_context::DelayLineKey,
-        graph::NodeKey,
-        node::Node,
-        runtime::Runtime,
-    },
+    engine::{audio_context::DelayLineKey, graph::NodeKey, node::Node, runtime::Runtime},
     nodes::audio::{
         audio_ops::{ApplyOpMono, ApplyOpStereo},
         delay::{DelayLine, DelayReadMono, DelayReadStereo, DelayWriteMono, DelayWriteStereo},
@@ -104,7 +99,11 @@ pub trait RuntimeBuilder<const AF: usize> {
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError>;
 }
 
-impl<const AF: usize, const CF: usize, C> RuntimeBuilder<AF> for Runtime<AF, CF, C> where C: ArrayLength {
+impl<const AF: usize, const CF: usize, C, Ci> RuntimeBuilder<AF> for Runtime<AF, CF, C, Ci>
+where
+    C: ArrayLength,
+    Ci: ArrayLength,
+{
     fn add_node_api(
         &mut self,
         node: Nodes<AF>,
