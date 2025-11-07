@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use arc_swap::ArcSwapOption;
 use cpal::{
@@ -13,9 +13,9 @@ use legato::{
         builder::{AddNodeResponse, Nodes},
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
-        runtime::{build_runtime, Runtime},
+        runtime::{Runtime, build_runtime},
     },
-    nodes::utils::port_utils::generate_audio_outputs,
+    nodes::utils::{port_utils::generate_audio_outputs, render::render},
 };
 use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 
@@ -283,5 +283,9 @@ fn main() {
         buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
     };
 
-    run(&device, &config, runtime).expect("Runtime panic!");
+    // run(&device, &config, runtime).expect("Runtime panic!");
+
+    let path = Path::new("example.wav");
+
+    render(runtime, path, SAMPLE_RATE, Duration::from_secs(5)).unwrap();
 }
