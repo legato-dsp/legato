@@ -1,6 +1,15 @@
-# Legato
+<img width="1602" height="326" alt="Logo" src="https://github.com/user-attachments/assets/c15ecbbf-604c-450d-843f-d6108f96700a" />
 
-This is a WIP audio graph framework for Rust.
+
+
+
+
+
+### What is Legato?
+
+Legato is a WIP audio graph framework for Rust, that aims to combine the graph based processing of tools like PureData and MaxMSP,
+with the utilities found in more robust frameworks like JUCE.
+
 
 ### Getting Started
 
