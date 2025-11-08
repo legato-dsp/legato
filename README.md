@@ -10,6 +10,7 @@
 Legato is a WIP audio graph framework for Rust, that aims to combine the graph based processing of tools like PureData and MaxMSP,
 with the utilities found in more robust frameworks like JUCE.
 
+It takes some inspiration from a few Rust DSP libraries, mostly FunDSP, with some requirements changed to make it behave more like PureData.
 
 ### Getting Started
 
