@@ -1,26 +1,26 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{path::Path, time::Duration};
 
-use arc_swap::ArcSwapOption;
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, StreamTrait},
     Device,
 };
-use cpal::{BufferSize, BuildStreamError, SampleRate, StreamConfig};
+use cpal::{BuildStreamError, StreamConfig};
 use generic_array::ArrayLength;
 use legato::{
     backend::write_data_cpal,
     engine::{
-        builder::{AddNodeResponse, Nodes},
-        graph::{Connection, ConnectionEntry},
-        port::{PortRate, Ports},
-        runtime::{Runtime, build_runtime},
+        builder::Nodes,
+        runtime::{build_runtime, Runtime},
     },
-    nodes::utils::{port_utils::generate_audio_outputs, render::render},
+    nodes::utils::render::render,
 };
-use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
+use legato::{
+    engine::{builder::RuntimeBuilder, port::Ports},
+    nodes::utils::port_utils::generate_audio_outputs,
+};
 
 use assert_no_alloc::*;
-use typenum::{Unsigned, U0, U2};
+use typenum::{U0, U1, U2};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -28,8 +28,8 @@ static A: AllocDisabler = AllocDisabler;
 
 // TODO: We configure this somewhere?
 
-const SAMPLE_RATE: u32 = 48_000;
-const BLOCK_SIZE: usize = 1024;
+const SAMPLE_RATE: u32 = 44_100;
+const BLOCK_SIZE: usize = 2048;
 
 const DECIMATION_FACTOR: f32 = 32.0;
 
@@ -38,6 +38,7 @@ const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
 const CONTROL_FRAME_SIZE: usize = BLOCK_SIZE / DECIMATION_FACTOR as usize;
 
 const CAPACITY: usize = 16;
+const CHANNEL_COUNT: usize = 2;
 
 fn run<const AF: usize, const CF: usize, C, Ci>(
     device: &Device,
@@ -66,8 +67,7 @@ where
 }
 
 fn main() {
-    // Use U2 to define two channels
-    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U2, U0> = build_runtime(
+    let mut runtime: Runtime<BLOCK_SIZE, CONTROL_FRAME_SIZE, U1, U0> = build_runtime(
         CAPACITY,
         SAMPLE_RATE as f32,
         CONTROL_RATE,
@@ -79,55 +79,28 @@ fn main() {
         },
     );
 
-    let (osc_one, _) = runtime.add_node_api(Nodes::OscMono { freq: 440.0 * (5.0 / 4.0) }).unwrap();
+    const DOUBLE_SIZE: usize = BLOCK_SIZE * 2;
 
-    let (osc_two, _) = runtime.add_node_api(Nodes::OscStereo { freq: 440.0  }).unwrap();
+    let mut oversampled_runtime: Runtime<DOUBLE_SIZE, CONTROL_FRAME_SIZE, U1, U0> = build_runtime(
+        CAPACITY,
+        (SAMPLE_RATE * 2) as f32,
+        CONTROL_RATE,
+        Ports {
+            audio_inputs: None,
+            audio_outputs: Some(generate_audio_outputs()),
+            control_inputs: None,
+            control_outputs: None,
+        },
+    );
 
-    let (gain, _) = runtime.add_node_api(Nodes::MultStereo { props: 300.0 }).unwrap();
+    let (a, _) = oversampled_runtime
+        .add_node_api(Nodes::Sweep {
+            range: (20.0, 48_000.0),
+            duration: Duration::from_secs(10),
+        })
+        .expect("Could not add node");
 
-    let _ = runtime.add_edge(Connection { 
-        source: ConnectionEntry { 
-            node_key: osc_one, 
-            port_index: 0, 
-            port_rate: PortRate::Audio 
-        }, 
-        sink: ConnectionEntry { 
-            node_key: gain, 
-            port_index: 0, 
-            port_rate: PortRate::Audio 
-        } 
-    });
-
-    let _ = runtime.add_edge(Connection { 
-        source: ConnectionEntry { 
-            node_key: gain, 
-            port_index: 0, 
-            port_rate: PortRate::Audio 
-        }, 
-        sink: ConnectionEntry { 
-            node_key: osc_two, 
-            port_index: 0, 
-            port_rate: PortRate::Audio 
-        } 
-    });
-
-    runtime.set_sink_key(osc_two).expect("Bad sink key!");
-
-    #[cfg(target_os = "linux")]
-    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
-
-    #[cfg(target_os = "macos")]
-    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
-
-    let device = host.default_output_device().unwrap();
-
-    println!("{:?}", device.default_output_config());
-
-    // let config = StreamConfig {
-    //     channels: U2::U16,
-    //     sample_rate: SampleRate(SAMPLE_RATE),
-    //     buffer_size: BufferSize::Fixed(BLOCK_SIZE as u32),
-    // };
+    let (b, _) = runtime.set_sink_key(a).expect("Bad sink key!");
 
     let path = Path::new("example.wav");
 

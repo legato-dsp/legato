@@ -5,74 +5,6 @@ use crate::{
 use generic_array::{sequence::GenericSequence, ArrayLength, GenericArray};
 use typenum::U64;
 
-// 64 tap remez exchange FIR filter that may be decent for 2x oversampling
-const KERNEL: GenericArray<f32, U64> = GenericArray::from_array([
-    0.003_933_759,
-    -0.011_818_053,
-    0.002_154_722_3,
-    -0.005_534_518_5,
-    0.003_771_703_7,
-    -0.002_953_569_9,
-    0.001_023_558_4,
-    0.001_198_530_2,
-    -0.003_788_925_5,
-    0.006_412_682,
-    -0.008_801_702,
-    0.010_626_581_5,
-    -0.011_581_174,
-    0.011_388_29,
-    -0.009_857_22,
-    0.006_911_201_4,
-    -0.002_581_814_3,
-    -0.002_904_066_1,
-    0.009_205_313,
-    -0.015_809_234,
-    0.022_087_993,
-    -0.027_300_153,
-    0.030_679_975,
-    -0.031_397_417,
-    0.028_610_898,
-    -0.021_431_202,
-    0.008_795_602,
-    0.010_915_615,
-    -0.040_906_29,
-    0.089_592_04,
-    -0.188_738_03,
-    0.628_654_1,
-    0.628_654_1,
-    -0.188_738_03,
-    0.089_592_04,
-    -0.040_906_29,
-    0.010_915_615,
-    0.008_795_602,
-    -0.021_431_202,
-    0.028_610_898,
-    -0.031_397_417,
-    0.030_679_975,
-    -0.027_300_153,
-    0.022_087_993,
-    -0.015_809_234,
-    0.009_205_313,
-    -0.002_904_066_1,
-    -0.002_581_814_3,
-    0.006_911_201_4,
-    -0.009_857_22,
-    0.011_388_29,
-    -0.011_581_174,
-    0.010_626_581_5,
-    -0.008_801_702,
-    0.006_412_682,
-    -0.003_788_925_5,
-    0.001_198_530_2,
-    0.001_023_558_4,
-    -0.002_953_569_9,
-    0.003_771_703_7,
-    -0.005_534_518_5,
-    0.002_154_722_3,
-    -0.011_818_053,
-    0.003_933_759,
-]);
-
 /// A naive 2x rate adapter. Upsamples audio x2 coming in, and back
 /// to audio rate on the way down.
 
@@ -91,6 +23,19 @@ where
 {
     coeffs: Vec<f32>,
     state: GenericArray<RingBuffer, C>,
+}
+
+impl<C> Upsample2x<C>
+where
+    C: ArrayLength,
+{
+    pub fn new(coeffs: Vec<f32>) -> Self {
+        let kernel_len = coeffs.len();
+        Self {
+            coeffs,
+            state: GenericArray::generate(|_| RingBuffer::with_capacity(kernel_len)),
+        }
+    }
 }
 
 impl<const N: usize, const M: usize, C> Resampler<N, M, C> for Upsample2x<C>
@@ -130,7 +75,7 @@ where
     }
 }
 
-pub struct Downsample2X<const NX2: usize, C>
+pub struct Downsample2x<const NX2: usize, C>
 where
     C: ArrayLength,
 {
@@ -139,7 +84,7 @@ where
     filtered: GenericArray<Buffer<NX2>, C>,
 }
 
-impl<const NX2: usize, C> Downsample2X<NX2, C>
+impl<const NX2: usize, C> Downsample2x<NX2, C>
 where
     C: ArrayLength,
 {
@@ -153,7 +98,7 @@ where
     }
 }
 
-impl<const NX2: usize, const M: usize, C> Resampler<NX2, M, C> for Downsample2X<NX2, C>
+impl<const NX2: usize, const M: usize, C> Resampler<NX2, M, C> for Downsample2x<NX2, C>
 where
     C: ArrayLength,
 {

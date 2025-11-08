@@ -4,7 +4,12 @@ use arc_swap::ArcSwapOption;
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
-    engine::{audio_context::DelayLineKey, graph::NodeKey, node::Node, runtime::Runtime},
+    engine::{
+        audio_context::DelayLineKey,
+        graph::NodeKey,
+        node::Node,
+        runtime::{Runtime, RuntimeErased},
+    },
     nodes::audio::{
         audio_ops::{ApplyOpMono, ApplyOpStereo},
         delay::{DelayLine, DelayReadMono, DelayReadStereo, DelayWriteMono, DelayWriteStereo},
@@ -13,6 +18,7 @@ use crate::{
         sampler::{SamplerMono, SamplerStereo},
         sine::{SineMono, SineStereo},
         stereo::Stereo,
+        subgraph::{build_2x_oversample, Oversample2X},
         sweep::Sweep,
     },
 };
@@ -21,7 +27,7 @@ use typenum::{U1, U2};
 
 // TODO: Find nicer solution for arbitrary port size
 
-pub enum Nodes<const AF: usize> {
+pub enum Nodes<const AF: usize, const SAF: usize, const CF: usize> {
     // Osc
     OscMono {
         freq: f32,
@@ -84,6 +90,14 @@ pub enum Nodes<const AF: usize> {
     // SvfMono,
     // SvfStereo
 
+    // Subgraph
+    Subgraph {
+        runtime: Box<dyn RuntimeErased<SAF, CF> + Send + 'static>,
+    },
+    Subgraph2XOversampled {
+        runtime: Box<dyn RuntimeErased<SAF, CF> + Send + 'static>,
+    },
+
     // Utils
     Sweep {
         range: (f32, f32),
@@ -103,21 +117,22 @@ pub enum AddNodeResponse {
     DelayWrite(DelayLineKey),
 }
 
-pub trait RuntimeBuilder<const AF: usize> {
+pub trait RuntimeBuilder<const AF: usize, const SAF: usize, const CF: usize> {
     fn add_node_api(
         &mut self,
-        node: Nodes<AF>,
+        node: Nodes<AF, SAF, CF>,
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError>;
 }
 
-impl<const AF: usize, const CF: usize, C, Ci> RuntimeBuilder<AF> for Runtime<AF, CF, C, Ci>
+impl<const AF: usize, const SAF: usize, const CF: usize, C, Ci> RuntimeBuilder<AF, SAF, CF>
+    for Runtime<AF, CF, C, Ci>
 where
     C: ArrayLength,
     Ci: ArrayLength,
 {
     fn add_node_api(
         &mut self,
-        node: Nodes<AF>,
+        node: Nodes<AF, SAF, CF>,
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError> {
         let node_created: (
             Result<Box<dyn Node<AF, CF> + Send + 'static>, BuilderError>,
@@ -193,6 +208,9 @@ where
             Nodes::FourTrackStereoMixer => (Ok(Box::new(FourTrackStereoMixer::default())), None),
             Nodes::EightTrackStereoMixer => (Ok(Box::new(EightTrackStereoMixer::default())), None),
             Nodes::TwoTrackMonoMixer => (Ok(Box::new(TwoTrackMonoMixer::default())), None),
+            Nodes::Subgraph { runtime } => (Ok(build_2x_oversample(runtime)), None),
+            Nodes::Subgraph2XOversampled { runtime } => (Ok(build_2x_oversample(runtime)), None),
+
             // Utils
             Nodes::Sweep { range, duration } => (Ok(Box::new(Sweep::new(range, duration))), None),
         };

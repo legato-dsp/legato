@@ -229,3 +229,20 @@ where
 
     Runtime::<AF, CF, C, Ci>::new(context, graph, ports)
 }
+
+/// This trait allows us to erase runtime generics,
+/// for to more easily add oversampled subgraphs to
+/// an existing runtime.
+pub trait RuntimeErased<const AF: usize, const CF: usize>: Node<AF, CF> {
+    fn next_block(&mut self, external_inputs: Option<(&Frame<AF>, &Frame<CF>)>) -> &[Buffer<AF>];
+}
+
+impl<const AF: usize, const CF: usize, C, Ci> RuntimeErased<AF, CF> for Runtime<AF, CF, C, Ci>
+where
+    C: ArrayLength,
+    Ci: ArrayLength,
+{
+    fn next_block(&mut self, external_inputs: Option<(&Frame<AF>, &Frame<CF>)>) -> &[Buffer<AF>] {
+        self.next_block(external_inputs)
+    }
+}
