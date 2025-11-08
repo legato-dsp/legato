@@ -17,7 +17,7 @@ def main():
     if data.ndim > 1:
         data = data[:, 0]
 
-    f, t, Sxx = spectrogram(data, sr, nperseg=1024)
+    f, t, Sxx = spectrogram(data, sr, nperseg=2048)
 
     plt.pcolormesh(t, f, 10 * np.log10(Sxx + 1e-12), shading="gouraud")
     plt.ylabel("Frequency [Hz]")
