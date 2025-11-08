@@ -52,8 +52,8 @@ where
     pub fn new(runtime: Box<dyn RuntimeErased<Prod<AF, U2>, CF> + Send + 'static>) -> Self {
         Self {
             runtime,
-            upsampler: Upsample2x::new(cutoff_24k_coeffs.to_vec()),
-            downsampler: Downsample2x::new(cutoff_24k_coeffs.to_vec()), // TODO: Fine tune these filters
+            upsampler: Upsample2x::new(CUTOFF_24K_COEFFS.to_vec()),
+            downsampler: Downsample2x::new(CUTOFF_24K_COEFFS.to_vec()), // TODO: Fine tune these filters
             upsampled_ai: GenericArray::generate(|_| Buffer::silent()),
         }
     }
@@ -84,7 +84,7 @@ where
         // Process next subgraph block
         let res: &Frame<Prod<AF, U2>> = self.runtime.next_block(Some((upsampled_slice, ci)));
         // Downsample and write out
-        self.downsampler.process_block(&res, ao);
+        self.downsampler.process_block(res, ao);
     }
 }
 
@@ -110,7 +110,7 @@ where
 }
 
 // 64 tap remez exchange FIR filter that may be decent for 2x oversampling
-const cutoff_24k_coeffs: GenericArray<f32, U64> = GenericArray::from_array([
+const CUTOFF_24K_COEFFS: GenericArray<f32, U64> = GenericArray::from_array([
     0.003_933_759,
     -0.011_818_053,
     0.002_154_722_3,

@@ -2,7 +2,6 @@ use crate::engine::{
     node::{FrameSize, Node},
     port::PortRate,
 };
-use generic_array::ArrayLength;
 use indexmap::IndexSet;
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
 use std::{collections::VecDeque, ops::Mul};

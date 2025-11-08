@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use generic_array::ArrayLength;
 use typenum::{U0, U1};
 
 use crate::{
@@ -28,7 +27,7 @@ impl Sweep {
     pub fn new(range: (f32, f32), duration: Duration) -> Self {
         Self {
             phase: 0.0,
-            range: range,
+            range,
             duration,
             elapsed: 0,
             ports: Ports {
