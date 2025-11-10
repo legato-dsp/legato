@@ -251,26 +251,17 @@ where
     }
 }
 
-fn make_graph<AF, CF>(capacity: usize) -> AudioGraph<AF, CF>
-where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
-{
-    AudioGraph::with_capacity(capacity)
-}
-
 #[cfg(test)]
 mod test {
 
     use std::ops::Mul;
 
     use generic_array::{arr, ArrayLength, GenericArray};
-    use typenum::{Prod, U0, U1, U16, U2, U256, U3, U32};
+    use typenum::{Prod, U0, U1, U16, U2, U256, U32};
 
     use crate::engine::audio_context::AudioContext;
     use crate::engine::graph::GraphError::CycleDetected;
-    use crate::engine::graph::{make_graph, AudioGraph, Connection, ConnectionEntry};
+    use crate::engine::graph::{AudioGraph, Connection, ConnectionEntry};
     use crate::engine::node::{FrameSize, Node};
     use crate::engine::port::{
         AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, PortMeta, PortRate,
@@ -412,7 +403,7 @@ mod test {
 
     #[test]
     fn test_topo_sort_simple_chain() {
-        let mut graph: AudioGraph<U256, U32> = make_graph(3);
+        let mut graph: AudioGraph<U256, U32> = AudioGraph::with_capacity(3);
 
         let a = graph.add_node(Box::new(MonoExample::default()));
         let b = graph.add_node(Box::new(MonoExample::default()));

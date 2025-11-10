@@ -1,0 +1,7 @@
+[package]
+name = "legato-dsl"
+version = "0.0.5"
+edition = "2024"
+
+[dependencies]
+legato-core = { path = "../legato-core" }

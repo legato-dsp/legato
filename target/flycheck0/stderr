@@ -1,0 +1,8 @@
+error: failed to load manifest for workspace member `/home/luke/Documents/educational/legato/legato-core`
+referenced by workspace at `/home/luke/Documents/educational/legato/Cargo.toml`
+
+Caused by:
+  failed to read `/home/luke/Documents/educational/legato/legato-core/Cargo.toml`
+
+Caused by:
+  No such file or directory (os error 2)
