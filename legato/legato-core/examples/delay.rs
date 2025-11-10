@@ -1,7 +1,7 @@
 use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{BufferSize, SampleRate, StreamConfig};
-use legato::{
+use legato_core::{
     backend::out::start_audio_thread,
     engine::{
         builder::{AddNodeResponse, Nodes},
@@ -11,7 +11,7 @@ use legato::{
     },
     nodes::utils::port_utils::generate_audio_outputs,
 };
-use legato::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
+use legato_core::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
 use std::{sync::Arc, time::Duration};
 
 use typenum::{Unsigned, U0, U2, U2048, U64};

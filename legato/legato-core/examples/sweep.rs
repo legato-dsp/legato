@@ -1,11 +1,11 @@
-use legato::{
+use legato_core::{
     backend::out::render,
     engine::{
         builder::Nodes,
         runtime::{build_runtime, Runtime},
     },
 };
-use legato::{
+use legato_core::{
     engine::{builder::RuntimeBuilder, port::Ports},
     nodes::utils::port_utils::generate_audio_outputs,
 };
