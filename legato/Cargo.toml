@@ -8,7 +8,7 @@ members = ["legato-core", "legato-dsl"]
 resolver = "3"
 
 [features]
-default = ["core"]
+default = ["core","dsl"]
 core = ["dep:legato-core"]
 dsl = ["dep:legato-dsl"]
 

@@ -1,7 +1,7 @@
 use legato_core::{
     backend::out::render,
     engine::{
-        builder::Nodes,
+        builder::AddNode,
         runtime::{build_runtime, Runtime},
     },
     nodes::utils::port_utils::generate_audio_inputs,
@@ -51,7 +51,7 @@ fn main() {
     );
 
     let (a, _) = oversampled_runtime
-        .add_node_api(Nodes::Sweep {
+        .add_node_api(AddNode::Sweep {
             range: (20.0, 32_000.0),
             duration: Duration::from_secs(5),
         })
@@ -60,7 +60,7 @@ fn main() {
     oversampled_runtime.set_sink_key(a).unwrap();
 
     let (b, _) = runtime
-        .add_node_api(Nodes::Subgraph2XOversampled {
+        .add_node_api(AddNode::Subgraph2XOversampled {
             runtime: Box::new(oversampled_runtime),
         })
         .unwrap();

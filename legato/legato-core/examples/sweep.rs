@@ -1,7 +1,7 @@
 use legato_core::{
     backend::out::render,
     engine::{
-        builder::Nodes,
+        builder::AddNode,
         runtime::{build_runtime, Runtime},
     },
 };
@@ -36,7 +36,7 @@ fn main() {
     );
 
     let (a, _) = runtime
-        .add_node_api(Nodes::Sweep {
+        .add_node_api(AddNode::Sweep {
             range: (20.0, 26_000.0),
             duration: Duration::from_secs(5),
         })

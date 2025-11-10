@@ -27,7 +27,7 @@ use typenum::{Prod, U1, U2};
 
 // TODO: Find nicer solution for arbitrary port size
 
-pub enum Nodes<AF, CF>
+pub enum AddNode<AF, CF>
 where
     AF: FrameSize + Mul<U2>,
     Prod<AF, U2>: FrameSize,
@@ -128,7 +128,7 @@ where
 {
     fn add_node_api(
         &mut self,
-        node: Nodes<AF, CF>,
+        node: AddNode<AF, CF>,
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError>;
 }
 
@@ -142,27 +142,27 @@ where
 {
     fn add_node_api(
         &mut self,
-        node: Nodes<AF, CF>,
+        node: AddNode<AF, CF>,
     ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError> {
         let node_created: (
             Result<Box<dyn Node<AF, CF> + Send + 'static>, BuilderError>,
             Option<AddNodeResponse>,
         ) = match node {
-            Nodes::OscMono { freq } => (Ok(Box::new(SineMono::new(freq, 0.0))), None),
-            Nodes::OscStereo { freq } => (Ok(Box::new(SineStereo::new(freq, 0.0))), None),
-            Nodes::Stereo => (Ok(Box::new(Stereo::default())), None),
+            AddNode::OscMono { freq } => (Ok(Box::new(SineMono::new(freq, 0.0))), None),
+            AddNode::OscStereo { freq } => (Ok(Box::new(SineStereo::new(freq, 0.0))), None),
+            AddNode::Stereo => (Ok(Box::new(Stereo::default())), None),
             // Samplers
-            Nodes::SamplerMono { props } => (Ok(Box::new(SamplerMono::new(props))), None),
-            Nodes::SamplerStereo { props } => (Ok(Box::new(SamplerStereo::new(props))), None),
+            AddNode::SamplerMono { props } => (Ok(Box::new(SamplerMono::new(props))), None),
+            AddNode::SamplerStereo { props } => (Ok(Box::new(SamplerStereo::new(props))), None),
             // Delay reads
-            Nodes::DelayReadMono { key, offsets } => (
+            AddNode::DelayReadMono { key, offsets } => (
                 Ok(Box::new(DelayReadMono::new(
                     key,
                     *GenericArray::from_slice(&offsets),
                 ))),
                 None,
             ),
-            Nodes::DelayReadStereo { key, offsets } => (
+            AddNode::DelayReadStereo { key, offsets } => (
                 Ok(Box::new(DelayReadStereo::new(
                     key,
                     *GenericArray::from_slice(&offsets),
@@ -170,7 +170,7 @@ where
                 None,
             ),
             // Delay writes (keep as-is)
-            Nodes::DelayWriteMono { props } => {
+            AddNode::DelayWriteMono { props } => {
                 let ctx = self.get_context_mut();
                 let samples = ctx.get_sample_rate();
                 let delay_capacity = props.as_secs_f32() * samples;
@@ -184,7 +184,7 @@ where
                     Some(AddNodeResponse::DelayWrite(key)),
                 )
             }
-            Nodes::DelayWriteStereo { props } => {
+            AddNode::DelayWriteStereo { props } => {
                 let ctx = self.get_context_mut();
                 let samples = ctx.get_sample_rate();
                 let delay_capacity = props.as_secs_f32() * samples;
@@ -198,34 +198,34 @@ where
                 )
             }
             // Ops
-            Nodes::AddMono { props } => (Ok(Box::new(ApplyOpMono::new(|a, b| a + b, props))), None),
-            Nodes::AddStereo { props } => {
+            AddNode::AddMono { props } => (Ok(Box::new(ApplyOpMono::new(|a, b| a + b, props))), None),
+            AddNode::AddStereo { props } => {
                 (Ok(Box::new(ApplyOpStereo::new(|a, b| a + b, props))), None)
             }
-            Nodes::MultMono { props } => {
+            AddNode::MultMono { props } => {
                 (Ok(Box::new(ApplyOpMono::new(|a, b| a * b, props))), None)
             }
-            Nodes::MultStereo { props } => {
+            AddNode::MultStereo { props } => {
                 (Ok(Box::new(ApplyOpStereo::new(|a, b| a * b, props))), None)
             }
             // Filters
-            Nodes::FirMono { kernel } => (Ok(Box::new(FirMono::new(kernel))), None),
-            Nodes::FirStereo { kernel } => (Ok(Box::new(FirStereo::new(kernel))), None),
+            AddNode::FirMono { kernel } => (Ok(Box::new(FirMono::new(kernel))), None),
+            AddNode::FirStereo { kernel } => (Ok(Box::new(FirStereo::new(kernel))), None),
             // Mixers
-            Nodes::StereoMixer => (Ok(Box::new(StereoMixer::default())), None),
-            Nodes::StereoToMono => (Ok(Box::new(StereoToMonoMixer::default())), None),
-            Nodes::FourToMonoMixer => (Ok(Box::new(FourToMonoMixer::default())), None),
-            Nodes::TwoTrackStereoMixer => (Ok(Box::new(TwoTrackStereoMixer::default())), None),
-            Nodes::FourTrackStereoMixer => (Ok(Box::new(FourTrackStereoMixer::default())), None),
-            Nodes::EightTrackStereoMixer => (Ok(Box::new(EightTrackStereoMixer::default())), None),
-            Nodes::TwoTrackMonoMixer => (Ok(Box::new(TwoTrackMonoMixer::default())), None),
-            Nodes::Subgraph { runtime } => (Ok(runtime), None),
-            Nodes::Subgraph2XOversampled { runtime } => {
+            AddNode::StereoMixer => (Ok(Box::new(StereoMixer::default())), None),
+            AddNode::StereoToMono => (Ok(Box::new(StereoToMonoMixer::default())), None),
+            AddNode::FourToMonoMixer => (Ok(Box::new(FourToMonoMixer::default())), None),
+            AddNode::TwoTrackStereoMixer => (Ok(Box::new(TwoTrackStereoMixer::default())), None),
+            AddNode::FourTrackStereoMixer => (Ok(Box::new(FourTrackStereoMixer::default())), None),
+            AddNode::EightTrackStereoMixer => (Ok(Box::new(EightTrackStereoMixer::default())), None),
+            AddNode::TwoTrackMonoMixer => (Ok(Box::new(TwoTrackMonoMixer::default())), None),
+            AddNode::Subgraph { runtime } => (Ok(runtime), None),
+            AddNode::Subgraph2XOversampled { runtime } => {
                 (Ok(Box::new(Oversample2X::<AF, CF, C>::new(runtime))), None)
             }
 
             // Utils
-            Nodes::Sweep { range, duration } => (Ok(Box::new(Sweep::new(range, duration))), None),
+            AddNode::Sweep { range, duration } => (Ok(Box::new(Sweep::new(range, duration))), None),
         };
 
         match node_created {

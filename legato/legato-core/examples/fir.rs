@@ -4,7 +4,7 @@ use cpal::{BufferSize, SampleRate, StreamConfig};
 use legato_core::{
     backend::out::start_audio_thread,
     engine::{
-        builder::Nodes,
+        builder::AddNode,
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
         runtime::{build_runtime, Runtime},
@@ -124,11 +124,11 @@ fn main() {
     ];
 
     let (fir, _) = runtime
-        .add_node_api(Nodes::FirStereo { kernel: coeffs })
+        .add_node_api(AddNode::FirStereo { kernel: coeffs })
         .expect("Could not add FIR");
 
     let (sampler, _) = runtime
-        .add_node_api(Nodes::SamplerStereo {
+        .add_node_api(AddNode::SamplerStereo {
             props: data.clone(),
         })
         .expect("Could not add sampler");

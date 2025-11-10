@@ -4,7 +4,7 @@ use cpal::{BufferSize, SampleRate, StreamConfig};
 use legato_core::{
     backend::out::start_audio_thread,
     engine::{
-        builder::{AddNodeResponse, Nodes},
+        builder::{AddNodeResponse, AddNode},
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
         runtime::{build_runtime, Runtime},
@@ -42,7 +42,7 @@ fn main() {
     let backend = AudioSampleBackend::new(data.clone());
 
     let (sampler, _) = runtime
-        .add_node_api(Nodes::SamplerStereo {
+        .add_node_api(AddNode::SamplerStereo {
             props: data.clone(),
         })
         .expect("Could not add sampler");
@@ -52,7 +52,7 @@ fn main() {
         .expect("Could not load amen sample!");
 
     let (delay_write, delay_write_key_res) = runtime
-        .add_node_api(Nodes::DelayWriteStereo {
+        .add_node_api(AddNode::DelayWriteStereo {
             props: Duration::from_secs(1),
         })
         .unwrap();
@@ -62,16 +62,16 @@ fn main() {
     let AddNodeResponse::DelayWrite(delay_key) = res;
 
     let (delay_read, _) = runtime
-        .add_node_api(Nodes::DelayReadStereo {
+        .add_node_api(AddNode::DelayReadStereo {
             key: delay_key,
             offsets: [Duration::from_millis(12), Duration::from_millis(32)],
         })
         .unwrap();
 
-    let (mixer, _) = runtime.add_node_api(Nodes::TwoTrackStereoMixer).unwrap();
+    let (mixer, _) = runtime.add_node_api(AddNode::TwoTrackStereoMixer).unwrap();
 
     let (delay_gain, _) = runtime
-        .add_node_api(Nodes::MultStereo { props: 0.6 })
+        .add_node_api(AddNode::MultStereo { props: 0.6 })
         .unwrap();
 
     runtime

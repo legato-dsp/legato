@@ -1,0 +1,43 @@
+control {
+	io: audio_in { chans: 2},
+	param: 
+		params { 
+			min: 0, 
+			max: 1.5, 
+			alg: lerp, 
+			debounce: 20 
+		} 
+		| replicate(8)
+}
+
+user {
+	looper { chans: 8 }, // This is a custom node, made in "user" space
+	my_reverb: reverbs   // This is a custom subgraph, made in "user" space
+		{ 
+			feedback: 0.3, 
+			pre_delay: 0.3,
+			size: 0.8  
+		}  
+		| replicate(8) // Pipes that allow us to manipulate nodes
+		| offset( { param: feedback, amount: 0.1, alg: random })
+}
+
+nodes {
+	gain: looper_gains | replicate(8),
+}
+
+
+
+// alterntively
+// audio_in >> looper.audio { automap: true }
+
+// alternatively
+// audio_in.l >> looper.l
+// audio_in.r >> looper.r
+
+audio_in.stereo >> looper.audio.stereo
+params >> looper.control { automap: true }
+
+// Easy export on object. Alternatively, we just use builder and have
+// API to access controls?
+{ params }
