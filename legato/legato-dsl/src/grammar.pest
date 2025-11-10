@@ -20,7 +20,7 @@ uint = @{ ASCII_DIGIT+ }
 int = @{ "-"? ~ ASCII_DIGIT+ }
 string = @{ "\"" ~ ( "\\\"" | !"\"" ~ ANY )* ~ "\"" }
 
-value = @{ float | int | uint | string | boolean | object | array | ident }
+value = { float | int | uint | string | boolean | object | array | ident }
 kv = { ident ~ ":" ~ value }
 
 object = { "{" ~ (kv ~ ("," ~ kv)*)? ~ ","? ~ "}" }
