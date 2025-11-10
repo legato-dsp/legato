@@ -1,7 +1,7 @@
 use crate::ast::Ast;
-use std::error::Error;
 use pest::Parser;
 use pest_derive::Parser;
+use std::error::Error;
 
 #[derive(Parser)]
 #[grammar = "./ast.pest"]
@@ -71,6 +71,13 @@ mod tests {
         parse_ok(Rule::true_keyword, "true");
         parse_ok(Rule::false_keyword, "false");
         parse_ok(Rule::object, "{ a: 1, b: 2 }");
+        parse_ok(
+            Rule::object,
+            r#"{ a: 1, 
+              b: 2 
+            }
+        "#,
+        );
         parse_ok(Rule::array, "[1, 2, 3]");
     }
 
@@ -86,38 +93,54 @@ mod tests {
 
     #[test]
     fn parse_multiple_nodes() {
-        parse_ok(Rule::add_nodes, r#"
-        io: audio_in { chans: 2 },
+        parse_ok(
+            Rule::add_nodes,
+            r#"io: audio_in { chans: 2 },
         param { min: 0, max: 1.5 }
-    "#);
-    }
-
-     #[test]
-    fn parse_multiple_nodes_with_pipe() {
-        parse_ok(Rule::add_nodes, r#"
-        io: audio_in { chans: 2 },
-        params: param { min: 0, max: 1.5, alg: lerp } | replicate(8)
-    "#);
+    "#,
+        );
     }
 
     #[test]
-    fn parse_scope(){
-        parse_ok(Rule::scope_block, r#"
-            control {
+    fn parse_multiple_nodes_with_pipe() {
+        parse_ok(
+            Rule::add_nodes,
+            r#"io: audio_in { chans: 2 },
+        params: param { min: 0, max: 1.5, alg: lerp } | replicate(8)
+    "#,
+        );
+    }
+
+    #[test]
+    fn parse_scope_flat() {
+        parse_ok(
+            Rule::scope_block,
+            "control { io: audio_in { chans: 2 }, param: params { min: 0, max: 1.5, alg: lerp }}",
+        )
+    }
+
+    #[test]
+    fn parse_scope() {
+        parse_ok(
+            Rule::scope_block,
+            r#"control {
                 io: audio_in { chans: 2 },
                 param: params { min: 0, max: 1.5, alg: lerp }
             }
-        "#)
+        "#,
+        )
     }
-    
+
     #[test]
-    fn parse_scope_with_pipe(){
-        parse_ok(Rule::scope_block, r#"
-            control {
+    fn parse_scope_with_pipe() {
+        parse_ok(
+            Rule::scope_block,
+            r#"control {
                 io: audio_in { chans: 2 },
                 param: params { min: 0, max: 1.5, alg: lerp } | replicate(8)
             }
-        "#)
+        "#,
+        )
     }
 
     #[test]
@@ -127,18 +150,20 @@ mod tests {
 
     #[test]
     fn parse_object_with_comment() {
-        parse_ok(Rule::object, "{ feedback: 0.3, pre_delay: 0.3, size: 0.8 } // Example config ");
+        parse_ok(
+            Rule::object,
+            "{ feedback: 0.3, pre_delay: 0.3, size: 0.8 } // Example config ",
+        );
     }
 
     #[test]
-    fn parse_export(){
+    fn parse_export() {
         parse_ok(Rule::exports, "{ shimmer_reverb, fm_synth_one, stereo }");
     }
 
     #[test]
     fn parse_full_graph() {
-        let src = r#"
-            control {
+        let src = r#"control {
                 io: audio_in { chans: 2 },
                 param: params { min: 0, max: 1.5, alg: lerp } | replicate(8)
             }
