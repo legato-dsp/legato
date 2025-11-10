@@ -17,7 +17,7 @@ impl Default for Stereo {
     }
 }
 
-impl<'a, AF, CF> Node<AF, CF> for Stereo
+impl<AF, CF> Node<AF, CF> for Stereo
 where
     AF: FrameSize,
     CF: FrameSize,

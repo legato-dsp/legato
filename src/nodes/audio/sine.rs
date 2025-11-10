@@ -42,10 +42,6 @@ where
 
         Self { freq, phase, ports }
     }
-
-    pub fn default() -> Self {
-        Self::new(440.0, 0.0)
-    }
 }
 
 impl<AF, CF, Ao> Node<AF, CF> for Sine<U1, Ao, U0, U0>

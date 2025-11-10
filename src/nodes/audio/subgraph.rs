@@ -14,7 +14,7 @@ use crate::{
     nodes::audio::resample::Resampler,
 };
 use generic_array::{sequence::GenericSequence, ArrayLength, GenericArray};
-use typenum::{Prod, U2, U64};
+use typenum::{Prod, U2};
 
 // Maybe I should not have been so harsh on C++ templates...
 // I have stared into the abyss, and the abyss said back "<<AF as Mul<UInt<UInt<UTerm, B1>, B0>>>::Output as PartialDiv<UInt<UInt<UTerm, B1>, B0>>>::Output"
