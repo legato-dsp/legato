@@ -197,7 +197,9 @@ mod tests {
     fn parse_with_mixed_comments_and_whitespace() {
         parse_ok(
             Rule::graph,
-            r#"control { // inline
+            r#"
+            // Adding a bit of whitespace here!
+            control { // inline
                 io: audio_in { chans: 2 }, /* block comment */
                 param: params { min: 0, max: 1.5 } // trailing
             }
