@@ -40,7 +40,8 @@ node_alias = { ":" ~ alias_name }
 alias_name = @{ ident }
 
 node_params = { object }
-node_pipe = { "|" ~ ident ~ "(" ~ (object | value)? ~ ")" }
+node_pipe = { "|" ~ ident ~ "(" ~ pipe_params? ~ ")" }
+pipe_params = { value }
 
 add_nodes = { add_node ~ ("," ~ add_node)* ~ ","? }
 add_node = {
@@ -51,10 +52,11 @@ add_node = {
 
 working_name = @{ ident }
 
-port_name = @{ "." ~ ident }
+
+port_name = { ident }
 port_index = { "[" ~ uint ~ "]"}
 
-node_and_port = @{ working_name ~ (port_name | port_index)? }
+node_and_port = { working_name ~ !WHITESPACE ~ ("." ~ !WHITESPACE ~ port_name | port_index)? }
 connection = { node_and_port ~ (">>" ~ node_and_port)+ }
 connections = _{ connection+ }
 

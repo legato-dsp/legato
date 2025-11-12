@@ -20,6 +20,7 @@ user {
 		}  
 		| replicate(8) // Pipes that allow us to manipulate nodes
 		| offset( { param: feedback, amount: 0.1, alg: random })
+		| example_arr([1,2,3])
 }
 
 nodes {
@@ -36,7 +37,8 @@ nodes {
 // audio_in.r >> looper.r
 
 audio_in.stereo >> looper.stereo
-params >> looper.control
+params[0] >> looper.control
+lfo >> svf.cutoff
 
 // Easy export on object. Alternatively, we just use builder and have
 // API to access controls?
