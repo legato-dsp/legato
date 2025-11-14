@@ -1,12 +1,8 @@
 use std::collections::HashMap;
-use std::ops::Mul;
-
-use generic_array::ArrayLength;
 use legato_core::engine::node::Node;
-use legato_core::engine::{builder::AddNode, graph::Connection, node::FrameSize, runtime::Runtime};
-use typenum::{Prod, U2};
+use legato_core::engine::{node::FrameSize};
 
-use crate::ast::Object;
+use crate::ast::{Value};
 
 // pub enum OffsetAlg {
 //     Random,
@@ -41,42 +37,64 @@ use crate::ast::Object;
 /// It assumes that a factory function that builds nodes exists,
 /// and it assumes that the params passed will resemble the params
 /// from the AST. So, that tends to be our "object" type, which
-/// under the hood is BinaryTree of string "value" pairs.
-///
-/// We don't care about node names at this level, we are just assembling
-/// nodes here.
-trait NodeFactory<AF, CF>
-where
-    AF: FrameSize,
-    CF: FrameSize,
+/// under the hood is a BinaryTree of string "value" pairs.
+trait NodeFactory<AF, CF> where AF: FrameSize, CF: FrameSize
 {
-    fn lower_to_ir(
+    fn build_node(
         &self,
-        factory: Box<dyn Fn() -> Box<dyn Node<AF, CF>>>,
-        params: Object, // The params from the AST
-    ) -> Box<dyn Node<AF, CF>>;
+        ident: String,
+        params: Option<Value>, // The params from the AST
+    ) -> Result<Box<dyn Node<AF, CF>>, IRNodeBuilderError>;
 }
 
-struct IRBuilder<AF, CF>
-where
-    AF: FrameSize,
-    CF: FrameSize,
+enum IRNodeBuilderError {
+    NamespaceNotFound,
+    NodeNotFound
+}
+
+struct IRNodeBuilder<AF, CF> where AF: FrameSize, CF: FrameSize
+
 {
     // A namespace is just a certain scope that has it's own node factory.
     // For instance, "IO" will have some factory that we can use to build IO nodes.
     // With this, users can add their own scopes easily!
-    namespace: HashMap<String, Box<dyn NodeFactory<AF, CF>>>,
+    namespaces: HashMap<String, Box<dyn NodeFactory<AF, CF>>>,
 }
 
+
 // TODO
-impl<AF, CF> IRBuilder<AF, CF>
-where
-    AF: FrameSize,
-    CF: FrameSize,
+impl<AF, CF> IRNodeBuilder<AF, CF> where AF: FrameSize, CF: FrameSize
 {
     pub fn new() -> Self {
+        let mut namespaces = HashMap::new();
+        namespaces.insert("audio".to_string(), Box::new(AudioFactory::default()) as Box<dyn NodeFactory<AF, CF>>);
         Self {
-            namespace: HashMap::new(),
+            namespaces
         }
     }
+    pub fn add_namespace(&mut self, name: String, factory: Box<dyn NodeFactory<AF, CF>>) {
+        self.namespaces.insert(name, factory);
+    }
+    pub fn build_node(&self, namespace: String, node: String, params: Option<Value>) -> Result<Box<dyn Node<AF, CF>>, IRNodeBuilderError>{
+        if let Some(namespace) = self.namespaces.get(&namespace) {
+            return Ok(namespace.build_node(node, params)?);
+        }
+        Err(IRNodeBuilderError::NamespaceNotFound)
+    }
 }
+
+#[derive(Default)]
+struct AudioFactory;
+
+impl<AF, CF> NodeFactory<AF, CF> for AudioFactory where AF: FrameSize, CF: FrameSize  {
+    fn build_node(
+        &self,
+        ident: String,
+        params: Option<Value>, 
+    ) -> Result<Box<dyn Node<AF, CF>>, IRNodeBuilderError> {
+        todo!()
+    }
+}
+
+
+
