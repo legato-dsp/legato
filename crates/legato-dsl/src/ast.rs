@@ -46,6 +46,10 @@ pub enum Value {
     Ident(String),
 }
 
+/// An "object" type, just a BTreeMap<String, Value>,
+/// where value is an enum of potential primitive values:
+///
+/// i.e f32, i32, bool, another object, an array(resizable), etc.
 pub type Object = BTreeMap<String, Value>;
 
 // Connections
