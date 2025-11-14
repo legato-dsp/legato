@@ -81,7 +81,13 @@
           spectrogram = {
             type = "app";
             program = pkgs.writeShellScriptBin "spectrogram" ''
-              ${venv}/bin/python ${./scripts/spectrogram.py} "$@"
+              ${venv}/bin/python ${./scripts/dsp/spectrogram.py} "$@"
+            '';
+          };
+          filter-design = {
+            type = "app";
+            program = pkgs.writeShellScriptBin "filter-design" ''
+              ${venv}/bin/python ${./scripts/dsp/filter-design.py} "$@"
             '';
           };
         };

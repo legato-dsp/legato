@@ -11,3 +11,6 @@ dependencies = [
     "plotly>=6.4.0",
     "scipy>=1.16.3",
 ]
+
+[tool.setuptools]
+py-modules = ["filter_design", "spectrogram"]
