@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use assert_no_alloc::permit_alloc;
-use cpal::SampleRate;
 use generic_array::{ArrayLength, GenericArray};
 use typenum::U0;
 
@@ -12,46 +11,16 @@ use crate::{
         buffer::Frame,
         node::{FrameSize, Node},
         port::{Stereo, *},
+        resources::SampleKey,
     },
-    nodes::utils::{ffmpeg::decode_with_ffmpeg, port_utils::generate_audio_outputs},
+    nodes::utils::port_utils::generate_audio_outputs,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum AudioSampleError {
-    PathNotFound,
-    FailedDecoding,
-}
-
-pub struct AudioSampleBackend<C>
-where
-    C: ArrayLength,
-{
-    data: Arc<ArcSwapOption<GenericArray<Vec<f32>, C>>>,
-}
-impl<C> AudioSampleBackend<C>
-where
-    C: ArrayLength,
-{
-    pub fn new(data: Arc<ArcSwapOption<GenericArray<Vec<f32>, C>>>) -> Self {
-        Self { data }
-    }
-    pub fn load_file(&self, path: &str, sr: u32) -> Result<(), AudioSampleError> {
-        match decode_with_ffmpeg(path, sr) {
-            Ok(decoded) => {
-                self.data.store(Some(decoded));
-                Ok(())
-            }
-            Err(_) => Err(AudioSampleError::FailedDecoding), //TODO: Some logging or something?
-        }
-    }
-}
-
-// TODO: This is lazy, maybe integrate with symponia crate or whatever it's called?
 pub struct Sampler<Ao>
 where
     Ao: ArrayLength,
 {
-    data: Arc<ArcSwapOption<GenericArray<Vec<f32>, Ao>>>,
+    sample_key: SampleKey,
     read_pos: usize,
     is_looping: bool,
     ports: Ports<U0, Ao, U0, U0>,
@@ -61,9 +30,9 @@ impl<Ao> Sampler<Ao>
 where
     Ao: ArrayLength,
 {
-    pub fn new(data: Arc<ArcSwapOption<GenericArray<Vec<f32>, Ao>>>) -> Self {
+    pub fn new(sample_key: SampleKey) -> Self {
         Self {
-            data,
+            sample_key,
             read_pos: 0,
             is_looping: true,
             ports: Ports {
@@ -84,7 +53,7 @@ where
 {
     fn process(
         &mut self,
-        _: &mut AudioContext<AF>,
+        ctx: &mut AudioContext<AF>,
         _: &Frame<AF>,
         ao: &mut Frame<AF>,
         _: &Frame<CF>,
@@ -92,7 +61,8 @@ where
     ) {
         permit_alloc(|| {
             // 128 bytes allocated in the load_full. Can we do better?
-            if let Some(buf) = self.data.load_full() {
+            if let Some(inner) = ctx.get_sample(self.sample_key) {
+                let buf = inner.data();
                 let len = buf[0].len();
                 for n in 0..AF::USIZE {
                     let i = self.read_pos + n;

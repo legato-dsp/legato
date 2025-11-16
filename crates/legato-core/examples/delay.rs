@@ -1,78 +1,66 @@
-use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{BufferSize, SampleRate, StreamConfig};
+use legato_core::engine::builder::{RuntimeBuilder, get_runtime_builder};
 use legato_core::{
     backend::out::start_audio_thread,
     engine::{
-        builder::{AddNode, AddNodeResponse},
+        builder::AddNode,
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
-        runtime::{Runtime, build_runtime},
     },
     nodes::utils::port_utils::generate_audio_outputs,
 };
-use legato_core::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
-use std::{sync::Arc, time::Duration};
-
-use typenum::{U0, U2, U16, U64, U512, U2048, Unsigned};
+use std::time::Duration;
+use typenum::{U0, U2, U16, U4096, Unsigned};
 
 fn main() {
-    type BlockSize = U512;
+    type BlockSize = U4096;
     type ControlSize = U16;
     type ChannelCount = U2;
 
-    const SAMPLE_RATE: u32 = 48_000;
+    const SAMPLE_RATE: u32 = 44_100;
     const CAPACITY: usize = 16;
     const DECIMATION_FACTOR: f32 = 32.0;
     const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
 
-    let mut runtime: Runtime<BlockSize, ControlSize, ChannelCount, U0> = build_runtime(
-        CAPACITY,
-        SAMPLE_RATE as f32,
-        CONTROL_RATE,
-        Ports {
-            audio_inputs: None,
-            audio_outputs: Some(generate_audio_outputs()),
-            control_inputs: None,
-            control_outputs: None,
-        },
-    );
+    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
+        get_runtime_builder(
+            CAPACITY,
+            SAMPLE_RATE as f32,
+            CONTROL_RATE,
+            Ports {
+                audio_inputs: None,
+                audio_outputs: Some(generate_audio_outputs()),
+                control_inputs: None,
+                control_outputs: None,
+            },
+        );
 
-    let data = Arc::new(ArcSwapOption::new(None));
-    let backend = AudioSampleBackend::new(data.clone());
+    let sampler = runtime_builder.add_node(AddNode::SamplerStereo {
+        sample_name: String::from("amen"),
+    });
 
-    let (sampler, _) = runtime
-        .add_node_api(AddNode::SamplerStereo {
-            props: data.clone(),
-        })
-        .expect("Could not add sampler");
+    let delay_write = runtime_builder.add_node(AddNode::DelayWriteStereo {
+        delay_name: String::from("amen"),
+        delay_length: Duration::from_secs_f32(3.0),
+    });
+
+    let delay_read = runtime_builder.add_node(AddNode::DelayReadStereo {
+        delay_name: String::from("amen"),
+        offsets: [Duration::from_millis(12), Duration::from_millis(32)],
+    });
+
+    let mixer = runtime_builder.add_node(AddNode::TwoTrackStereoMixer);
+
+    let delay_gain = runtime_builder.add_node(AddNode::MultStereo { props: 0.6 });
+
+    let (mut runtime, sample_backends) = runtime_builder.get_owned();
+
+    let backend = sample_backends.get(&String::from("amen")).unwrap();
 
     backend
-        .load_file("./samples/amen.wav", SAMPLE_RATE as u32)
+        .load_file("./samples/amen.wav", 2, SAMPLE_RATE as u32)
         .expect("Could not load amen sample!");
-
-    let (delay_write, delay_write_key_res) = runtime
-        .add_node_api(AddNode::DelayWriteStereo {
-            props: Duration::from_secs(1),
-        })
-        .unwrap();
-
-    let res = delay_write_key_res.unwrap();
-
-    let AddNodeResponse::DelayWrite(delay_key) = res;
-
-    let (delay_read, _) = runtime
-        .add_node_api(AddNode::DelayReadStereo {
-            key: delay_key,
-            offsets: [Duration::from_millis(12), Duration::from_millis(32)],
-        })
-        .unwrap();
-
-    let (mixer, _) = runtime.add_node_api(AddNode::TwoTrackStereoMixer).unwrap();
-
-    let (delay_gain, _) = runtime
-        .add_node_api(AddNode::MultStereo { props: 0.6 })
-        .unwrap();
 
     runtime
         .add_edge(Connection {

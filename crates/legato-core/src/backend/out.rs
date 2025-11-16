@@ -1,8 +1,8 @@
 use std::{ops::Mul, path::Path, time::Duration};
 
 use cpal::{
-    traits::{DeviceTrait, StreamTrait},
     BuildStreamError, Device, FromSample, SizedSample, StreamConfig,
+    traits::{DeviceTrait, StreamTrait},
 };
 use generic_array::ArrayLength;
 use hound::{WavSpec, WavWriter};

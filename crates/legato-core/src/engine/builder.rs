@@ -1,14 +1,16 @@
-use std::{ops::Mul, sync::Arc, time::Duration};
+use std::{collections::HashMap, ops::Mul, sync::Arc, time::Duration};
 
 use arc_swap::ArcSwapOption;
 use generic_array::{ArrayLength, GenericArray};
 
 use crate::{
     engine::{
-        audio_context::DelayLineKey,
-        graph::NodeKey,
+        audio_context::AudioContext,
+        graph::{AudioGraph, NodeKey},
         node::{FrameSize, Node},
-        runtime::{Runtime, RuntimeErased},
+        port::Ports,
+        resources::{DelayLineKey, SampleKey, audio_sample::AudioSampleBackend},
+        runtime::{Runtime, RuntimeErased, build_runtime},
     },
     nodes::audio::{
         audio_ops::{ApplyOpMono, ApplyOpStereo},
@@ -23,9 +25,7 @@ use crate::{
     },
 };
 
-use typenum::{Prod, U1, U2};
-
-// TODO: Find nicer solution for arbitrary port size
+use typenum::{Prod, U0, U1, U2};
 
 pub enum AddNode<AF, CF>
 where
@@ -34,42 +34,44 @@ where
     CF: FrameSize,
 {
     // Osc
-    OscMono {
+    SineMono {
         freq: f32,
     },
-    OscStereo {
+    SineStereo {
         freq: f32,
     },
     // Fan mono to stereo
     Stereo,
     // Sampler utils
     SamplerMono {
-        props: Arc<ArcSwapOption<GenericArray<Vec<f32>, U1>>>,
+        sample_name: String,
     },
     SamplerStereo {
-        props: Arc<ArcSwapOption<GenericArray<Vec<f32>, U2>>>,
+        sample_name: String,
     },
     // Delays
     DelayWriteMono {
-        props: Duration,
+        delay_name: String,
+        delay_length: Duration,
     },
     DelayWriteStereo {
-        props: Duration,
+        delay_name: String,
+        delay_length: Duration,
     },
     DelayReadMono {
-        key: DelayLineKey,
+        delay_name: String,
         offsets: [Duration; 1],
     },
     DelayReadStereo {
-        key: DelayLineKey,
+        delay_name: String,
         offsets: [Duration; 2],
     },
     // Filter
     FirMono {
-        kernel: Vec<f32>,
+        coeffs: Vec<f32>,
     },
     FirStereo {
-        kernel: Vec<f32>,
+        coeffs: Vec<f32>,
     },
     // Ops
     AddMono {
@@ -108,129 +110,187 @@ where
     },
 }
 
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub enum BuilderError {
-    InvalidProps,
-}
-
-/// Sometime, certain information can only be passed out from the runtime builder.
-///
-/// For instance, adding a delay_write requires a slotmap key that is only now constructed.
-pub enum AddNodeResponse {
-    DelayWrite(DelayLineKey),
-}
-
-pub trait RuntimeBuilder<AF, CF>
+pub struct RuntimeBuilder<AF, CF, C, Ci>
 where
     AF: FrameSize + Mul<U2>,
     Prod<AF, U2>: FrameSize,
     CF: FrameSize,
-{
-    fn add_node_api(
-        &mut self,
-        node: AddNode<AF, CF>,
-    ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError>;
-}
-
-impl<AF, CF, C, Ci> RuntimeBuilder<AF, CF> for Runtime<AF, CF, C, Ci>
-where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
-    Ci: ArrayLength,
     C: ArrayLength,
+    Ci: ArrayLength,
 {
-    fn add_node_api(
-        &mut self,
-        node: AddNode<AF, CF>,
-    ) -> Result<(NodeKey, Option<AddNodeResponse>), BuilderError> {
-        let node_created: (
-            Result<Box<dyn Node<AF, CF> + Send + 'static>, BuilderError>,
-            Option<AddNodeResponse>,
-        ) = match node {
-            AddNode::OscMono { freq } => (Ok(Box::new(SineMono::new(freq, 0.0))), None),
-            AddNode::OscStereo { freq } => (Ok(Box::new(SineStereo::new(freq, 0.0))), None),
-            AddNode::Stereo => (Ok(Box::new(Stereo::default())), None),
-            // Samplers
-            AddNode::SamplerMono { props } => (Ok(Box::new(SamplerMono::new(props))), None),
-            AddNode::SamplerStereo { props } => (Ok(Box::new(SamplerStereo::new(props))), None),
-            // Delay reads
-            AddNode::DelayReadMono { key, offsets } => (
-                Ok(Box::new(DelayReadMono::new(
-                    key,
-                    *GenericArray::from_slice(&offsets),
-                ))),
-                None,
-            ),
-            AddNode::DelayReadStereo { key, offsets } => (
-                Ok(Box::new(DelayReadStereo::new(
-                    key,
-                    *GenericArray::from_slice(&offsets),
-                ))),
-                None,
-            ),
-            // Delay writes (keep as-is)
-            AddNode::DelayWriteMono { props } => {
-                let ctx = self.get_context_mut();
-                let samples = ctx.get_sample_rate();
-                let delay_capacity = props.as_secs_f32() * samples;
+    runtime: Runtime<AF, CF, C, Ci>,
+    delay_resource_lookup: HashMap<String, DelayLineKey>,
+    sample_key_lookup: HashMap<String, SampleKey>,
+    sample_backend_lookup: HashMap<String, AudioSampleBackend>,
+}
 
-                let delay_line_mono = DelayLine::<AF, U1>::new(delay_capacity as usize);
-
-                let key = ctx.add_delay_line(Box::new(delay_line_mono));
-
-                (
-                    Ok(Box::new(DelayWriteMono::new(key))),
-                    Some(AddNodeResponse::DelayWrite(key)),
-                )
-            }
-            AddNode::DelayWriteStereo { props } => {
-                let ctx = self.get_context_mut();
-                let samples = ctx.get_sample_rate();
-                let delay_capacity = props.as_secs_f32() * samples;
-
-                let delay_line_stereo = DelayLine::<AF, U2>::new(delay_capacity as usize);
-                let key = ctx.add_delay_line(Box::new(delay_line_stereo));
-
-                (
-                    Ok(Box::new(DelayWriteStereo::new(key))),
-                    Some(AddNodeResponse::DelayWrite(key)),
-                )
-            }
-            // Ops
-            AddNode::AddMono { props } => (Ok(Box::new(ApplyOpMono::new(|a, b| a + b, props))), None),
-            AddNode::AddStereo { props } => {
-                (Ok(Box::new(ApplyOpStereo::new(|a, b| a + b, props))), None)
-            }
-            AddNode::MultMono { props } => {
-                (Ok(Box::new(ApplyOpMono::new(|a, b| a * b, props))), None)
-            }
-            AddNode::MultStereo { props } => {
-                (Ok(Box::new(ApplyOpStereo::new(|a, b| a * b, props))), None)
-            }
-            // Filters
-            AddNode::FirMono { kernel } => (Ok(Box::new(FirMono::new(kernel))), None),
-            AddNode::FirStereo { kernel } => (Ok(Box::new(FirStereo::new(kernel))), None),
-            // Mixers
-            AddNode::StereoMixer => (Ok(Box::new(StereoMixer::default())), None),
-            AddNode::StereoToMono => (Ok(Box::new(StereoToMonoMixer::default())), None),
-            AddNode::FourToMonoMixer => (Ok(Box::new(FourToMonoMixer::default())), None),
-            AddNode::TwoTrackStereoMixer => (Ok(Box::new(TwoTrackStereoMixer::default())), None),
-            AddNode::FourTrackStereoMixer => (Ok(Box::new(FourTrackStereoMixer::default())), None),
-            AddNode::EightTrackStereoMixer => (Ok(Box::new(EightTrackStereoMixer::default())), None),
-            AddNode::TwoTrackMonoMixer => (Ok(Box::new(TwoTrackMonoMixer::default())), None),
-            AddNode::Subgraph { runtime } => (Ok(runtime), None),
-            AddNode::Subgraph2XOversampled { runtime } => {
-                (Ok(Box::new(Oversample2X::<AF, CF, C>::new(runtime))), None)
-            }
-
-            // Utils
-            AddNode::Sweep { range, duration } => (Ok(Box::new(Sweep::new(range, duration))), None),
-        };
-
-        match node_created {
-            (Ok(node), maybe_response) => Ok((self.add_node(node), maybe_response)),
-            (Err(err), _) => Err(err),
+impl<AF, CF, C, Ci> RuntimeBuilder<AF, CF, C, Ci>
+where
+    AF: FrameSize + Mul<U2>,
+    Prod<AF, U2>: FrameSize,
+    CF: FrameSize,
+    C: ArrayLength,
+    Ci: ArrayLength,
+{
+    pub fn new(runtime: Runtime<AF, CF, C, Ci>) -> Self {
+        Self {
+            runtime,
+            delay_resource_lookup: HashMap::default(),
+            sample_key_lookup: HashMap::default(),
+            sample_backend_lookup: HashMap::default(),
         }
     }
+    fn get_runtime_mut(&mut self) -> &mut Runtime<AF, CF, C, Ci> {
+        &mut self.runtime
+    }
+
+    // Get owned runtime value
+    pub fn get_owned(self) -> (Runtime<AF, CF, C, Ci>, HashMap<String, AudioSampleBackend>) {
+        (self.runtime, self.sample_backend_lookup)
+    }
+    fn get_sample_rate(&self) -> f32 {
+        self.runtime.get_sample_rate()
+    }
+
+    // Add nodes to runtime
+    pub fn add_node(&mut self, node_to_add: AddNode<AF, CF>) -> NodeKey {
+        let node: Box<dyn Node<AF, CF> + Send + 'static> = match node_to_add {
+            // Ops
+            AddNode::AddMono { props } => Box::new(ApplyOpMono::new(|a, b| a + b, props)),
+            AddNode::AddStereo { props } => Box::new(ApplyOpStereo::new(|a, b| a + b, props)),
+            AddNode::MultMono { props } => Box::new(ApplyOpMono::new(|a, b| a * b, props)),
+            AddNode::MultStereo { props } => Box::new(ApplyOpStereo::new(|a, b| a * b, props)),
+            // Mono to stereo
+            AddNode::Stereo => Box::new(Stereo::default()),
+            // Mixers
+            AddNode::StereoMixer => Box::new(StereoMixer::default()),
+            AddNode::StereoToMono => Box::new(StereoToMonoMixer::default()),
+            AddNode::FourToMonoMixer => Box::new(FourToMonoMixer::default()),
+            AddNode::TwoTrackStereoMixer => Box::new(TwoTrackStereoMixer::default()),
+            AddNode::FourTrackStereoMixer => Box::new(FourTrackStereoMixer::default()),
+            AddNode::EightTrackStereoMixer => Box::new(EightTrackStereoMixer::default()),
+            AddNode::TwoTrackMonoMixer => Box::new(TwoTrackMonoMixer::default()),
+            // Filters
+            AddNode::FirMono { coeffs } => Box::new(FirMono::new(coeffs)),
+            AddNode::FirStereo { coeffs } => Box::new(FirStereo::new(coeffs)),
+            // Osc
+            AddNode::SineMono { freq } => Box::new(SineMono::new(freq, 0.0)),
+            AddNode::SineStereo { freq } => Box::new(SineStereo::new(freq, 0.0)),
+            // Samplers
+            AddNode::SamplerMono { sample_name } => {
+                let sample_key = if let Some(&key) = self.sample_key_lookup.get(&sample_name) {
+                    key
+                } else {
+                    let ctx = self.runtime.get_context_mut();
+
+                    let data = Arc::new(ArcSwapOption::new(None));
+                    let backend = AudioSampleBackend::new(data.clone());
+
+                    self.sample_backend_lookup.insert(sample_name, backend);
+
+                    ctx.add_sample_resource(data)
+                };
+
+                Box::new(SamplerMono::new(sample_key))
+            }
+            AddNode::SamplerStereo { sample_name } => {
+                let sample_key = if let Some(&key) = self.sample_key_lookup.get(&sample_name) {
+                    key
+                } else {
+                    let ctx = self.runtime.get_context_mut();
+
+                    let data = Arc::new(ArcSwapOption::new(None));
+                    let backend = AudioSampleBackend::new(data.clone());
+
+                    self.sample_backend_lookup.insert(sample_name, backend);
+
+                    ctx.add_sample_resource(data)
+                };
+
+                Box::new(SamplerStereo::new(sample_key))
+            }
+            // Delay Line
+            AddNode::DelayWriteMono {
+                delay_name,
+                delay_length,
+            } => {
+                let sr = self.get_sample_rate();
+                let capacity = sr * delay_length.as_secs_f32();
+                let delay_line = Box::new(DelayLine::<AF, U1>::new(capacity as usize));
+
+                let ctx = self.get_runtime_mut().get_context_mut();
+                let delay_key = ctx.add_delay_line(delay_line);
+
+                self.delay_resource_lookup.insert(delay_name, delay_key);
+
+                Box::new(DelayWriteMono::new(delay_key))
+            }
+            AddNode::DelayWriteStereo {
+                delay_name,
+                delay_length,
+            } => {
+                let sr = self.get_sample_rate();
+                let capacity = sr * delay_length.as_secs_f32();
+                let delay_line = Box::new(DelayLine::<AF, U2>::new(capacity as usize));
+
+                let ctx = self.get_runtime_mut().get_context_mut();
+                let delay_key = ctx.add_delay_line(delay_line);
+
+                self.delay_resource_lookup.insert(delay_name, delay_key);
+
+                Box::new(DelayWriteStereo::new(delay_key))
+            }
+            AddNode::DelayReadMono {
+                delay_name,
+                offsets,
+            } => {
+                let delay_key = self
+                    .delay_resource_lookup
+                    .get(&delay_name)
+                    .expect("Delay read instantiated before line initialized");
+                Box::new(DelayReadMono::new(
+                    delay_key.clone(),
+                    GenericArray::from_array(offsets),
+                ))
+            }
+            AddNode::DelayReadStereo {
+                delay_name,
+                offsets,
+            } => {
+                let delay_key = self
+                    .delay_resource_lookup
+                    .get(&delay_name)
+                    .expect("Delay read instantiated before line initialized");
+                Box::new(DelayReadStereo::new(
+                    delay_key.clone(),
+                    GenericArray::from_array(offsets),
+                ))
+            }
+            // Utils
+            AddNode::Sweep { range, duration } => Box::new(Sweep::new(range, duration)),
+            // Oversampler
+            AddNode::Subgraph { runtime } => runtime,
+            AddNode::Subgraph2XOversampled { runtime } => {
+                Box::new(Oversample2X::<AF, CF, C>::new(runtime))
+            }
+        };
+        self.runtime.add_node(node)
+    }
+}
+
+pub fn get_runtime_builder<AF, CF, C, Ci>(
+    initial_capacity: usize,
+    sample_rate: f32,
+    control_rate: f32,
+    ports: Ports<C, C, Ci, U0>,
+) -> RuntimeBuilder<AF, CF, C, Ci>
+where
+    AF: FrameSize + Mul<U2>,
+    Prod<AF, U2>: FrameSize,
+    CF: FrameSize,
+    C: ArrayLength,
+    Ci: ArrayLength,
+{
+    let runtime = build_runtime(initial_capacity, sample_rate, control_rate, ports);
+    RuntimeBuilder::new(runtime)
 }

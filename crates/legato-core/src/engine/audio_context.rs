@@ -1,9 +1,15 @@
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 use generic_array::ArrayLength;
-use slotmap::{new_key_type, SlotMap};
 
-use crate::{engine::buffer::Frame, nodes::audio::delay::DelayLineErased};
-
-new_key_type! { pub struct DelayLineKey; }
+use crate::{
+    engine::{
+        buffer::Frame,
+        resources::{DelayLineKey, Resources, SampleKey, audio_sample::AudioSample},
+    },
+    nodes::audio::delay::DelayLineErased,
+};
 
 pub struct AudioContext<N>
 where
@@ -11,7 +17,7 @@ where
 {
     sample_rate: f32, // avoiding frequent casting
     control_rate: f32,
-    delay_lines: SlotMap<DelayLineKey, Box<dyn DelayLineErased<N>>>,
+    resources: Resources<N>,
 }
 
 impl<N> AudioContext<N>
@@ -22,7 +28,7 @@ where
         Self {
             sample_rate,
             control_rate,
-            delay_lines: SlotMap::default(),
+            resources: Resources::new(),
         }
     }
     #[inline(always)]
@@ -33,9 +39,9 @@ where
     pub fn get_control_rate(&self) -> f32 {
         self.control_rate
     }
+    // Operations for resources
     pub fn write_block(&mut self, key: DelayLineKey, block: &Frame<N>) {
-        let delay_line = self.delay_lines.get_mut(key).unwrap();
-        delay_line.write_block_erased(block);
+        self.resources.delay_write_block(key, block)
     }
     #[inline(always)]
     pub fn get_delay_linear_interp(
@@ -44,13 +50,20 @@ where
         channel: usize,
         offset: f32,
     ) -> f32 {
-        let delay_line = self.delay_lines.get(key).unwrap();
-        delay_line.get_delay_linear_interp_erased(channel, offset)
+        self.resources.get_delay_linear_interp(key, channel, offset)
     }
     pub fn add_delay_line(
         &mut self,
         delay_line: Box<dyn DelayLineErased<N> + Send + 'static>,
     ) -> DelayLineKey {
-        self.delay_lines.insert(delay_line)
+        self.resources.add_delay_line(delay_line)
+    }
+    pub fn get_sample(&self, sample_key: SampleKey) -> Option<Arc<AudioSample>> {
+        self.resources.get_sample(sample_key)
+    }
+    // Note, the sample does not have to live at this point.
+    // This is creating an Arc<ArcSwapOption> that can load samples at runtime
+    pub fn add_sample_resource(&mut self, sample: Arc<ArcSwapOption<AudioSample>>) -> SampleKey {
+        self.resources.add_sample_resource(sample)
     }
 }

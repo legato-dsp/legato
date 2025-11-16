@@ -1,23 +1,19 @@
-use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{BufferSize, SampleRate, StreamConfig};
+use legato_core::engine::builder::{RuntimeBuilder, get_runtime_builder};
 use legato_core::{
     backend::out::start_audio_thread,
     engine::{
         builder::AddNode,
         graph::{Connection, ConnectionEntry},
         port::{PortRate, Ports},
-        runtime::{build_runtime, Runtime},
     },
     nodes::utils::port_utils::generate_audio_outputs,
 };
-use legato_core::{engine::builder::RuntimeBuilder, nodes::audio::sampler::AudioSampleBackend};
-use std::{sync::Arc};
-
-use typenum::{Unsigned, U0, U2, U2048, U64};
+use typenum::{U0, U2, U64, U4096, Unsigned};
 
 fn main() {
-    type BlockSize = U2048;
+    type BlockSize = U4096;
     type ControlSize = U64;
     type ChannelCount = U2;
 
@@ -26,20 +22,18 @@ fn main() {
     const DECIMATION_FACTOR: f32 = 32.0;
     const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
 
-    let mut runtime: Runtime<BlockSize, ControlSize, ChannelCount, U0> = build_runtime(
-        CAPACITY,
-        SAMPLE_RATE as f32,
-        CONTROL_RATE,
-        Ports {
-            audio_inputs: None,
-            audio_outputs: Some(generate_audio_outputs()),
-            control_inputs: None,
-            control_outputs: None,
-        },
-    );
-
-    let data = Arc::new(ArcSwapOption::new(None));
-    let backend = AudioSampleBackend::new(data.clone());
+    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
+        get_runtime_builder(
+            CAPACITY,
+            SAMPLE_RATE as f32,
+            CONTROL_RATE,
+            Ports {
+                audio_inputs: None,
+                audio_outputs: Some(generate_audio_outputs()),
+                control_inputs: None,
+                control_outputs: None,
+            },
+        );
 
     // Would suggest using Python + numpy + scipy. In the future there should be a tool for this here.
     // Here is a cool tool, the blog post is great as well: https://fiiir.com/
@@ -123,18 +117,18 @@ fn main() {
         0.0,
     ];
 
-    let (fir, _) = runtime
-        .add_node_api(AddNode::FirStereo { kernel: coeffs })
-        .expect("Could not add FIR");
+    let fir = runtime_builder.add_node(AddNode::FirStereo { coeffs });
 
-    let (sampler, _) = runtime
-        .add_node_api(AddNode::SamplerStereo {
-            props: data.clone(),
-        })
-        .expect("Could not add sampler");
+    let sampler = runtime_builder.add_node(AddNode::SamplerStereo {
+        sample_name: String::from("amen"),
+    });
+
+    let (mut runtime, sample_backends) = runtime_builder.get_owned();
+
+    let backend = sample_backends.get(&String::from("amen")).unwrap();
 
     backend
-        .load_file("./samples/amen.wav")
+        .load_file("./samples/amen.wav", 2, SAMPLE_RATE as u32)
         .expect("Could not load amen sample!");
 
     runtime
