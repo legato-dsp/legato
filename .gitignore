@@ -1,6 +1,7 @@
 target/
 **/target/
 .direnv/
+.vscode/
 /samples
 example.png
 example.wav
