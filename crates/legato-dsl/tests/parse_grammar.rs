@@ -138,11 +138,6 @@ fn parse_object_with_comment() {
 }
 
 #[test]
-fn parse_export() {
-    parse_ok(Rule::exports, "{ shimmer_reverb, fm_synth_one, stereo }");
-}
-
-#[test]
 fn parse_full_graph() {
     let src = r#"control {
                 io: audio_in { chans: 2 },
@@ -161,7 +156,7 @@ fn parse_full_graph() {
             }
 
             audio_in.stereo >> looper.stereo
-            params >> looper.control { automap: true }
+            params >> looper.control
 
             { params }
         "#;
@@ -248,8 +243,8 @@ fn parse_empty_scope() {
 }
 
 #[test]
-fn parse_exports() {
-    parse_ok(Rule::exports, r#"{ osc_one, lfo_a, delay_1 }"#);
+fn parse_sink() {
+    parse_ok(Rule::sink, r#"{ osc_one }"#);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use legato_core::{
 use typenum::{Prod, U0, U2};
 use std::collections::HashMap;
 
-use crate::{ApplicationConfig, BuildApplicationError, ast::{Ast, AstNodeConnection, PortConnectionType}, ir::{params::Params, registry::LegatoRegistryContainer}};
+use crate::{ApplicationConfig, BuildApplicationError, ast::{Ast, AstNodeConnection, PortConnectionType, Sink}, ir::{params::Params, registry::LegatoRegistryContainer}};
 
 pub mod params;
 pub mod registry;
@@ -36,6 +36,7 @@ where
 {
     add_node_instructions: HashMap<String, AddNode<AF, CF>>, // A hashmap of working names -> add node commands
     connections: Vec<AstNodeConnection>,
+    sink: Sink
     // TODO: Exports
 }
 
@@ -70,7 +71,8 @@ where
 
         Self {
             add_node_instructions: add_node_instructions,
-            connections: ast.connections
+            connections: ast.connections,
+            sink: ast.sink
         }
     }
 }
@@ -147,6 +149,10 @@ where
     for c in connections {
         runtime.add_edge(c).unwrap();
     }
+
+    let sink_ref = node_working_name_to_key_map.get(&ir.sink.name).expect("Could not find sink!");
+
+    runtime.set_sink_key(*sink_ref).expect("Could not set sink!");
 
     (runtime, backend)
 }

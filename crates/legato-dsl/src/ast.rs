@@ -9,7 +9,7 @@ use crate::parse::{Rule, print_pair};
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<AstNodeConnection>,
-    pub exports: Vec<Export>,
+    pub sink: Sink,
 }
 
 // Declarations
@@ -74,8 +74,8 @@ pub enum PortConnectionType {
     Auto,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Export {
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Sink {
     pub name: String,
 }
 
@@ -91,7 +91,13 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
         match declaration.as_rule() {
             Rule::scope_block => ast.declarations.push(parse_scope_block(declaration)?),
             Rule::connection => ast.connections.push(parse_connection(declaration)?),
-            Rule::exports => ast.exports = parse_exports(declaration)?,
+            Rule::sink => {
+                let mut inner = declaration.into_inner();
+                let s = inner.next().unwrap(); // ident or node-path
+                ast.sink = Sink {
+                    name: s.as_str().to_string(),
+                };
+            }
             Rule::WHITESPACE => (),
             _ => (),
         }
@@ -213,21 +219,6 @@ fn parse_node_or_node_with_port(
             pair.as_rule()
         ))),
     }
-}
-
-fn parse_exports<'i>(pair: Pair<'i, Rule>) -> Result<Vec<Export>, BuildAstError> {
-    let mut exports = Vec::new();
-
-    for p in pair.into_inner() {
-        match p.as_rule() {
-            Rule::ident => exports.push(Export {
-                name: p.as_str().to_string(),
-            }),
-            _ => panic!("Unexpected value in exports!"),
-        }
-    }
-
-    Ok(exports)
 }
 
 // Utilities for common values

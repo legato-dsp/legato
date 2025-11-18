@@ -1,5 +1,5 @@
 use legato_dsl::{
-    ast::{Ast, Value, build_ast},
+    ast::{Ast, Value, build_ast, Sink},
     parse::{LegatoParser, Rule},
 };
 use pest::Parser;
@@ -17,6 +17,7 @@ fn ast_node_with_alias_and_params() {
         audio {
             osc: square_wave_one { freq: 440, gain: 0.2 }
         }
+        { osc }
     "#,
     );
 
@@ -33,4 +34,7 @@ fn ast_node_with_alias_and_params() {
     let params = node.params.as_ref().unwrap();
     assert_eq!(params["freq"], Value::I32(440));
     assert_eq!(params["gain"], Value::F32(0.2));
+
+    let sink = ast.sink;
+    assert_eq!(sink, Sink { name: String::from("osc") })
 }
