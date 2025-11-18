@@ -7,7 +7,10 @@ use std::{
 use legato_core::engine::{builder::AddNode, node::FrameSize};
 use typenum::{Prod, U2};
 
-use crate::ir::{ValidationError, params::Params};
+use crate::{
+    ast::Object,
+    ir::{ValidationError, params::Params},
+};
 
 /// A node registry trait that let's users extend the graph logic
 /// to make their own node namespaces. For example, you could make a
@@ -58,6 +61,17 @@ where
             Box::new(AudioRegistry::default()) as Box<dyn NodeRegistry<AF, CF>>,
         );
         Self { namespaces }
+    }
+    pub fn get(
+        &self,
+        namespace: &String,
+        node: String,
+        params: Option<&Params>,
+    ) -> Result<AddNode<AF, CF>, ValidationError> {
+        let ns = self.namespaces.get(namespace)?;
+        let add_node = ns.lower_to_ir(node, params)?;
+
+        Ok(add_node)
     }
 }
 
