@@ -1,0 +1,11 @@
+[package]
+name = "legato-dsl"
+version = "0.0.5"
+edition = "2024"
+
+[dependencies]
+legato-core = { path = "../legato-core" }
+typenum = "1.18.0"
+generic-array = "1.2.0"
+pest = "2.8.3"
+pest_derive = "2.8.3"

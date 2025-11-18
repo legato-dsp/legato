@@ -1,0 +1,9 @@
+[package]
+name = "fm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.16.0"
+legato = { path = "../../crates", features = ["core", "dsl"] }
+typenum = "1.19.0"
