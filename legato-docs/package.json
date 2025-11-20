@@ -1,0 +1,17 @@
+{
+  "name": "legato-docs",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "nuxt dev --extends docus",
+    "build": "nuxt build --extends docus"
+  },
+  "dependencies": {
+    "@nuxt/content": "3.8.2",
+    "@nuxt/eslint": "1.10.0",
+    "@nuxt/fonts": "0.12.1",
+    "better-sqlite3": "^12.2.0",
+    "docus": "latest",
+    "eslint": "^9.39.1",
+    "nuxt": "^4.1.2"
+  }
+}
