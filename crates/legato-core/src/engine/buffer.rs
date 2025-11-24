@@ -55,3 +55,5 @@ impl<N: FrameSize> DerefMut for Buffer<N> {
 }
 
 pub type Frame<N> = [Buffer<N>];
+
+// TODO: Lanes and latency sizes
