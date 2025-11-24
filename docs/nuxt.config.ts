@@ -5,7 +5,12 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   vite: { plugins: [tailwindcss()] },
   css: ["~/assets/css/main.css"],
-  modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts"],
+  modules: [
+    "@nuxt/content",
+    "@nuxt/eslint",
+    "@nuxt/fonts",
+    "@nuxt/image",
+  ],
   content: {
     build: {
       markdown: {
