@@ -11,9 +11,9 @@ const { data } = await useAsyncData(pageId, () => {
 <template>
   <div>
     <div v-if="data">
-      <h1>{{ data.title }}</h1>
-      <article>
-        <ContentRenderer class="prose-xl" :value="data"> </ContentRenderer>
+      <article class="prose-lg">
+        <h1>{{ data.title }}</h1>
+        <ContentRenderer :value="data"> </ContentRenderer>
       </article>
     </div>
   </div>

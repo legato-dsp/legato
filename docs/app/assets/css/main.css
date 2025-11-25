@@ -32,12 +32,12 @@ h3,
 h4,
 h5,
 h6 {
-  @apply font-heading font-semibold;
+  @apply font-heading font-semibold text-primary;
 }
 
 span,
 p {
-  @apply font-display;
+  @apply font-display text-primary;
 }
 
 .bg-gradient {
