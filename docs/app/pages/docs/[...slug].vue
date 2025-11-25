@@ -6,11 +6,8 @@ const { data } = await useAsyncData(pageId, () => {
 });
 </script>
 
-<template v>
+<template>
   <div>
-    <NuxtLink to="/">
-      <small>Back</small>
-    </NuxtLink>
     <div v-if="data">
       <h1>{{ data.title }}</h1>
       <ContentRenderer :value="data"> </ContentRenderer>

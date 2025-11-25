@@ -5,8 +5,8 @@ const { data: docs } = await useAsyncData(() => {
 </script>
 
 <template>
-  <div>
-    <h1>Blog</h1>
+  <div class="flex flex-col gap-3">
+    <h1>Docs</h1>
     <p v-for="doc in docs" :key="doc.id">
       >
       <nuxt-link :to="doc.path">

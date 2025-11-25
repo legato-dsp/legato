@@ -1,6 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: "Satoshi", "sans-serif";
+  --font-heading: "Chillax", "sans-serif";
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+}
+
 :root {
+  overflow: hidden;
   width: 100vw;
   height: 100vh;
   --bg: #080711;
@@ -14,11 +23,27 @@
 }
 
 body {
-  width: 100%;
-  height: 100%;
-  margin: 0px;
-  padding: 0px;
   color: var(--text-primary);
+}
+
+h1 {
+  @apply text-4xl font-heading font-bold;
+}
+
+h2 {
+  @apply text-3xl font-heading font-semibold;
+}
+
+p {
+  @apply text-base text-secondary leading-relaxed;
+}
+
+span {
+  @apply text-primary;
+}
+
+a {
+  @apply text-lg font-heading font-semibold;
 }
 
 .bg-gradient {
