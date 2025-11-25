@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+definePageMeta({ layout: "docs" });
+
 const route = useRoute();
 const pageId = computed(() => `/docs/${route.path}`);
 const { data } = await useAsyncData(pageId, () => {

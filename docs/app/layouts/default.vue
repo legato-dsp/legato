@@ -6,7 +6,7 @@
     <div class="w-full h-full inset-0 bg-(--bg)">
       <div class="w-full flex justify-between items-center py-8 px-16">
         <div class="flex gap-12 items-center">
-          <NuxtImg class="xl:w-52 w-36" src="/images/legato.svg" />
+          <NuxtImg class="xl:w-48 w-36" src="/images/legato.svg" />
           <div class="flex gap-6">
             <NuxtLink class="text-(--text-secondary)" to="/docs">Docs</NuxtLink>
             <NuxtLink class="text-(--text-secondary)" to="/contributing"
