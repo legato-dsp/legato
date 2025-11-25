@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@plugin "@tailwindcss/typography";
 @theme {
   --font-display: "Satoshi", "sans-serif";
   --font-heading: "Chillax", "sans-serif";
@@ -26,24 +26,18 @@ body {
   color: var(--text-primary);
 }
 
-h1 {
-  @apply text-4xl font-heading font-bold;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  @apply font-heading font-semibold;
 }
 
-h2 {
-  @apply text-3xl font-heading font-semibold;
-}
-
+span,
 p {
-  @apply text-base text-secondary leading-relaxed;
-}
-
-span {
-  @apply text-primary;
-}
-
-a {
-  @apply text-lg font-heading font-semibold;
+  @apply font-display;
 }
 
 .bg-gradient {

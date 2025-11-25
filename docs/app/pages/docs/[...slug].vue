@@ -12,7 +12,9 @@ const { data } = await useAsyncData(pageId, () => {
   <div>
     <div v-if="data">
       <h1>{{ data.title }}</h1>
-      <ContentRenderer :value="data"> </ContentRenderer>
+      <article>
+        <ContentRenderer class="prose-xl" :value="data"> </ContentRenderer>
+      </article>
     </div>
   </div>
 </template>
