@@ -6,7 +6,7 @@ use arc_swap::ArcSwapOption;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
-    engine::{buffer::Frame, node::FrameSize, resources::audio_sample::AudioSample},
+    engine::{buffer::Frame, node::BufferSize, resources::audio_sample::AudioSample},
     nodes::audio::delay::DelayLineErased,
 };
 
@@ -23,7 +23,7 @@ new_key_type! { pub struct SampleKey; }
 
 pub struct Resources<N>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
 {
     delay_lines: SlotMap<DelayLineKey, Box<dyn DelayLineErased<N>>>,
     samples: SlotMap<SampleKey, Arc<ArcSwapOption<AudioSample>>>,
@@ -31,7 +31,7 @@ where
 
 impl<N> Resources<N>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         Self {

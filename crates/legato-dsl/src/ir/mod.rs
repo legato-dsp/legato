@@ -4,7 +4,7 @@ use generic_array::ArrayLength;
 use legato_core::engine::{
     builder::{AddNode, RuntimeBuilder, get_runtime_builder},
     graph::{Connection, ConnectionEntry, NodeKey},
-    node::FrameSize,
+    node::BufferSize,
     port::{PortRate, Ports},
     runtime::{Runtime, RuntimeBackend},
 };
@@ -35,9 +35,9 @@ pub enum ValidationError {
 
 pub struct IR<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     add_node_instructions: HashMap<String, AddNode<AF, CF>>, // A hashmap of working names -> add node commands
     connections: Vec<AstNodeConnection>,
@@ -46,9 +46,9 @@ where
 
 impl<AF, CF> From<Ast> for IR<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     fn from(ast: Ast) -> Self {
         let registry = LegatoRegistryContainer::new();
@@ -92,9 +92,9 @@ pub fn build_runtime_from_ir<AF, CF, C, Ci>(
     ports: Ports<C, C, Ci, U0>,
 ) -> (Runtime<AF, CF, C, Ci>, RuntimeBackend)
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
     Ci: ArrayLength,
 {

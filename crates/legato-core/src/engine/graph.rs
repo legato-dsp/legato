@@ -1,5 +1,5 @@
 use crate::engine::{
-    node::{FrameSize, Node},
+    node::{BufferSize, Node},
     port::PortRate,
 };
 use indexmap::IndexSet;
@@ -36,9 +36,9 @@ pub type AudioNode<AF, CF> = Box<dyn Node<AF, CF> + Send>;
 /// A DAG for grabbing nodes and their dependencies via topological sort.
 pub struct AudioGraph<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     nodes: SlotMap<NodeKey, AudioNode<AF, CF>>,
     incoming_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
@@ -51,9 +51,9 @@ where
 
 impl<AF, CF> AudioGraph<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
@@ -262,7 +262,7 @@ mod test {
     use crate::engine::audio_context::AudioContext;
     use crate::engine::graph::GraphError::CycleDetected;
     use crate::engine::graph::{AudioGraph, Connection, ConnectionEntry};
-    use crate::engine::node::{FrameSize, Node};
+    use crate::engine::node::{BufferSize, Node};
     use crate::engine::port::{
         AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, PortMeta, PortRate,
         PortedErased,
@@ -362,8 +362,8 @@ mod test {
 
     impl<AF, CF, Ai, Ao, Ci, Co> Node<AF, CF> for ExampleNode<Ai, Ao, Ci, Co>
     where
-        AF: FrameSize,
-        CF: FrameSize,
+        AF: BufferSize,
+        CF: BufferSize,
         Ai: ArrayLength,
         Ao: ArrayLength,
         Ci: ArrayLength,
@@ -382,9 +382,9 @@ mod test {
 
     fn assert_is_valid_topo<AF, CF>(g: &mut AudioGraph<AF, CF>)
     where
-        AF: FrameSize + Mul<U2>,
-        Prod<AF, U2>: FrameSize,
-        CF: FrameSize,
+        AF: BufferSize + Mul<U2>,
+        Prod<AF, U2>: BufferSize,
+        CF: BufferSize,
     {
         let order = g.invalidate_topo_sort().expect("Could not get topo order");
 

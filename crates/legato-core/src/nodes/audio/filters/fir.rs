@@ -5,7 +5,7 @@ use crate::{
     engine::{
         audio_context::AudioContext,
         buffer::Frame,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::*,
     },
     nodes::utils::{
@@ -82,8 +82,8 @@ where
 
 impl<C, AF, CF> Node<AF, CF> for FirFilter<C>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     fn process(

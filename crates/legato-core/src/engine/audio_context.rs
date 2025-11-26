@@ -5,7 +5,7 @@ use arc_swap::ArcSwapOption;
 use crate::{
     engine::{
         buffer::Frame,
-        node::FrameSize,
+        node::BufferSize,
         resources::{DelayLineKey, Resources, SampleKey, audio_sample::AudioSample},
     },
     nodes::audio::delay::DelayLineErased,
@@ -14,7 +14,7 @@ use crate::{
 
 pub struct AudioContext<N>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
 {
     sample_rate: f32, // avoiding frequent casting
     control_rate: f32,
@@ -23,7 +23,7 @@ where
 
 impl<N> AudioContext<N>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
 {
     pub fn new(sample_rate: f32, control_rate: f32) -> Self {
         Self {

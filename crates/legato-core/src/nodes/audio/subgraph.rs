@@ -1,6 +1,6 @@
 use std::ops::Mul;
 
-use crate::engine::node::FrameSize;
+use crate::engine::node::BufferSize;
 use crate::engine::port::{AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort};
 use crate::engine::runtime::RuntimeErased;
 use crate::nodes::audio::resample::{Downsample2x, Upsample2x};
@@ -29,9 +29,9 @@ use typenum::{Prod, U2};
 ///  Also, control is currently not resampled. This may be tweaked if there are issues.
 pub struct Oversample2X<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     runtime: Box<dyn RuntimeErased<Prod<AF, U2>, CF> + Send + 'static>,
@@ -44,9 +44,9 @@ where
 
 impl<AF, CF, C> Oversample2X<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     pub fn new(runtime: Box<dyn RuntimeErased<Prod<AF, U2>, CF> + Send + 'static>) -> Self {
@@ -61,9 +61,9 @@ where
 
 impl<AF, CF, C> Node<AF, CF> for Oversample2X<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     fn process(
@@ -87,9 +87,9 @@ where
 
 impl<AF, CF, C> PortedErased for Oversample2X<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {

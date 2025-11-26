@@ -2,7 +2,7 @@ use generic_array::{ArrayLength, GenericArray, arr};
 use typenum::{U0, U1, Unsigned};
 
 use crate::engine::audio_context::AudioContext;
-use crate::engine::node::{FrameSize, Node};
+use crate::engine::node::{BufferSize, Node};
 use crate::engine::port::*;
 use crate::nodes::utils::port_utils::generate_audio_outputs;
 
@@ -46,8 +46,8 @@ where
 
 impl<AF, CF, Ao> Node<AF, CF> for Sine<U1, Ao, U0, U0>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     Ao: ArrayLength,
 {
     fn process(

@@ -6,7 +6,7 @@ use crate::{
     engine::{
         audio_context::AudioContext,
         buffer::Frame,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::{Stereo, *},
         resources::SampleKey,
     },
@@ -44,8 +44,8 @@ where
 
 impl<AF, CF, Ao> Node<AF, CF> for Sampler<Ao>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     Ao: ArrayLength,
 {
     fn process(

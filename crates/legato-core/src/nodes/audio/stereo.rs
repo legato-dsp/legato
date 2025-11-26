@@ -1,5 +1,5 @@
 use crate::engine::audio_context::AudioContext;
-use crate::engine::node::FrameSize;
+use crate::engine::node::BufferSize;
 use crate::engine::port::{
     AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, PortMeta,
 };
@@ -19,8 +19,8 @@ impl Default for Stereo {
 
 impl<AF, CF> Node<AF, CF> for Stereo
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
 {
     fn process(
         &mut self,

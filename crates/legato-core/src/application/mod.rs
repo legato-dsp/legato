@@ -3,22 +3,22 @@ use std::ops::Mul;
 use generic_array::ArrayLength;
 use typenum::{Prod, U0, U2};
 
-use crate::engine::{buffer::Frame, node::FrameSize, runtime::Runtime};
+use crate::engine::{buffer::Frame, node::BufferSize, runtime::Runtime};
 
 pub struct Application<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     runtime: Runtime<AF, CF, C, U0>,
 }
 impl<AF, CF, C> Application<AF, CF, C>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     pub fn new(runtime: Runtime<AF, CF, C, U0>) -> Self {

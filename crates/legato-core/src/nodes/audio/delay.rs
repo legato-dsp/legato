@@ -7,7 +7,7 @@ use crate::{
     engine::{
         audio_context::AudioContext,
         buffer::Frame,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::{
             AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, Mono,
             PortedErased, Ports, Stereo,
@@ -24,7 +24,7 @@ pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
 #[derive(Clone)]
 pub struct DelayLine<N, C>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
     C: ArrayLength + Send + Sync + 'static,
 {
     buffers: GenericArray<Vec<f32>, C>,
@@ -36,7 +36,7 @@ where
 // Erasing delay line so we can store in a global context
 pub trait DelayLineErased<N>: Send + Sync
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
 {
     fn get_write_pos_erased(&self, channel: usize) -> &usize;
     fn write_block_erased(&mut self, block: &Frame<N>);
@@ -45,7 +45,7 @@ where
 
 impl<N, C> DelayLine<N, C>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
     C: ArrayLength + Send + Sync + 'static,
 {
     pub fn new(capacity: usize) -> Self {
@@ -106,7 +106,7 @@ where
 
 impl<N, C> DelayLineErased<N> for DelayLine<N, C>
 where
-    N: FrameSize + Send + Sync + 'static,
+    N: BufferSize + Send + Sync + 'static,
     C: ArrayLength + Send + Sync + 'static,
 {
     fn get_delay_linear_interp_erased(&self, channel: usize, offset: f32) -> f32 {
@@ -146,8 +146,8 @@ where
 
 impl<AF, CF, Ai> Node<AF, CF> for DelayWrite<Ai>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     Ai: ArrayLength,
 {
     fn process(
@@ -183,7 +183,7 @@ where
 
 pub struct DelayRead<AF, Ao>
 where
-    AF: FrameSize,
+    AF: BufferSize,
     Ao: ArrayLength,
 {
     delay_line_key: DelayLineKey,
@@ -193,7 +193,7 @@ where
 }
 impl<AF, Ao> DelayRead<AF, Ao>
 where
-    AF: FrameSize,
+    AF: BufferSize,
     Ao: ArrayLength,
 {
     pub fn new(delay_line_key: DelayLineKey, delay_times: Vec<Duration>) -> Self {
@@ -220,8 +220,8 @@ where
 
 impl<AF, CF, Ao> Node<AF, CF> for DelayRead<AF, Ao>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     Ao: ArrayLength,
 {
     fn process(
@@ -246,7 +246,7 @@ where
 
 impl<AF, Ao> PortedErased for DelayRead<AF, Ao>
 where
-    AF: FrameSize,
+    AF: BufferSize,
     Ao: ArrayLength,
 {
     fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {

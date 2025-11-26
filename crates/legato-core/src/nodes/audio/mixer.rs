@@ -5,7 +5,7 @@ use crate::{
     engine::{
         audio_context::AudioContext,
         buffer::Frame,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::*,
     },
     nodes::utils::port_utils::{generate_audio_inputs, generate_audio_outputs},
@@ -38,8 +38,8 @@ where
 
 impl<AF, CF, Ai, Ao> Node<AF, CF> for Mixer<Ai, Ao>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     Ai: ArrayLength,
     Ao: ArrayLength,
 {

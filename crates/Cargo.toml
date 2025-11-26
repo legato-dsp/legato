@@ -4,14 +4,16 @@ version = "0.0.5"
 edition = "2024"
 
 [workspace]
-members = ["legato-core", "legato-dsl"]
+members = ["legato-core", "legato-core-two", "legato-dsl"]
 resolver = "3"
 
 [features]
 default = ["core","dsl"]
 core = ["dep:legato-core"]
+core-two = ["dep:legato-core-two"]
 dsl = ["dep:legato-dsl"]
 
 [dependencies]
 legato-core = { path = "legato-core", optional = true }
+legato-core-two = { path = "legato-core-two", optional = true }
 legato-dsl  = { path = "legato-dsl", optional = true }

@@ -1,6 +1,6 @@
 use generic_array::{ArrayLength};
 use std::ops::Mul;
-use legato_core::{application::Application, engine::{node::FrameSize, port::Ports, runtime::RuntimeBackend}, nodes::utils::port_utils::generate_audio_outputs};
+use legato_core::{application::Application, engine::{node::BufferSize, port::Ports, runtime::RuntimeBackend}, nodes::utils::port_utils::generate_audio_outputs};
 use typenum::{Prod, U0, U2};
 
 use crate::{ast::{BuildAstError, build_ast}, ir::{IR, ValidationError, build_runtime_from_ir}, parse::parse_legato_file};
@@ -24,9 +24,9 @@ pub struct ApplicationConfig {
 }
 
 pub fn build_application<AF, CF, C>(graph: &String, config: ApplicationConfig) -> Result<(Application<AF, CF, C>, RuntimeBackend), BuildApplicationError> where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength 
 {
     let parsed = parse_legato_file(&graph).map_err(|x| BuildApplicationError::ParseError(x))?;

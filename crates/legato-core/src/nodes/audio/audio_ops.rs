@@ -5,7 +5,7 @@ use crate::{
     engine::{
         audio_context::AudioContext,
         buffer::Frame,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::{Mono, PortedErased, Ports, Stereo},
     },
     nodes::utils::port_utils::{generate_audio_inputs, generate_audio_outputs},
@@ -40,8 +40,8 @@ where
 
 impl<AF, CF, C> Node<AF, CF> for ApplyOp<C>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     fn process(

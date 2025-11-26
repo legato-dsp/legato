@@ -553,6 +553,7 @@ name = "legato"
 version = "0.0.5"
 dependencies = [
  "legato-core",
+ "legato-core-two",
  "legato-dsl",
 ]
 
@@ -573,6 +574,21 @@ dependencies = [
  "portable-atomic",
  "slotmap",
  "typenum",
+]
+
+[[package]]
+name = "legato-core-two"
+version = "0.0.5"
+dependencies = [
+ "approx",
+ "arc-swap",
+ "assert_no_alloc",
+ "cpal",
+ "criterion",
+ "hound",
+ "indexmap",
+ "portable-atomic",
+ "slotmap",
 ]
 
 [[package]]

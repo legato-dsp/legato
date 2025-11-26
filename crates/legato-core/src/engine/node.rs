@@ -9,11 +9,11 @@ pub trait X2: ArrayLength + Send + Sync + 'static {
     type X2;
 }
 
-pub trait FrameSize: ArrayLength + Send + Sync + 'static + X2 {
+pub trait BufferSize: ArrayLength + Send + Sync + 'static + X2 {
     const SIZE: usize = Self::USIZE;
 }
 
-impl<N> FrameSize for N
+impl<N> BufferSize for N
 where
     N: ArrayLength + Send + Sync + 'static + Mul<U2>,
 {
@@ -22,15 +22,15 @@ where
 
 impl<N> X2 for N
 where
-    N: FrameSize + ArrayLength + Mul<U2> + Send + Sync + 'static,
+    N: BufferSize + ArrayLength + Mul<U2> + Send + Sync + 'static,
 {
     type X2 = Prod<N, U2>;
 }
 
 pub trait Node<AF, CF>: PortedErased
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
 {
     fn process(
         &mut self,

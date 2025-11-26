@@ -10,7 +10,7 @@ use typenum::{Prod, U0, U2};
 
 use crate::{
     application::Application,
-    engine::{node::FrameSize, runtime::Runtime},
+    engine::{node::BufferSize, runtime::Runtime},
 };
 
 pub fn render<AF, CF, C>(
@@ -20,9 +20,9 @@ pub fn render<AF, CF, C>(
     time: Duration,
 ) -> Result<(), hound::Error>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     let dur_in_samples = (time.as_secs_f32() * sr as f32) as usize;
@@ -57,9 +57,9 @@ where
 fn write_runtime_data_cpal<AF, CF, C, Ci, T>(output: &mut [T], runtime: &mut Runtime<AF, CF, C, Ci>)
 where
     T: SizedSample + FromSample<f64>,
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -79,9 +79,9 @@ pub fn start_runtime_audio_thread<AF, CF, C, Ci>(
     mut runtime: Runtime<AF, CF, C, Ci>,
 ) -> Result<(), BuildStreamError>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -108,9 +108,9 @@ fn write_application_data_cpal<AF, CF, C, T>(
     application: &mut Application<AF, CF, C>,
 ) where
     T: SizedSample + FromSample<f64>,
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     let next_block = application.next_block();
@@ -131,9 +131,9 @@ pub fn start_application_audio_thread<AF, CF, C>(
     mut application: Application<AF, CF, C>,
 ) -> Result<(), BuildStreamError>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
 {
     let stream = device.build_output_stream(

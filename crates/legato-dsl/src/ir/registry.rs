@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use legato_core::engine::{builder::AddNode, node::FrameSize};
+use legato_core::engine::{builder::AddNode, node::BufferSize};
 use typenum::{Prod, U2};
 
 use crate::ir::{ValidationError, params::Params};
@@ -15,9 +15,9 @@ use crate::ir::{ValidationError, params::Params};
 /// or you could make a physics namespace with physics logic.
 pub trait NodeRegistry<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     fn lower_to_ir(
         &self,
@@ -38,18 +38,18 @@ where
 /// or make your own at a later time.
 pub struct LegatoRegistryContainer<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     namespaces: HashMap<String, Box<dyn NodeRegistry<AF, CF>>>,
 }
 
 impl<AF, CF> LegatoRegistryContainer<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     pub fn new() -> Self {
         let mut namespaces = HashMap::new();
@@ -95,9 +95,9 @@ pub struct AudioRegistry;
 
 impl<AF, CF> NodeRegistry<AF, CF> for AudioRegistry
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     fn lower_to_ir(
         &self,

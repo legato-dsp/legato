@@ -4,7 +4,7 @@ use crate::engine::{
     audio_context::AudioContext,
     buffer::{Buffer, Frame},
     graph::{AudioGraph, AudioNode, Connection, GraphError, NodeKey},
-    node::{FrameSize, Node},
+    node::{BufferSize, Node},
     port::{GetPorts, PortRate, PortedErased, Ports}, resources::audio_sample::AudioSampleBackend,
 };
 use generic_array::ArrayLength;
@@ -16,9 +16,9 @@ pub const MAX_INITIAL_INPUTS: usize = 32;
 
 pub struct Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -37,9 +37,9 @@ where
 }
 impl<'a, AF, CF, C, Ci> Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -188,9 +188,9 @@ where
 
 impl<AF, CF, C, Ci> Node<AF, CF> for Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -211,9 +211,9 @@ where
 
 impl<AF, CF, C, Ci> PortedErased for Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {
@@ -261,9 +261,9 @@ pub fn build_runtime<AF, CF, C, Ci>(
     ports: Ports<C, C, Ci, U0>,
 ) -> Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
     Ci: ArrayLength,
 {
@@ -278,8 +278,8 @@ where
 /// an existing runtime.
 pub trait RuntimeErased<AF, CF>: Node<AF, CF>
 where
-    AF: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize,
+    CF: BufferSize,
 {
     fn next_block(
         &mut self,
@@ -289,9 +289,9 @@ where
 
 impl<AF, CF, C, Ci> RuntimeErased<AF, CF> for Runtime<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     Ci: ArrayLength,
     C: ArrayLength,
 {

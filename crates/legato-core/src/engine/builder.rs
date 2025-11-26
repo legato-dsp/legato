@@ -6,7 +6,7 @@ use generic_array::ArrayLength;
 use crate::{
     engine::{
         graph::NodeKey,
-        node::{FrameSize, Node},
+        node::{BufferSize, Node},
         port::{GetPorts, Ports},
         resources::{DelayLineKey, SampleKey, audio_sample::AudioSampleBackend},
         runtime::{Runtime, RuntimeBackend, RuntimeErased, build_runtime},
@@ -28,9 +28,9 @@ use typenum::{Prod, U0, U1, U2};
 
 pub enum AddNode<AF, CF>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
 {
     // Osc
     SineMono {
@@ -118,9 +118,9 @@ where
 
 pub struct RuntimeBuilder<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
     Ci: ArrayLength,
 {
@@ -132,9 +132,9 @@ where
 
 impl<AF, CF, C, Ci> RuntimeBuilder<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
     Ci: ArrayLength,
 {
@@ -297,9 +297,9 @@ pub fn get_runtime_builder<AF, CF, C, Ci>(
     ports: Ports<C, C, Ci, U0>,
 ) -> RuntimeBuilder<AF, CF, C, Ci>
 where
-    AF: FrameSize + Mul<U2>,
-    Prod<AF, U2>: FrameSize,
-    CF: FrameSize,
+    AF: BufferSize + Mul<U2>,
+    Prod<AF, U2>: BufferSize,
+    CF: BufferSize,
     C: ArrayLength,
     Ci: ArrayLength,
 {

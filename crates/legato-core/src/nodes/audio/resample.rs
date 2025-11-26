@@ -1,7 +1,7 @@
 use crate::{
     engine::{
         buffer::{Buffer, Frame},
-        node::FrameSize,
+        node::BufferSize,
     },
     nodes::utils::ring::RingBuffer,
 };
@@ -16,16 +16,16 @@ use typenum::{Prod, U2};
 
 pub trait Resampler<N, M, C>
 where
-    N: FrameSize,
-    M: FrameSize,
+    N: BufferSize,
+    M: BufferSize,
 {
     fn process_block(&mut self, ai: &Frame<N>, ao: &mut Frame<M>);
 }
 
 pub struct Upsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     coeffs: Vec<f32>,
@@ -35,8 +35,8 @@ where
 
 impl<N, C> Upsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     pub fn new(coeffs: Vec<f32>) -> Self {
@@ -51,8 +51,8 @@ where
 
 impl<N, C> Resampler<N, Prod<N, U2>, C> for Upsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     fn process_block(&mut self, ai: &Frame<N>, ao: &mut Frame<Prod<N, U2>>) {
@@ -91,8 +91,8 @@ where
 
 pub struct Downsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     coeffs: Vec<f32>,
@@ -102,8 +102,8 @@ where
 
 impl<N, C> Downsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     pub fn new(coeffs: Vec<f32>) -> Self {
@@ -119,8 +119,8 @@ where
 /// Downsampler, it's worth noting that N is the traditional audio rate
 impl<N, C> Resampler<Prod<N, U2>, N, C> for Downsample2x<N, C>
 where
-    N: FrameSize + Mul<U2>,
-    Prod<N, U2>: FrameSize,
+    N: BufferSize + Mul<U2>,
+    Prod<N, U2>: BufferSize,
     C: ArrayLength,
 {
     fn process_block(&mut self, ai: &Frame<Prod<N, U2>>, ao: &mut Frame<N>) {
