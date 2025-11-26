@@ -1,0 +1,28 @@
+[package]
+name = "legato-core-two"
+version = "0.0.5"
+edition = "2024"
+
+
+[features]
+default = ["std"]
+std     = []
+
+[dependencies]
+cpal = { version = "0.16.0", features = ["jack"] }
+assert_no_alloc = "1.1.2"
+indexmap = "2.10.0"
+portable-atomic = { version = "1.11.1", features = ["float"] }
+arc-swap = "1.7.1"
+slotmap = "1.0.7"
+approx = "0.5.1"
+hound = "3.5.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false

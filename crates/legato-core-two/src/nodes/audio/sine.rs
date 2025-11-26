@@ -1,0 +1,53 @@
+use crate::{nodes::{Node, ports::{PortMeta, Ported, Ports}}, runtime::{context::AudioContext}};
+
+pub struct Sine {
+    freq: f32,
+    phase: f32,
+    ports: Ports
+}
+
+impl Sine {
+    pub fn new(freq: f32) -> Self {
+        Self {
+            freq,
+            phase: 0.0,
+            ports: Ports { audio_in: Some(vec![PortMeta { index: 0, name: "fm"}]), audio_out: None, control_in: None, control_out: None }
+        }
+    }
+}
+
+impl Node for Sine {
+    fn process(&mut self, ctx: &mut AudioContext, 
+            ai: &[ &[f32] ],
+            ao: &mut[ &mut[f32] ],
+            _: &[ &[f32] ],
+            _: &mut[ &mut[f32] ],
+        ) {
+            let config = ctx.get_config();
+        let fs = config.sample_rate as f32;
+
+        let fm_in = ai[0];
+
+
+        for n in 0..config.audio_block_size {
+            let mod_amt = fm_in[n];
+
+            let freq = self.freq + mod_amt;
+
+            self.phase += freq / fs;
+            self.phase = self.phase.fract();
+
+            let sample = (self.phase * std::f32::consts::TAU).sin();
+
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
+            }
+        }
+    }
+}
+
+impl Ported for Sine {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
+    }
+}
