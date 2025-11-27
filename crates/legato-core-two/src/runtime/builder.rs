@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{nodes::{Node, audio::sine::Sine, ports::Ports}, runtime::{context::Config, graph::NodeKey, resources::{DelayLineKey, SampleKey, audio_sample::AudioSampleBackend}, runtime::{Runtime, RuntimeBackend, build_runtime}}};
+use arc_swap::ArcSwapOption;
+
+use crate::{nodes::{Node, audio::{sampler::Sampler, sine::Sine}, ports::Ports}, runtime::{context::Config, graph::NodeKey, resources::{DelayLineKey, SampleKey, audio_sample::AudioSampleBackend}, runtime::{Runtime, RuntimeBackend, build_runtime}}};
 
 pub enum AddNode
 {
@@ -9,6 +11,10 @@ pub enum AddNode
         freq: f32,
         chans: usize
     },
+    Sampler {
+        sampler_name: String,
+        chans: usize
+    }
     // // Fan mono to stereo
     // Stereo,
     // // Sampler utils
@@ -122,8 +128,25 @@ impl RuntimeBuilder {
 
     // Add nodes to runtime
     pub fn add_node(&mut self, node_to_add: AddNode) -> NodeKey {
+
         let node: Box<dyn Node + Send> = match node_to_add {
-            AddNode::Sine { freq, chans } => Box::new(Sine::new(freq, chans))
+            AddNode::Sine { freq, chans } => Box::new(Sine::new(freq, chans)),
+            AddNode::Sampler { sampler_name, chans } => {
+                let sample_key = if let Some(&key) = self.sample_key_lookup.get(&sampler_name) {
+                    key
+                } else {
+                    let ctx = self.runtime.get_context_mut();
+
+                    let data = Arc::new(ArcSwapOption::new(None));
+                    let backend = AudioSampleBackend::new(data.clone());
+
+                    self.sample_backend_lookup.insert(sampler_name, backend);
+
+                    ctx.add_sample_resource(data)
+                };
+
+                Box::new(Sampler::new(sample_key, chans))
+            } 
         };
         self.runtime.add_node(node)
     }

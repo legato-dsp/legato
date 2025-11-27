@@ -253,10 +253,10 @@ mod test {
         fn default() -> Self {
             Self {
                 ports: Ports { 
-                    audio_in: Some(vec![PortMeta { name: "in", index: 0}]), 
-                    audio_out: Some(vec![PortMeta { name: "out", index: 0} ]), 
-                    control_in: None, control_out: 
-                    None 
+                    audio_in: vec![PortMeta { name: "in", index: 0}], 
+                    audio_out: vec![PortMeta { name: "out", index: 0} ], 
+                    control_in: vec![], control_out: 
+                    vec![] 
                 }
             }
         }

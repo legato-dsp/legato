@@ -1,4 +1,4 @@
-use crate::utils::interpolation::lerp;
+use crate::{nodes::NodeInputs, utils::interpolation::lerp};
 
 #[derive(Clone)]
 pub struct DelayLine {
@@ -20,9 +20,9 @@ impl DelayLine {
     pub fn get_write_pos(&self, channel: usize) -> &usize {
         &self.write_pos[channel]
     }
-    pub fn write_block(&mut self, block: &[&[f32]]) {
+    pub fn write_block(&mut self, block: &NodeInputs) {
         let block_size = block[0].len();
-        for (c, channel) in block.iter().enumerate() {
+        for (c, _) in block.iter().enumerate() {
             let first_write_size = (self.capacity - self.write_pos[c]).min(block_size);
             let second_write_size = block_size - first_write_size;
 

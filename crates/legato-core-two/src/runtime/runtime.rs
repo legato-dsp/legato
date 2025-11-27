@@ -1,6 +1,7 @@
 use crate::nodes::{Node, NodeInputs};
 use crate::nodes::ports::{PortRate, Ported, Ports};
 use crate::runtime::context::Config;
+use crate::runtime::resources::audio_sample::AudioSampleError;
 use crate::runtime::{
     context::AudioContext,
     graph::{AudioGraph, AudioNode, Connection, GraphError, NodeKey},
@@ -56,8 +57,8 @@ impl Runtime {
     pub fn add_node(&mut self, node: AudioNode) -> NodeKey {
         let ports = node.get_ports();
 
-        let audio_chan_size = ports.audio_out.as_ref().map_or(0, |f| f.len());
-        let control_chan_size = ports.control_out.as_ref().map_or(0, |f| f.len());
+        let audio_chan_size = ports.audio_out.iter().len();
+        let control_chan_size = ports.control_out.iter().len();
 
         let node_key = self.graph.add_node(node);
 
@@ -120,8 +121,8 @@ impl Runtime {
 
             let ports = nodes[*node_key].get_ports();
 
-            let audio_inputs_size = ports.audio_in.as_ref().map_or(0, |f| f.len());
-            let control_inputs_size = ports.control_in.as_ref().map_or(0, |f| f.len());
+            let audio_inputs_size = ports.audio_in.iter().len();
+            let control_inputs_size = ports.control_in.len();
 
             // Zero the incoming buffers
             self.audio_inputs_scratch_buffers[..audio_inputs_size]
@@ -238,10 +239,11 @@ impl RuntimeBackend {
             audio_sample_backend: sample_backend,
         }
     }
-    pub fn load_sample(&mut self, sampler: &String, path: &str, chans: usize, sr: u32) {
+    pub fn load_sample(&mut self, sampler: &String, path: &str, chans: usize, sr: u32) -> Result<(), AudioSampleError> {
         if let Some(backend) = self.audio_sample_backend.get(sampler) {
-            backend.load_file(path, chans, sr).unwrap();
+            return backend.load_file(path, chans, sr)
         }
+        Err(AudioSampleError::BackendNotFound)
     }
 }
 

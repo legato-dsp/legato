@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use slotmap::{SlotMap, new_key_type};
 
-use crate::runtime::resources::{audio_sample::AudioSample, delay_line::DelayLine};
+use crate::{nodes::NodeInputs, runtime::resources::{audio_sample::AudioSample, delay_line::DelayLine}};
 
 // TODO: Maybe use a hashmap to get string -> index pairs,
 // then use the index at runtime?
@@ -19,6 +19,7 @@ new_key_type! { pub struct SampleKey; }
 /// This is nice becuase it avoids some general
 /// annoyances with sharing delay lines, samples, etc,
 
+#[derive(Default)]
 pub struct Resources {
     delay_lines: SlotMap<DelayLineKey, DelayLine>,
     samples: SlotMap<SampleKey, Arc<ArcSwapOption<AudioSample>>>,
@@ -31,7 +32,7 @@ impl Resources {
             samples: SlotMap::default(),
         }
     }
-    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &[&[f32]]) {
+    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &NodeInputs) {
         let delay_line = self.delay_lines.get_mut(key).unwrap();
         delay_line.write_block(block);
     }

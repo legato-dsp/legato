@@ -29,6 +29,7 @@ impl AudioSample {
 pub enum AudioSampleError {
     PathNotFound,
     FailedDecoding,
+    BackendNotFound
 }
 
 /// The audio sample backend is a quick trick to load a sample
@@ -62,16 +63,16 @@ use std::{
     process::{Command, Stdio},
 };
 // For the time being, we're just using FFMPEG for loading samples.
-// We can do something better in the future if required, i.e streaming with channel.
+// We can do something better in the future if required, i.e streaming.
 pub fn decode_with_ffmpeg(path: &str, chans: usize, sr: u32) -> std::io::Result<AudioSample> {
     let mut child = Command::new("ffmpeg")
         .args([
             "-i",
-            path, // input
+            path,               // input
             "-f",
-            "f32le", // correct format for f32
-            "-ac",
-            &chans.to_string(), // number of channels
+            "f32le",            // correct format for f32
+            "-ac",              // number of channels
+            &chans.to_string(), 
             "-ar",              // sample rate
             &sr.to_string(),
             "-acodec",
@@ -100,6 +101,8 @@ pub fn decode_with_ffmpeg(path: &str, chans: usize, sr: u32) -> std::io::Result<
             channel_idx = 0;
         }
     }
+
+    println!("{}", per_channel[0].len());
 
     Ok(AudioSample::new(chans, per_channel))
 }

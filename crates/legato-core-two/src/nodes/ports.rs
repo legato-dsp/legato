@@ -12,38 +12,19 @@ pub enum PortRate {
 
 #[derive(Clone, Debug)]
 pub struct Ports {
-    pub audio_in: Option<Vec<PortMeta>>,
-    pub audio_out: Option<Vec<PortMeta>>,
-    pub control_in: Option<Vec<PortMeta>>,
-    pub control_out: Option<Vec<PortMeta>>,
+    pub audio_in: Vec<PortMeta>,
+    pub audio_out: Vec<PortMeta>,
+    pub control_in: Vec<PortMeta>,
+    pub control_out: Vec<PortMeta>,
 }
 
 impl From<PortBuilder> for Ports {
     fn from(builder: PortBuilder) -> Self {
         Ports {
-            audio_in: if builder.port_audio_in.is_empty() {
-                None
-            } else {
-                Some(builder.port_audio_in)
-            },
-
-            audio_out: if builder.port_audio_out.is_empty() {
-                None
-            } else {
-                Some(builder.port_audio_out)
-            },
-
-            control_in: if builder.port_control_in.is_empty() {
-                None
-            } else {
-                Some(builder.port_control_in)
-            },
-
-            control_out: if builder.port_control_out.is_empty() {
-                None
-            } else {
-                Some(builder.port_control_out)
-            },
+            audio_in: builder.port_audio_in,
+            audio_out: builder.port_audio_out,
+            control_in: builder.port_control_in,
+            control_out: builder.port_control_out
         }
     }
 }
@@ -78,6 +59,7 @@ impl PortBuilder {
                 index: i,
             });
         }
+        println!("{:?}", self.port_audio_out);
         self
     }
 
@@ -182,16 +164,12 @@ fn default_audio_out_name(i: usize, total: usize) -> &'static str {
 mod tests {
     use super::*;
 
-    fn names(v: &Option<Vec<PortMeta>>) -> Vec<&'static str> {
-        v.as_ref()
-            .map(|x| x.iter().map(|p| p.name).collect())
-            .unwrap_or_default()
+    fn names(v: &Vec<PortMeta>) -> Vec<&'static str> {
+        v.iter().map(|p| p.name).collect()
     }
 
-    fn indices(v: &Option<Vec<PortMeta>>) -> Vec<usize> {
-        v.as_ref()
-            .map(|x| x.iter().map(|p| p.index).collect())
-            .unwrap_or_default()
+    fn indices(v: &Vec<PortMeta>) -> Vec<usize> {
+        v.iter().map(|p| p.index).collect()
     }
 
     #[test]
@@ -207,6 +185,16 @@ mod tests {
 
         assert_eq!(names(&ports.audio_in), vec!["in"]);
         assert_eq!(indices(&ports.audio_in), vec![0]);
+    }
+
+    #[test]
+    fn test_two_chans() {
+        let chans = 2;
+        let ports = PortBuilder::default()
+                .audio_out(chans)
+                .build();
+
+        assert_eq!(ports.audio_out.iter().len(), 2);
     }
 
     #[test]
@@ -343,22 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn test_no_ports() {
-        let ports = PortBuilder {
-            port_audio_in: vec![],
-            port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
-        }
-        .build();
-
-        assert!(ports.audio_in.is_none());
-        assert!(ports.audio_out.is_none());
-        assert!(ports.control_in.is_none());
-        assert!(ports.control_out.is_none());
-    }
-
-    #[test]
     fn test_zero_in_zero_out() {
         let ports = PortBuilder {
             port_audio_in: vec![],
@@ -372,9 +344,9 @@ mod tests {
         .control_out(0)
         .build();
 
-        assert!(ports.audio_in.is_none());
-        assert!(ports.audio_out.is_none());
-        assert!(ports.control_in.is_none());
-        assert!(ports.control_out.is_none());
+        assert!(ports.audio_in.iter().len() == 0);
+        assert!(ports.audio_out.iter().len() == 0);
+        assert!(ports.control_in.iter().len() == 0);
+        assert!(ports.control_out.iter().len() == 0);
     }
 }
