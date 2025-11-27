@@ -242,7 +242,7 @@ impl AudioGraph
 
 #[cfg(test)]
 mod test {
-    use crate::{nodes::{Node, ports::{PortMeta, Ported, Ports, PortRate}}, runtime::graph::{AudioGraph, NodeKey}};
+    use crate::{nodes::{Node, NodeInputs, ports::{PortMeta, PortRate, Ported, Ports}}, runtime::graph::{AudioGraph, NodeKey}};
     use super::*;
 
     struct MonoExample {
@@ -270,10 +270,10 @@ mod test {
 
     impl Node for MonoExample {
         fn process(&mut self, ctx: &mut crate::runtime::context::AudioContext, 
-                ai: &[ &[f32] ],
-                ao: &mut[ &mut[f32] ],
-                ci: &[ &[f32] ],
-                co: &mut[ &mut[f32] ],
+                ai: &NodeInputs,
+                ao: &mut NodeInputs,
+                ci: &NodeInputs,
+                co: &mut NodeInputs,
             ) {}
     }
    

@@ -1,4 +1,4 @@
-use crate::nodes::Node;
+use crate::nodes::{Node, NodeInputs};
 use crate::nodes::ports::{PortRate, Ported, Ports};
 use crate::runtime::context::Config;
 use crate::runtime::{
@@ -55,8 +55,9 @@ impl Runtime {
     }
     pub fn add_node(&mut self, node: AudioNode) -> NodeKey {
         let ports = node.get_ports();
-        let audio_inputs_length = ports.audio_in.as_ref().map_or(0, |f| f.len());
-        let control_inputs_length = ports.control_in.as_ref().map_or(0, |f| f.len());
+
+        let audio_chan_size = ports.audio_out.as_ref().map_or(0, |f| f.len());
+        let control_chan_size = ports.control_out.as_ref().map_or(0, |f| f.len());
 
         let node_key = self.graph.add_node(node);
 
@@ -64,11 +65,11 @@ impl Runtime {
 
         self.port_sources_audio.insert(
             node_key,
-            vec![vec![0.0; config.audio_block_size].into(); audio_inputs_length],
+            vec![vec![0.0; config.audio_block_size].into(); audio_chan_size],
         );
         self.port_sources_control.insert(
             node_key,
-            vec![vec![0.0; config.control_block_size].into(); control_inputs_length],
+            vec![vec![0.0; config.control_block_size].into(); control_chan_size],
         );
 
         node_key
@@ -95,6 +96,12 @@ impl Runtime {
     pub fn get_context_mut(&mut self) -> &mut AudioContext {
         &mut self.context
     }
+    pub fn get_context(&mut self) -> &AudioContext {
+        &self.context
+    }
+    pub fn get_config(&self) -> Config {
+        (*self.context.get_config()).clone()
+    }
     // F32 is a bit weird here, but we cast so frequently why not
     pub fn get_sample_rate(&self) -> usize {
         self.context.get_config().sample_rate
@@ -104,7 +111,8 @@ impl Runtime {
         self.graph.get_node(*key).unwrap().get_ports()
     }
     // TODO: Graphs as nodes again
-    pub fn next_block(&mut self, external_inputs: Option<(&[&[f32]], &[&[f32]])>) -> &[&[f32]] {
+    pub fn next_block(&mut self, external_inputs: Option<&(&NodeInputs, &NodeInputs)>) -> &NodeInputs {
+        
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
         for (i, node_key) in sorted_order.iter().enumerate() {
@@ -125,7 +133,8 @@ impl Runtime {
                 .for_each(|buf| buf.fill(0.0));
 
             // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
-            if i == 0 && external_inputs.is_some() {
+
+            if i == 0 && external_inputs.as_ref().is_some() {
                 let (ai, ci) = external_inputs.unwrap();
 
                 for (c, ai_chan) in ai.iter().enumerate() {
@@ -174,16 +183,17 @@ impl Runtime {
             let audio_output_buffer = &mut self.port_sources_audio[*node_key];
             let control_output_buffer = &mut self.port_sources_control[*node_key];
 
+
             let node = nodes
                 .get_mut(*node_key)
                 .expect("Could not find node at index {node_index:?}");
 
             node.process(
                 &mut self.context,
-                &self.audio_inputs_scratch_buffers[0..audio_inputs_size],
-                audio_output_buffer.as_mut_slice(),
-                &self.control_inputs_scratch_buffers[0..control_inputs_size],
-                control_output_buffer.as_mut_slice(),
+                &self.audio_inputs_scratch_buffers,
+                audio_output_buffer,
+                &self.control_inputs_scratch_buffers,
+                control_output_buffer,
             );
         }
 
@@ -191,20 +201,17 @@ impl Runtime {
         self.port_sources_audio
             .get(sink_key)
             .expect("Invalid output port!")
-            .as_slice()
     }
 }
 
 impl Node for Runtime {
-    fn process(
-        &mut self,
-        _: &mut AudioContext,
-        ai: &[&[f32]],
-        ao: &mut [&mut [f32]],
-        ci: &[&[f32]],
-        _: &mut [&mut [f32]], // Subgraphs not forwarding control at the moment
-    ) {
-        let outputs = self.next_block(Some((ai, ci)));
+    fn process<'a>(&mut self, ctx: &mut AudioContext, 
+            ai: &NodeInputs,
+            ao: &mut NodeInputs,
+            ci: &NodeInputs,
+            _: &mut NodeInputs,
+        ) {
+        let outputs = self.next_block(Some(&(ai, ci)));
 
         debug_assert_eq!(ai.len(), ao.len());
         debug_assert_eq!(outputs.len(), ao.len());

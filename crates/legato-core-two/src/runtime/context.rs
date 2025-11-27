@@ -22,29 +22,26 @@ impl BlockSize {
             BlockSize::Block4096 => 4096,
         }
     }
-    fn to_block(&self) -> [f32] {
-        match self {
-            BlockSize::Block64 => [0.0; 64],
-            _ => [0.0; 128],
-        }
-    }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Config {
     pub sample_rate: usize,
     pub control_rate: usize,
     pub audio_block_size: usize,
     pub control_block_size: usize,
+    pub channels: usize
 }
 
 impl Config {
-    pub fn new(sr: usize, cr: usize, block_size: BlockSize) -> Self {
+    pub fn new(sr: usize, cr: usize, block_size: BlockSize, channels: usize) -> Self {
         let audio_block_size = block_size.to_usize();
         Self {
             sample_rate: sr,
             control_rate: cr,
             audio_block_size: audio_block_size,
             control_block_size: audio_block_size / 32,
+            channels
         }
     }
     pub fn validate(&self) {

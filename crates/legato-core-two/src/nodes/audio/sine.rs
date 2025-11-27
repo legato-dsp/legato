@@ -1,7 +1,6 @@
 use crate::{
     nodes::{
-        Node,
-        ports::{PortBuilder, Ported, Ports},
+        Node, NodeInputs, ports::{PortBuilder, Ported, Ports}
     },
     runtime::context::AudioContext,
 };
@@ -29,15 +28,15 @@ impl Node for Sine {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        ai: &[&[f32]],
-        ao: &mut [&mut [f32]],
-        _: &[&[f32]],
-        _: &mut [&mut [f32]],
+        ai: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
         let config = ctx.get_config();
         let fs = config.sample_rate as f32;
 
-        let fm_in = ai[0];
+        let fm_in = &ai[0];
 
         for n in 0..config.audio_block_size {
             let mod_amt = fm_in[n];

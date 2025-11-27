@@ -33,7 +33,7 @@ impl Resources {
     }
     pub fn delay_write_block(&mut self, key: DelayLineKey, block: &[&[f32]]) {
         let delay_line = self.delay_lines.get_mut(key).unwrap();
-        delay_line.write_block_erased(block);
+        delay_line.write_block(block);
     }
     #[inline(always)]
     pub fn get_delay_linear_interp(
@@ -43,7 +43,7 @@ impl Resources {
         offset: f32,
     ) -> f32 {
         let delay_line = self.delay_lines.get(key).unwrap();
-        delay_line.get_delay_linear_interp_erased(channel, offset)
+        delay_line.get_delay_linear_interp(channel, offset)
     }
     pub fn add_delay_line(&mut self, delay_line: DelayLine) -> DelayLineKey {
         self.delay_lines.insert(delay_line)
