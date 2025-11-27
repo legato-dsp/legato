@@ -14,7 +14,7 @@ cd legato
 nix develop . # alternatively just direnv allow
 ```
 
-On Mac (brew)
+On Mac (brew) - requires nightly toolchain
 
 ```bash
 git clone https://github.com/legato-dsp/legato.git 

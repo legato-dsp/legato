@@ -17,10 +17,6 @@ use crate::{
     nodes::utils::port_utils::{generate_audio_inputs, generate_audio_outputs},
 };
 
-pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
-    (1.0 - t) * v0 + t * v1
-}
-
 #[derive(Clone)]
 pub struct DelayLine<N, C>
 where

@@ -1,33 +1,43 @@
-use crate::{nodes::{Node, ports::{PortMeta, Ported, Ports}}, runtime::{context::AudioContext}};
+use crate::{
+    nodes::{
+        Node,
+        ports::{PortBuilder, Ported, Ports},
+    },
+    runtime::context::AudioContext,
+};
 
 pub struct Sine {
     freq: f32,
     phase: f32,
-    ports: Ports
+    ports: Ports,
 }
 
 impl Sine {
-    pub fn new(freq: f32) -> Self {
+    pub fn new(freq: f32, chans: usize) -> Self {
         Self {
             freq,
             phase: 0.0,
-            ports: Ports { audio_in: Some(vec![PortMeta { index: 0, name: "fm"}]), audio_out: None, control_in: None, control_out: None }
+            ports: PortBuilder::default()
+                .audio_in_named(&["fm"])
+                .audio_out(chans)
+                .build(),
         }
     }
 }
 
 impl Node for Sine {
-    fn process(&mut self, ctx: &mut AudioContext, 
-            ai: &[ &[f32] ],
-            ao: &mut[ &mut[f32] ],
-            _: &[ &[f32] ],
-            _: &mut[ &mut[f32] ],
-        ) {
-            let config = ctx.get_config();
+    fn process(
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &[&[f32]],
+        ao: &mut [&mut [f32]],
+        _: &[&[f32]],
+        _: &mut [&mut [f32]],
+    ) {
+        let config = ctx.get_config();
         let fs = config.sample_rate as f32;
 
         let fm_in = ai[0];
-
 
         for n in 0..config.audio_block_size {
             let mod_amt = fm_in[n];
