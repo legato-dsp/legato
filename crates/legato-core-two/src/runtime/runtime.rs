@@ -101,7 +101,7 @@ impl Runtime {
         &self.context
     }
     pub fn get_config(&self) -> Config {
-        (*self.context.get_config()).clone()
+       self.context.get_config()
     }
     // F32 is a bit weird here, but we cast so frequently why not
     pub fn get_sample_rate(&self) -> usize {

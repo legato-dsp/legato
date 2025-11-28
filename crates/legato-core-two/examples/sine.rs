@@ -1,5 +1,5 @@
 use cpal::{SampleRate, StreamConfig, BufferSize, traits::{DeviceTrait, HostTrait}};
-use legato_core_two::{nodes::ports::PortBuilder, runtime::{builder::{AddNode, get_runtime_builder}, context::Config, out::start_runtime_audio_thread}};
+use legato_core_two::{nodes::ports::{PortBuilder, PortRate}, runtime::{builder::{AddNode, get_runtime_builder}, context::Config, graph::{Connection, ConnectionEntry}, out::start_runtime_audio_thread}};
 
 fn main(){
     let config = Config {
@@ -16,11 +16,26 @@ fn main(){
 
     let mut runtime_builder = get_runtime_builder(16, config, ports);
 
-    let sine = runtime_builder.add_node(AddNode::Sine { freq: 440.0, chans: 2 });
+    let carrier = runtime_builder.add_node(AddNode::Sine { freq: 440.0, chans: 2 });
+
+    // TODO: Apply gain
+
+    let modulator = runtime_builder.add_node(AddNode::Sine { freq: 440.0 * (5.0 / 4.0), chans: 1 });
 
     let (mut runtime, _ ) = runtime_builder.get_owned();
 
-    let _ = runtime.set_sink_key(sine); 
+    let _ = runtime.add_edge(Connection {
+        source: ConnectionEntry { node_key: modulator, port_index: 0, port_rate: PortRate::Audio },
+        sink: ConnectionEntry {
+            node_key: carrier, 
+            port_index: 0,
+            port_rate: PortRate::Audio
+        }
+    });
+
+
+
+    let _ = runtime.set_sink_key(carrier); 
 
      #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");

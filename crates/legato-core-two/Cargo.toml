@@ -3,7 +3,6 @@ name = "legato-core-two"
 version = "0.0.5"
 edition = "2024"
 
-
 [features]
 default = ["std"]
 std     = []
@@ -20,12 +19,6 @@ hound = "3.5.1"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-
-[profile.bench]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-debug = false
 
 [[bench]]
 name = "nodes"

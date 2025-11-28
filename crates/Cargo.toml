@@ -17,3 +17,9 @@ dsl = ["dep:legato-dsl"]
 legato-core = { path = "legato-core", optional = true }
 legato-core-two = { path = "legato-core-two", optional = true }
 legato-dsl  = { path = "legato-dsl", optional = true }
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false

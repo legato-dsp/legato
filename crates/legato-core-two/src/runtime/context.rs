@@ -63,8 +63,8 @@ impl AudioContext {
     pub fn new(config: Config) -> Self {
         Self { config, resources: Resources::default() }
     }
-    pub fn get_config(&self) -> &Config {
-        &self.config
+    pub fn get_config(&self) -> Config {
+        self.config.clone()
     }
         // Operations for resources
     pub fn write_block(&mut self, key: DelayLineKey, block: &NodeInputs) {

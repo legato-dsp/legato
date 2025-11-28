@@ -1,12 +1,11 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use legato_core::{engine::buffer::LANES, nodes::{audio::{filters::fir::FirStereo, sine::SineStereo}, get_node_test_harness}};
+use legato_core::{nodes::{audio::{filters::fir::FirStereo, sine::SineStereo}, get_node_test_harness}};
 use typenum::{U128, U4096};
 
-fn bench_sine(c: &mut Criterion){
+fn bench_sine_legato_one(c: &mut Criterion){
     let mut graph = get_node_test_harness::<U4096, U128>(Box::new(SineStereo::new(440.0, 0.0)));
-    println!("{:?}", LANES);
 
-    c.bench_function("Sine node", |b| {
+    c.bench_function("Sine node legato one", |b| {
         b.iter(|| {
             let out = graph.next_block(None);
             black_box(out);
@@ -105,7 +104,7 @@ fn bench_fir(c: &mut Criterion){
     });
 }
 
-criterion_group!(benches, bench_sine, bench_fir);
+criterion_group!(benches, bench_sine_legato_one, bench_fir);
 criterion_main!(benches);
 
 
