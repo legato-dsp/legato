@@ -12,6 +12,11 @@ use crate::{
     utils::ringbuffer::RingBuffer,
 };
 
+// A semi-naitve FIR filter. In the future, it will be
+// nice to have one in the frequency domain as well.
+//
+// It's also worth noting that keeping the chunks and state
+// in an interleaved format could potentially be faster?
 pub struct FirFilter {
     coeffs: Vec<f32>,
     state: Vec<RingBuffer>,
@@ -20,10 +25,10 @@ pub struct FirFilter {
 
 impl FirFilter {
     pub fn new(coeffs: Vec<f32>, chans: usize) -> Self {
-        let coef_size = coeffs.len();
+        let coeffs_len = coeffs.len();
         Self {
             coeffs,
-            state: vec![RingBuffer::new(coef_size); chans],
+            state: vec![RingBuffer::new(coeffs_len); chans],
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_out(chans)
