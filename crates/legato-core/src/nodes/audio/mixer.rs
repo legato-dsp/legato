@@ -61,7 +61,7 @@ where
         let divisor = (tracks as f32).sqrt();
 
         for buffer in ao.iter_mut() {
-            buffer.fill(0.0);
+            buffer.fill(0.0); // NOTE: This is important whenever adding as writing to AO is UB!!
         }
 
         for n in 0..AF::USIZE {
