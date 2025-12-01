@@ -4,7 +4,7 @@ use typenum::{U0, U1, U2, U4, U8, U16};
 use crate::{
     engine::{
         audio_context::AudioContext,
-        buffer::Frame,
+        buffer::{Buffer, Frame},
         node::{BufferSize, Node},
         port::*,
     },
@@ -60,8 +60,9 @@ where
         let tracks = Ai::USIZE / Ao::USIZE;
         let divisor = (tracks as f32).sqrt();
 
-        for buffer in ao.iter_mut() {
-            buffer.fill(0.0); // NOTE: This is important whenever adding as writing to AO is UB!!
+        for mut buf in ao.iter_mut() {
+            let buffer: &mut Buffer<AF> = buf; // explicit annotation, though usually unnecessary
+            buffer.fill(0.0);
         }
 
         for n in 0..AF::USIZE {

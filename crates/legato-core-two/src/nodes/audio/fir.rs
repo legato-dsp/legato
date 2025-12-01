@@ -1,9 +1,14 @@
+use std::simd::num::SimdFloat;
+
 use crate::{
     nodes::{
         Node, NodeInputs,
         ports::{PortBuilder, Ported, Ports},
     },
-    runtime::context::AudioContext,
+    runtime::{
+        context::AudioContext,
+        lanes::{LANES, Vf32},
+    },
     utils::ringbuffer::RingBuffer,
 };
 
@@ -30,20 +35,31 @@ impl FirFilter {
 impl Node for FirFilter {
     fn process(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &NodeInputs,
         ao: &mut NodeInputs,
-        ci: &NodeInputs,
-        co: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
         for ((input, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
             for (n, x) in input.iter().enumerate() {
                 state.push(*x);
-                let mut y = 0.0;
-                for (k, &h) in self.coeffs.iter().enumerate() {
-                    y += h * state.get_offset(k);
+
+                let mut y = Vf32::splat(0.0);
+
+                for (k, h) in self.coeffs.chunks_exact(LANES).enumerate() {
+                    y += Vf32::from_slice(&h) * state.get_chunk_simd(k * LANES);
                 }
-                out[n] = y;
+
+                let start = self.coeffs.chunks_exact(LANES).len() * LANES;
+
+                let mut scalar = y.reduce_sum();
+
+                for (k, h) in self.coeffs[start..].iter().enumerate() {
+                    scalar += h * state.get_offset(k + start);
+                }
+
+                out[n] = scalar;
             }
         }
     }

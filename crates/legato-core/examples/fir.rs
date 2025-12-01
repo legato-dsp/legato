@@ -17,7 +17,7 @@ fn main() {
     type ControlSize = U64;
     type ChannelCount = U2;
 
-    const SAMPLE_RATE: u32 = 48_000;
+    const SAMPLE_RATE: u32 = 44_000;
     const CAPACITY: usize = 16;
     const DECIMATION_FACTOR: f32 = 32.0;
     const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
@@ -127,7 +127,7 @@ fn main() {
 
     backend.load_sample(
         &String::from("amen"),
-        "../../samples/amen.wav",
+        "../samples/amen.wav",
         2,
         SAMPLE_RATE as u32,
     );
