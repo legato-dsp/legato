@@ -206,14 +206,6 @@ fn main() {
 
     let _ = runtime.set_sink_key(mixer);
 
-    let output = std::process::Command::new("ls")
-        .arg("../")
-        .output()
-        .expect("Failed to run ls");
-
-    println!("stdout:\n{}", String::from_utf8_lossy(&output.stdout));
-    println!("stderr:\n{}", String::from_utf8_lossy(&output.stderr));
-
     backend
         .load_sample(
             &String::from("amen"),

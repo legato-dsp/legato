@@ -79,7 +79,10 @@ impl DelayWrite {
     pub fn new(delay_line_key: DelayLineKey, chans: usize) -> Self {
         Self {
             delay_line_key,
-            ports: PortBuilder::default().audio_in(chans).build(),
+            ports: PortBuilder::default()
+                .audio_in(chans)
+                .audio_out(chans) // Just for graph semantics
+                .build(),
         }
     }
 }
@@ -89,13 +92,19 @@ impl Node for DelayWrite {
         &mut self,
         ctx: &mut AudioContext,
         ai: &NodeInputs,
-        _: &mut NodeInputs,
+        ao: &mut NodeInputs,
         _: &NodeInputs,
         _: &mut NodeInputs,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
+        let chans = self.ports.audio_in.len();
+        
+        // For graph semantics when adding connections between delays
+        for c in 0..chans {
+            ao[c].fill(0.0);
+        }
     }
 }
 
@@ -151,7 +160,8 @@ impl Node for DelayRead {
                     offset[lane] = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
                 }
 
-                let interpolated = resources.get_delay_linear_interp_simd(
+                // Note, about 75% slower than the linear interpolation alg.
+                let interpolated = resources.get_delay_cubic_interp_simd(
                     self.delay_line_key,
                     c,
                     Vf32::from_array(offset),
