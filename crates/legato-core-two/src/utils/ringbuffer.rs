@@ -1,8 +1,8 @@
-use std::simd::{StdFloat, num::SimdFloat};
+use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount, num::{SimdFloat, SimdUint}};
 
 use crate::{
     runtime::lanes::{LANES, Vf32, Vusize},
-    utils::math::{ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_vf32, lerp, lerp_vf32},
+    utils::math::{ONE_VF32, ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
 };
 
 #[derive(Debug, Clone)]
@@ -50,7 +50,10 @@ impl RingBuffer {
     #[inline(always)]
     pub fn get_offset(&self, k: usize) -> f32 {
         let len = self.capacity;
-        let idx = (self.write_pos + len - 1 - k) % len;
+        let wp = self.write_pos;
+
+        let idx = (wp + len - 1 - (k % len)) % len;
+
         self.data[idx]
     }
 
@@ -64,9 +67,10 @@ impl RingBuffer {
     /// rapidly modulating delay lines, rather, this is useful for algorithms like
     /// convolution.
     pub fn get_chunk_simd(&self, k: usize) -> Vf32 {
-        // TODO: Bounds checking
         let len = self.capacity;
-        let end = (self.write_pos + len - 1 - k) % len;
+        let k_mod = k % len;
+
+        let end = (self.write_pos + len - 1 - k_mod) % len;
         let start = (end + len + 1 - LANES) % len;
 
         // If no wrap is required
@@ -119,9 +123,9 @@ impl RingBuffer {
 
     #[inline(always)]
     pub fn get_delay_cubic(&self, offset: f32) -> f32 {
-        let floor = offset as usize;
+        let floor = offset.floor() as usize;
 
-        let a = self.get_offset(floor - 1);
+        let a = self.get_offset(floor.saturating_sub(1));
         let b = self.get_offset(floor);
         let c = self.get_offset(floor + 1);
         let d = self.get_offset(floor + 2);
@@ -142,7 +146,7 @@ impl RingBuffer {
 
         let t = offset - floor_float;
 
-        lerp_vf32(a, b, t)
+        lerp_simd(a, b, t)
     }
 
     #[inline(always)]
@@ -151,37 +155,97 @@ impl RingBuffer {
 
         let floor_usize = floor_float.cast::<usize>();
 
-        let a = self.gather_simd(floor_usize - ONE_VUSIZE);
+        let a = self.gather_simd(floor_usize.saturating_sub(ONE_VUSIZE));
         let b = self.gather_simd(floor_usize);
         let c = self.gather_simd(floor_usize + ONE_VUSIZE);
         let d = self.gather_simd(floor_usize + TWO_VUSIZE);
 
         let t = offset - floor_float;
 
-        cubic_hermite_vf32(a, b, c, d, t)
+        cubic_hermite_simd(a, b, c, d, t)
     }
 
-    fn gather_simd(&self, indices: Vusize) -> Vf32 {
+    fn gather_simd<const N: usize>(&self, indices: Simd<usize, N>) -> Simd<f32, N> 
+    where LaneCount<N>: SupportedLaneCount
+    {
         // TODO: Is there a better solution?
-        let mut out = [0.0; LANES];
+        let mut out = [0.0; N];
         let len = self.capacity;
         let base = (self.write_pos + len - 1) % len;
 
-        for i in 0..LANES {
+        for i in 0..N {
             let k = indices[i];
             let idx = (base + len - k) % len;
             out[i] = self.data[idx];
         }
 
-        Vf32::from_array(out)
+        Simd::<f32, N>::from_array(out)
     }
 }
 
-#[cfg(test)]
+
+
 mod test {
     use std::array;
 
+    use crate::utils::math::{one_usize_simd, two_usize_simd};
+
     use super::*;
+
+    impl RingBuffer {
+    // Generic function, mostly for testing
+        pub fn get_delay_cubic_simd_generic<const N: usize>(&self, offset: Simd<f32, N>) -> Simd<f32, N>
+        where LaneCount<N>: SupportedLaneCount
+        {
+            let floor_float = offset.floor();
+
+            let floor_usize = floor_float.cast::<usize>();
+
+            let a = self.gather_simd(floor_usize.saturating_sub(one_usize_simd()));
+            let b = self.gather_simd(floor_usize);
+            let c = self.gather_simd(floor_usize + one_usize_simd());
+            let d = self.gather_simd(floor_usize + two_usize_simd());
+
+            let t = offset - floor_float;
+
+            cubic_hermite_simd(a, b, c, d, t)
+        }
+        pub fn get_delay_linear_simd_generic<const N: usize>(&self, offset: Simd<f32, N>) -> Simd<f32, N>
+        where LaneCount<N>: SupportedLaneCount
+        {
+            let floor_float = offset.floor();
+
+            let floor_usize = floor_float.cast::<usize>();
+
+            let a = self.gather_simd(floor_usize);
+            let b = self.gather_simd(floor_usize + one_usize_simd());
+
+            let t = offset - floor_float;
+
+            lerp_simd(a, b, t)
+        }
+    }
+
+        #[test]
+    fn offset_sanity() {
+        let mut rb = RingBuffer::new(8);
+
+        for i in 0..12 {
+            rb.push(i as f32);
+        }
+        // v
+        // 0 0 0 0  0 0 0 0
+        // V
+        // 0 1 2 3  4 5 6 7
+        //           v
+        // 8 9 10 11 4 5 6 7
+
+        dbg!(rb.get_data());
+
+        assert_eq!(rb.get_offset(0), 11.0);
+        assert_eq!(rb.get_offset(1), 10.0);
+        assert_eq!(rb.get_offset(7), 4.0);
+    }
 
     #[test]
     fn test_push_chunk_no_wrap() {
@@ -271,7 +335,7 @@ mod test {
             rb.push(i as f32);
         }
 
-        for i in 0..4095 {
+        for i in 0..4096 {
             let base = i;
             let simd_off = Vf32::splat(i as f32);
             let s = rb.get_delay_linear(base as f32);
@@ -302,26 +366,7 @@ mod test {
         }
     }
 
-    #[test]
-    fn offset_sanity() {
-        let mut rb = RingBuffer::new(8);
 
-        for i in 0..12 {
-            rb.push(i as f32);
-        }
-        // v
-        // 0 0 0 0  0 0 0 0
-        // V
-        // 0 1 2 3  4 5 6 7
-        //           v
-        // 8 9 10 11 4 5 6 7
-
-        dbg!(rb.get_data());
-
-        assert_eq!(rb.get_offset(0), 11.0);
-        assert_eq!(rb.get_offset(1), 10.0);
-        assert_eq!(rb.get_offset(7), 4.0);
-    }
 
     #[test]
     fn test_cubic_sample_order() {
@@ -360,7 +405,8 @@ mod test {
     }
 
     #[test]
-    fn get_delay_linear_interp_simd() {
+    fn linear_scalar_simd_interp() {
+
         let mut rb = RingBuffer::new(8);
         for i in 0..8 {
             rb.push(i as f32);
@@ -370,10 +416,23 @@ mod test {
 
         let a = rb.get_delay_linear(1.0);
         let b = rb.get_delay_linear(1.5);
-        let c = rb.get_delay_linear(2.3);
+        
+        let b_c = rb.get_delay_linear(1.8);
+
+        let c = rb.get_delay_linear(2.0);
 
         assert_eq!(a, 6.0);
         assert_eq!(b, 5.5);
-        assert_eq!(c, 4.3);
+        assert_eq!(b_c, 5.2);
+        assert_eq!(c, 5.0);
+
+        let chunk = rb.get_delay_linear_simd_generic(std::simd::Simd::<f32, 4>::from_array([1.0, 1.5, 1.8, 2.0]));
+
+        let chunk_arr = chunk.as_array();
+
+        assert_eq!(a, chunk_arr[0]);
+        assert_eq!(b, chunk_arr[1]);
+        assert_eq!(b_c, chunk_arr[2]);
+        assert_eq!(c, chunk_arr[3]);
     }
 }

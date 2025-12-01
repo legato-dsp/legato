@@ -59,7 +59,6 @@ impl PortBuilder {
                 index: i,
             });
         }
-        println!("{:?}", self.port_audio_out);
         self
     }
 

@@ -42,6 +42,12 @@ impl Node for TrackMixer {
         _: &NodeInputs,
         _: &mut NodeInputs,
     ) {
+
+        // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
+        for buffer in ao.iter_mut(){
+            buffer.fill(0.0);
+        }
+
         for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
             let gain = self.gain[i];
             for (chan_idx, chan) in track.into_iter().enumerate() {

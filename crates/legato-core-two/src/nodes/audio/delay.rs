@@ -198,7 +198,7 @@ mod test_delay_simd_equivalence {
 
             let s = dl.get_delay_linear_interp(0, off);
 
-            let off_simd = Vf32::from_array([off, off, off, off]);
+            let off_simd = Vf32::from_array(std::array::from_fn(|_| off));
             let v = dl.get_delay_linear_interp_simd(0, off_simd);
 
             // all SIMD lanes must match the scalar sample

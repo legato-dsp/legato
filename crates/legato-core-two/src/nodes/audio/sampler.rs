@@ -17,7 +17,6 @@ pub struct Sampler {
 
 impl Sampler {
     pub fn new(sample_key: SampleKey, chans: usize) -> Self {
-        println!("chans! {}", chans);
         Self {
             sample_key,
             read_pos: 0,
@@ -44,8 +43,6 @@ impl Node for Sampler {
 
                 let block_size = config.audio_block_size;
                 let chans = self.ports.audio_out.iter().len();
-
-                println!("{}", chans);
 
                 let buf = inner.data();
                 let len = buf[0].len();

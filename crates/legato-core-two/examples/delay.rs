@@ -16,11 +16,11 @@ use legato_core_two::{
 
 fn main() {
     let config = Config {
-        sample_rate: 44_100,
-        audio_block_size: 4096,
+        sample_rate: 48000,
+        audio_block_size: 1024,
         channels: 2,
-        control_block_size: 4096 / 32,
-        control_rate: 44_100 / 32,
+        control_block_size: 1024 / 32,
+        control_rate: 48000 / 32,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
@@ -41,10 +41,10 @@ fn main() {
     let delay_read = runtime_builder.add_node(AddNode::DelayRead {
         delay_name: String::from("amen"),
         chans: 2,
-        delay_length: vec![Duration::from_millis(120), Duration::from_millis(320)],
+        delay_length: vec![Duration::from_millis(17), Duration::from_millis(23)],
     });
 
-    let delay_gain = runtime_builder.add_node(AddNode::Gain { val: 0.8, chans: 2 });
+    let delay_gain = runtime_builder.add_node(AddNode::Gain { val: 0.4, chans: 2 });
 
     let mixer = runtime_builder.add_node(AddNode::TrackMixer {
         chans_per_track: 2,
