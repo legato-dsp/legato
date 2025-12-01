@@ -1,4 +1,4 @@
-use std::simd::num::SimdFloat;
+use std::simd::{StdFloat, num::SimdFloat};
 
 use crate::{
     nodes::{
@@ -48,7 +48,9 @@ impl Node for FirFilter {
                 let mut y = Vf32::splat(0.0);
 
                 for (k, h) in self.coeffs.chunks_exact(LANES).enumerate() {
-                    y += Vf32::from_slice(&h) * state.get_chunk_simd(k * LANES);
+                    let a = Vf32::from_slice(&h);
+                    let b = state.get_chunk_simd(k * LANES);
+                    y = a.mul_add(b, y)
                 }
 
                 let start = self.coeffs.chunks_exact(LANES).len() * LANES;
