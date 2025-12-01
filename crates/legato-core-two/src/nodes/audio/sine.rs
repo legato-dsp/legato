@@ -34,9 +34,13 @@ use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 use crate::{
     nodes::{
-        Node, NodeInputs, ports::{PortBuilder, Ported, Ports}
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
     },
-    runtime::{context::AudioContext, lanes::LANES},
+    runtime::{
+        context::AudioContext,
+        lanes::{LANES, Vf32},
+    },
 };
 
 pub struct Sine {
@@ -72,21 +76,18 @@ impl Node for Sine {
 
         let fm_in = &ai[0];
 
-        let base_freq = Simd::<f32, LANES>::splat(self.freq);
-        
-        let fs_recipricol = Simd::<f32, LANES>::splat(1.0 / config.sample_rate as f32);
+        let base_freq = Vf32::splat(self.freq);
 
-        for (n, fm_chunk) in fm_in.chunks_exact(LANES).enumerate(){
-            let fm = Simd::<f32, LANES>::from_slice(fm_chunk);
+        let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
 
+        for (n, fm_chunk) in fm_in.chunks_exact(LANES).enumerate() {
+            let fm = Vf32::from_slice(fm_chunk);
             let freq = base_freq + fm;
 
             let mut inc = freq * fs_recipricol;
-
             inc = simd_scan(inc);
-            
-            let mut phase = Simd::splat(self.phase.fract());
 
+            let mut phase = Simd::splat(self.phase.fract());
             phase += inc;
 
             self.phase = phase.as_array()[LANES - 1];
@@ -120,22 +121,20 @@ where
 }
 
 #[inline(always)]
-fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(
-    x: Simd<f32, LANES>
-) -> Simd<f32, LANES>
+fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
     let x_sq = x * x;
-    let x_q  = x_sq * x_sq;
+    let x_q = x_sq * x_sq;
 
     let c1 = Simd::splat(-25.1323666662f32);
-    let c3 = Simd::splat( 64.7874540567f32);
+    let c3 = Simd::splat(64.7874540567f32);
     let c5 = Simd::splat(-66.0947787168f32);
-    let c7 = Simd::splat( 32.0267973181f32);
+    let c7 = Simd::splat(32.0267973181f32);
 
-    let x_5_7     = c5 + c7 * x_sq;
-    let x_1_3     = c1 + c3 * x_sq;
+    let x_5_7 = c5 + c7 * x_sq;
+    let x_1_3 = c1 + c3 * x_sq;
     let x_1_3_5_7 = x_1_3 + x_5_7 * x_q;
 
     let y = x * x_1_3_5_7;
@@ -143,16 +142,13 @@ where
 }
 
 #[inline(always)]
-fn sin_turns_7<const LANES: usize>(
-    x: Simd<f32, LANES>
-) -> Simd<f32, LANES>
+fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
-
 
 /// Utility to convert from [1,3,5,9] -> [1,4,9,18]
 /// [1, 3, 5, 9]
@@ -166,7 +162,9 @@ where
 /// 1, 4, 9, 18
 
 fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
-where LaneCount<LANES>: SupportedLaneCount {
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
     let t1 = x.shift_elements_right::<1>(0.0);
     x += t1;
 
@@ -188,30 +186,31 @@ where LaneCount<LANES>: SupportedLaneCount {
 
 #[cfg(test)]
 mod test {
-    use crate::nodes::audio::sine::{simd_scan};
+    use crate::nodes::audio::sine::simd_scan;
 
     #[test]
-    fn check_prefix_sum_block_simd(){
+    fn check_prefix_sum_block_simd() {
         let input = std::simd::Simd::<f32, 1>::from_array([1.0]);
         let expected = std::simd::Simd::<f32, 1>::from_array([1.0]);
 
         let input_one = std::simd::Simd::<f32, 2>::from_array([1.0, 2.0]);
-        let expected_one = std::simd::Simd::<f32, 2>::from_array([1.0, 3.0,]);
+        let expected_one = std::simd::Simd::<f32, 2>::from_array([1.0, 3.0]);
 
         let input_two = std::simd::Simd::<f32, 4>::from_array([1.0, 3.0, 5.0, 9.0]);
         let expected_two = std::simd::Simd::<f32, 4>::from_array([1.0, 4.0, 9.0, 18.0]);
 
         let input_three = std::simd::Simd::<f32, 8>::from_array([1.0; 8]);
-        let expected_three = std::simd::Simd::<f32, 8>::from_array(std::array::from_fn(|i| (i + 1) as f32));
+        let expected_three =
+            std::simd::Simd::<f32, 8>::from_array(std::array::from_fn(|i| (i + 1) as f32));
 
         let input_four = std::simd::Simd::<f32, 16>::from_array([1.0; 16]);
-        let expected_four = std::simd::Simd::<f32, 16>::from_array(std::array::from_fn(|i| (i + 1) as f32));
+        let expected_four =
+            std::simd::Simd::<f32, 16>::from_array(std::array::from_fn(|i| (i + 1) as f32));
 
         assert_eq!(expected, simd_scan(input));
         assert_eq!(expected_one, simd_scan(input_one));
         assert_eq!(expected_two, simd_scan(input_two));
         assert_eq!(expected_three, simd_scan(input_three));
         assert_eq!(expected_four, simd_scan(input_four));
-
     }
 }

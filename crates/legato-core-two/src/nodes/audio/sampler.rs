@@ -1,48 +1,52 @@
 use assert_no_alloc::permit_alloc;
 
-use crate::{nodes::{Node, NodeInputs, ports::{PortBuilder, Ported, Ports}}, runtime::{context::AudioContext, resources::SampleKey}};
+use crate::{
+    nodes::{
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
+    },
+    runtime::{context::AudioContext, resources::SampleKey},
+};
 
-pub struct Sampler
-{
+pub struct Sampler {
     sample_key: SampleKey,
     read_pos: usize,
     is_looping: bool,
     ports: Ports,
 }
 
-impl Sampler
-{
+impl Sampler {
     pub fn new(sample_key: SampleKey, chans: usize) -> Self {
         println!("chans! {}", chans);
         Self {
             sample_key,
             read_pos: 0,
             is_looping: true,
-            ports: PortBuilder::default()
-                .audio_out(chans)
-                .build()
+            ports: PortBuilder::default().audio_out(chans).build(),
         }
     }
 }
 
 impl Node for Sampler {
-    fn process<'a>(&mut self, 
-            ctx: &mut AudioContext, 
-            _: &NodeInputs,
-            ao: &mut NodeInputs,
-            _: &NodeInputs,
-            _: &mut NodeInputs,
-        ) {
+    fn process<'a>(
+        &mut self,
+        ctx: &mut AudioContext,
+        _: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
+    ) {
         permit_alloc(|| {
             // 128 bytes allocated in the load_full. Can we do better?
-            if let Some(inner) = ctx.get_sample(self.sample_key) {
+            let resources = ctx.get_resources();
+            if let Some(inner) = resources.get_sample(self.sample_key) {
                 let config = ctx.get_config();
 
                 let block_size = config.audio_block_size;
                 let chans = self.ports.audio_out.iter().len();
 
                 println!("{}", chans);
-                
+
                 let buf = inner.data();
                 let len = buf[0].len();
 

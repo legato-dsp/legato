@@ -25,3 +25,6 @@ pub const LANES: usize = 4;
     all(target_arch = "wasm32", target_feature = "simd128"),
 )))]
 pub const LANES: usize = 1;
+
+pub type Vf32 = std::simd::Simd<f32, LANES>;
+pub type Vusize = std::simd::Simd<usize, LANES>; // Note: Could there be edge cases here?

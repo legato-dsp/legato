@@ -1,15 +1,15 @@
 pub mod audio_sample;
-pub mod delay_line;
 
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{nodes::NodeInputs, runtime::resources::{audio_sample::AudioSample, delay_line::DelayLine}};
+use crate::{
+    nodes::{NodeInputs, audio::delay::DelayLine},
+    runtime::{lanes::Vf32, resources::audio_sample::AudioSample},
+};
 
-// TODO: Maybe use a hashmap to get string -> index pairs,
-// then use the index at runtime?
 new_key_type! { pub struct DelayLineKey; }
 new_key_type! { pub struct SampleKey; }
 
@@ -36,16 +36,38 @@ impl Resources {
         let delay_line = self.delay_lines.get_mut(key).unwrap();
         delay_line.write_block(block);
     }
+    // Get delays with interpolation
     #[inline(always)]
-    pub fn get_delay_linear_interp(
-        &mut self,
-        key: DelayLineKey,
-        channel: usize,
-        offset: f32,
-    ) -> f32 {
+    pub fn get_delay_linear_interp(&self, key: DelayLineKey, channel: usize, offset: f32) -> f32 {
         let delay_line = self.delay_lines.get(key).unwrap();
         delay_line.get_delay_linear_interp(channel, offset)
     }
+    #[inline(always)]
+    pub fn get_delay_linear_interp_simd(
+        &self,
+        key: DelayLineKey,
+        channel: usize,
+        offset: Vf32,
+    ) -> Vf32 {
+        let delay_line = self.delay_lines.get(key).unwrap();
+        delay_line.get_delay_linear_interp_simd(channel, offset)
+    }
+    #[inline(always)]
+    pub fn get_delay_cubic_interp(&self, key: DelayLineKey, channel: usize, offset: f32) -> f32 {
+        let delay_line = self.delay_lines.get(key).unwrap();
+        delay_line.get_delay_cubic_interp(channel, offset)
+    }
+    #[inline(always)]
+    pub fn get_delay_cubic_interp_simd(
+        &self,
+        key: DelayLineKey,
+        channel: usize,
+        offset: Vf32,
+    ) -> Vf32 {
+        let delay_line = self.delay_lines.get(key).unwrap();
+        delay_line.get_delay_cubic_interp_simd(channel, offset)
+    }
+
     pub fn add_delay_line(&mut self, delay_line: DelayLine) -> DelayLineKey {
         self.delay_lines.insert(delay_line)
     }

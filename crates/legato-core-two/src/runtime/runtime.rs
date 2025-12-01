@@ -1,5 +1,5 @@
-use crate::nodes::{Node, NodeInputs};
 use crate::nodes::ports::{PortRate, Ported, Ports};
+use crate::nodes::{Node, NodeInputs};
 use crate::runtime::context::Config;
 use crate::runtime::resources::audio_sample::AudioSampleError;
 use crate::runtime::{
@@ -101,7 +101,7 @@ impl Runtime {
         &self.context
     }
     pub fn get_config(&self) -> Config {
-       self.context.get_config()
+        self.context.get_config()
     }
     // F32 is a bit weird here, but we cast so frequently why not
     pub fn get_sample_rate(&self) -> usize {
@@ -112,8 +112,10 @@ impl Runtime {
         self.graph.get_node(*key).unwrap().get_ports()
     }
     // TODO: Graphs as nodes again
-    pub fn next_block(&mut self, external_inputs: Option<&(&NodeInputs, &NodeInputs)>) -> &NodeInputs {
-        
+    pub fn next_block(
+        &mut self,
+        external_inputs: Option<&(&NodeInputs, &NodeInputs)>,
+    ) -> &NodeInputs {
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
         for (i, node_key) in sorted_order.iter().enumerate() {
@@ -121,10 +123,10 @@ impl Runtime {
 
             let ports = nodes[*node_key].get_ports();
 
-            let audio_inputs_size = ports.audio_in.iter().len();
+            let audio_inputs_size = ports.audio_in.len();
             let control_inputs_size = ports.control_in.len();
 
-            // Zero the incoming buffers
+            // Zero incoming buffers for all inputs
             self.audio_inputs_scratch_buffers[..audio_inputs_size]
                 .iter_mut()
                 .for_each(|buf| buf.fill(0.0));
@@ -184,16 +186,15 @@ impl Runtime {
             let audio_output_buffer = &mut self.port_sources_audio[*node_key];
             let control_output_buffer = &mut self.port_sources_control[*node_key];
 
-
             let node = nodes
                 .get_mut(*node_key)
                 .expect("Could not find node at index {node_index:?}");
 
             node.process(
                 &mut self.context,
-                &self.audio_inputs_scratch_buffers,
+                &self.audio_inputs_scratch_buffers[0..audio_inputs_size],
                 audio_output_buffer,
-                &self.control_inputs_scratch_buffers,
+                &self.control_inputs_scratch_buffers[0..control_inputs_size],
                 control_output_buffer,
             );
         }
@@ -206,12 +207,14 @@ impl Runtime {
 }
 
 impl Node for Runtime {
-    fn process<'a>(&mut self, ctx: &mut AudioContext, 
-            ai: &NodeInputs,
-            ao: &mut NodeInputs,
-            ci: &NodeInputs,
-            _: &mut NodeInputs,
-        ) {
+    fn process<'a>(
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &NodeInputs,
+        ao: &mut NodeInputs,
+        ci: &NodeInputs,
+        _: &mut NodeInputs,
+    ) {
         let outputs = self.next_block(Some(&(ai, ci)));
 
         debug_assert_eq!(ai.len(), ao.len());
@@ -239,9 +242,15 @@ impl RuntimeBackend {
             audio_sample_backend: sample_backend,
         }
     }
-    pub fn load_sample(&mut self, sampler: &String, path: &str, chans: usize, sr: u32) -> Result<(), AudioSampleError> {
+    pub fn load_sample(
+        &mut self,
+        sampler: &String,
+        path: &str,
+        chans: usize,
+        sr: u32,
+    ) -> Result<(), AudioSampleError> {
         if let Some(backend) = self.audio_sample_backend.get(sampler) {
-            return backend.load_file(path, chans, sr)
+            return backend.load_file(path, chans, sr);
         }
         Err(AudioSampleError::BackendNotFound)
     }

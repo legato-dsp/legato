@@ -1,12 +1,21 @@
 use std::time::Duration;
 
-use crate::{nodes::{Node, NodeInputs, ports::{PortBuilder, Ported, Ports}}, runtime::{context::AudioContext, resources::DelayLineKey}, utils::interpolation::lerp};
-
-
+use crate::{
+    nodes::{
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
+    },
+    runtime::{
+        context::AudioContext,
+        lanes::{LANES, Vf32},
+        resources::DelayLineKey,
+    },
+    utils::ringbuffer::RingBuffer,
+};
 
 #[derive(Clone)]
 pub struct DelayLine {
-    buffers: Vec<Box<[f32]>>,
+    buffers: Vec<RingBuffer>,
     capacity: usize,
     write_pos: Vec<usize>,
     chans: usize,
@@ -14,60 +23,51 @@ pub struct DelayLine {
 
 impl DelayLine {
     pub fn new(capacity: usize, chans: usize) -> Self {
-        let buffers = vec![vec![0.0; capacity].into(); chans];
+        let buffers = vec![RingBuffer::new(capacity); chans];
         Self {
             buffers,
             capacity,
-            write_pos: vec![0, chans],
-            chans
+            write_pos: vec![0; chans],
+            chans,
         }
     }
     #[inline(always)]
     pub fn get_write_pos(&self, channel: usize) -> &usize {
         &self.write_pos[channel]
     }
+
+    #[inline(always)]
     pub fn write_block(&mut self, block: &NodeInputs) {
-        // We're assuming single threaded, with the graph firing in order, so no aliasing writes
-        // Our first writing block is whatever capacity is leftover from the writing position
-        // Our maximum write size is the block N
-        // Our second write size is whatever leftover from N we still have
-
-        let block_size = block.get(0).iter().len();
-
-        for c in 0..self.chans {
-            let first_write_size = (self.capacity - self.write_pos[c]).min(block_size);
-            let second_write_size = block_size - first_write_size;
-
-            let buf = &mut self.buffers[c];
-            buf[self.write_pos[c]..self.write_pos[c] + first_write_size]
-                .copy_from_slice(&block[c][0..first_write_size]);
-            // TODO: Maybe some sort of mask?
-            if second_write_size > 0 {
-                buf[0..second_write_size].copy_from_slice(
-                    &block[c][first_write_size..first_write_size + second_write_size],
-                );
+        for (c, chan) in block.iter().enumerate() {
+            for chunk in chan.chunks_exact(LANES) {
+                self.buffers[c].push_simd(&Vf32::from_slice(chunk));
             }
-            self.write_pos[c] = (self.write_pos[c] + block_size) % self.capacity;
         }
     }
-    /// This uses f32 sample indexes, as we allow for interpolated values
+
     #[inline(always)]
     pub fn get_delay_linear_interp(&self, channel: usize, offset: f32) -> f32 {
-        // Get the remainder of the difference of the write position and fractional sample index we need
-        let read_pos = (self.write_pos[channel] as f32 - offset).rem_euclid(self.capacity as f32);
-
-        let pos_floor = read_pos.floor() as usize;
-        let pos_floor = pos_floor.min(self.capacity - 1); // clamp to valid index
-
-        let next_sample = (pos_floor + 1) % self.capacity; // TODO: can we have some sort of mask if we make the delay a power of 2?
-
         let buffer = &self.buffers[channel];
+        buffer.get_delay_linear(offset)
+    }
 
-        lerp(
-            buffer[pos_floor],
-            buffer[next_sample],
-            read_pos - pos_floor as f32,
-        )
+    #[inline(always)]
+    pub fn get_delay_cubic_interp(&self, channel: usize, offset: f32) -> f32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_cubic(offset)
+    }
+
+    #[inline(always)]
+    // This gives an SIMD "chunk" of size LANES after the offset
+    pub fn get_delay_linear_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_linear_simd(offset)
+    }
+
+    #[inline(always)]
+    pub fn get_delay_cubic_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_cubic_simd(offset)
     }
 }
 
@@ -75,20 +75,16 @@ pub struct DelayWrite {
     delay_line_key: DelayLineKey,
     ports: Ports,
 }
-impl DelayWrite
-{
+impl DelayWrite {
     pub fn new(delay_line_key: DelayLineKey, chans: usize) -> Self {
         Self {
             delay_line_key,
-            ports: PortBuilder::default()
-                .audio_in(chans)
-                .build()
+            ports: PortBuilder::default().audio_in(chans).build(),
         }
     }
 }
 
-impl Node for DelayWrite
-{
+impl Node for DelayWrite {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
@@ -98,7 +94,8 @@ impl Node for DelayWrite
         _: &mut NodeInputs,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
-        ctx.write_block(self.delay_line_key, ai);
+        let resources = ctx.get_resources_mut();
+        resources.delay_write_block(self.delay_line_key, ai);
     }
 }
 
@@ -108,28 +105,22 @@ impl Ported for DelayWrite {
     }
 }
 
-pub struct DelayRead
-{
+pub struct DelayRead {
     delay_line_key: DelayLineKey,
     delay_times: Vec<Duration>, // Different times for each channel if desired
     ports: Ports,
 }
-impl DelayRead
-{
+impl DelayRead {
     pub fn new(chans: usize, delay_line_key: DelayLineKey, delay_times: Vec<Duration>) -> Self {
-
         Self {
             delay_line_key,
             delay_times,
-            ports: PortBuilder::default()
-                .audio_out(chans)
-                .build()
+            ports: PortBuilder::default().audio_out(chans).build(),
         }
     }
 }
 
-impl Node for DelayRead
-{
+impl Node for DelayRead {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
@@ -138,20 +129,35 @@ impl Node for DelayRead
         _: &NodeInputs,
         _: &mut NodeInputs,
     ) {
-
         let config = ctx.get_config();
 
         let block_size = config.audio_block_size;
-        let chans = ao.len();
 
-        debug_assert_eq!(block_size, ao.len());
+        let resources = ctx.get_resources();
 
-        for n in 0..block_size {
-            for c in 0..chans {
-                let offset = (self.delay_times[c].as_secs_f32() * config.sample_rate as f32)
-                    + (block_size - n) as f32;
-                // Read delay line based on per channel delay time. Must cast to sample index.
-                ao[c][n] = ctx.get_delay_linear_interp(self.delay_line_key, c, offset)
+        let sr = config.sample_rate as f32;
+
+        for (c, chan) in ao.iter_mut().enumerate() {
+            let delay_time = self.delay_times[c].as_secs_f32();
+
+            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                let chunk_start = LANES * cidx;
+
+                let mut offset = [0.0; LANES];
+
+                // Apply additional offset for each step, maybe this could also be a rotation or so.
+                // This is needed, because otherwise we would just grab offsets from chunk_start for each item
+                for lane in 0..LANES {
+                    offset[lane] = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
+                }
+
+                let interpolated = resources.get_delay_linear_interp_simd(
+                    self.delay_line_key,
+                    c,
+                    Vf32::from_array(offset),
+                );
+
+                chunk[..].copy_from_slice(&interpolated.to_array());
             }
         }
     }
@@ -160,5 +166,92 @@ impl Node for DelayRead
 impl Ported for DelayRead {
     fn get_ports(&self) -> &Ports {
         &self.ports
+    }
+}
+
+#[cfg(test)]
+mod test_delay_simd_equivalence {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn scalar_and_simd_reads_match() {
+        const CHANS: usize = 1;
+        const CAP: usize = 4096;
+        const BLOCK: usize = 256;
+
+        let mut dl = DelayLine::new(CAP, CHANS);
+
+        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
+
+        let input: &mut NodeInputs = &mut inputs_raw;
+
+        let mut rng = rand::rng();
+        for s in &mut input[0] {
+            *s = rng.random::<f32>();
+        }
+
+        dl.write_block(&input);
+
+        for _ in 0..10_000 {
+            let off = rng.random::<f32>() * (CAP as f32 - 4.0);
+
+            let s = dl.get_delay_linear_interp(0, off);
+
+            let off_simd = Vf32::from_array([off, off, off, off]);
+            let v = dl.get_delay_linear_interp_simd(0, off_simd);
+
+            // all SIMD lanes must match the scalar sample
+            for lane in v.as_array().iter() {
+                assert!(
+                    (lane - s).abs() < 1e-5,
+                    "SIMD mismatch: scalar={s}, simd={lane}, offset={off}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_and_simd_writes_match() {
+        const CHANS: usize = 1;
+        const CAP: usize = 2048;
+        const BLOCK: usize = 4096;
+
+        let mut rb_scalar = RingBuffer::new(CAP);
+        let mut rb_simd = RingBuffer::new(CAP);
+
+        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
+
+        let input: &mut NodeInputs = &mut inputs_raw;
+
+        let mut rng = rand::rng();
+        for s in &mut input[0] {
+            *s = rng.random::<f32>();
+        }
+
+        let buf = &input[0];
+
+        for n in 0..BLOCK {
+            rb_scalar.push(buf[n]);
+        }
+
+        for chunk in buf.iter().as_slice().chunks(LANES) {
+            rb_simd.push_simd(&Vf32::from_slice(chunk));
+        }
+
+        let data_scalar = rb_scalar.get_data();
+        let data_simd = rb_simd.get_data();
+
+        for i in 0..CAP {
+            let a = data_scalar[i];
+            let b = data_simd[i];
+            assert!(
+                (a - b).abs() < 1e-10,
+                "data mismatch at index {}: scalar={}, simd={}",
+                i,
+                a,
+                b
+            );
+        }
     }
 }

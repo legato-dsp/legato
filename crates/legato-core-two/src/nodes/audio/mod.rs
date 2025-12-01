@@ -1,5 +1,5 @@
 pub mod delay;
-pub mod sine;
-pub mod sampler;
-pub mod mixdown;
+pub mod mixer;
 pub mod ops;
+pub mod sampler;
+pub mod sine;

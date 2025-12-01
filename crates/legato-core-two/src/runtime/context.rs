@@ -2,7 +2,13 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 
-use crate::{nodes::NodeInputs, runtime::{lanes::LANES, resources::{DelayLineKey, Resources, SampleKey, audio_sample::AudioSample, delay_line::DelayLine}}};
+use crate::{
+    nodes::NodeInputs,
+    runtime::{
+        lanes::LANES,
+        resources::{DelayLineKey, Resources, SampleKey, audio_sample::AudioSample},
+    },
+};
 
 pub enum BlockSize {
     Block64,
@@ -34,7 +40,7 @@ pub struct Config {
     pub control_rate: usize,
     pub audio_block_size: usize,
     pub control_block_size: usize,
-    pub channels: usize
+    pub channels: usize,
 }
 
 impl Config {
@@ -45,7 +51,7 @@ impl Config {
             control_rate: cr,
             audio_block_size: audio_block_size,
             control_block_size: audio_block_size / 32,
-            channels
+            channels,
         }
     }
     pub fn validate(&self) {
@@ -56,42 +62,23 @@ impl Config {
 
 pub struct AudioContext {
     config: Config,
-    resources: Resources
+    resources: Resources,
 }
 
 impl AudioContext {
     pub fn new(config: Config) -> Self {
-        Self { config, resources: Resources::default() }
+        Self {
+            config,
+            resources: Resources::default(),
+        }
     }
     pub fn get_config(&self) -> Config {
         self.config.clone()
     }
-        // Operations for resources
-    pub fn write_block(&mut self, key: DelayLineKey, block: &NodeInputs) {
-        self.resources.delay_write_block(key, block)
+    pub fn get_resources(&self) -> &Resources {
+        &self.resources
     }
-    #[inline(always)]
-    pub fn get_delay_linear_interp(
-        &mut self,
-        key: DelayLineKey,
-        channel: usize,
-        offset: f32,
-    ) -> f32 {
-        self.resources.get_delay_linear_interp(key, channel, offset)
+    pub fn get_resources_mut(&mut self) -> &mut Resources {
+        &mut self.resources
     }
-    pub fn add_delay_line(
-        &mut self,
-        delay_line: DelayLine,
-    ) -> DelayLineKey {
-        self.resources.add_delay_line(delay_line)
-    }
-    pub fn get_sample(&self, sample_key: SampleKey) -> Option<Arc<AudioSample>> {
-        self.resources.get_sample(sample_key)
-    }
-    // Note, the sample does not have to live at this point.
-    // This is creating an Arc<ArcSwapOption> that can load samples at runtime
-    pub fn add_sample_resource(&mut self, sample: Arc<ArcSwapOption<AudioSample>>) -> SampleKey {
-        self.resources.add_sample_resource(sample)
-    }
-
 }
