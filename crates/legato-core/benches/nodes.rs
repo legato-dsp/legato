@@ -1,6 +1,9 @@
+use std::{array, time::Duration};
+
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use legato_core::{nodes::{audio::{filters::fir::FirStereo, sine::SineStereo}, get_node_test_harness}};
-use typenum::{U128, U4096};
+use generic_array::{GenericArray, sequence::GenericSequence};
+use legato_core::{engine::{buffer::{Buffer, Frame}, builder::{AddNode, RuntimeBuilder, get_runtime_builder}, graph::{self, Connection, ConnectionEntry}, port::{PortRate, Ports}}, nodes::{audio::{filters::fir::FirStereo, sine::SineStereo}, get_node_test_harness, utils::port_utils::generate_audio_outputs}};
+use typenum::{U0, U2, U128, U4096};
 
 fn bench_sine_legato_one(c: &mut Criterion){
     let mut graph = get_node_test_harness::<U4096, U128>(Box::new(SineStereo::new(440.0, 0.0)));
@@ -104,7 +107,71 @@ fn bench_fir(c: &mut Criterion){
     });
 }
 
-criterion_group!(benches, bench_sine_legato_one, bench_fir);
+
+
+
+fn bench_stereo_delay(c: &mut Criterion){
+    type BlockSize = U4096;
+    type ControlSize = U128;
+    type ChannelCount = U2;
+
+    const SAMPLE_RATE: u32 = 44_100;
+    const CAPACITY: usize = 16;
+    const DECIMATION_FACTOR: f32 = 32.0;
+    const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
+
+    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
+        get_runtime_builder(
+            CAPACITY,
+            SAMPLE_RATE as f32,
+            CONTROL_RATE,
+            Ports {
+                audio_inputs: None,
+                audio_outputs: Some(generate_audio_outputs()),
+                control_inputs: None,
+                control_outputs: None,
+            },
+    );
+
+    let a = runtime_builder.add_node(AddNode::DelayWriteStereo { delay_name: 'a'.into(), delay_length: Duration::from_secs_f32(1.0) });
+
+    let b = runtime_builder.add_node(AddNode::DelayReadStereo {delay_name: 'a'.into(), offsets: vec![Duration::from_millis(120), Duration::from_millis(240)]});
+
+    let (mut runtime, _) = runtime_builder.get_owned();
+
+    let _ = runtime.add_edge(Connection {
+        source: ConnectionEntry {
+            node_key: a,
+            port_index: 0,
+            port_rate: PortRate::Audio
+        },
+        sink: ConnectionEntry { node_key: b, port_index: 0, port_rate: PortRate::Audio }
+    });
+
+    let _ = runtime.add_edge(Connection {
+        source: ConnectionEntry {
+            node_key: a,
+            port_index: 1,
+            port_rate: PortRate::Audio
+        },
+        sink: ConnectionEntry { node_key: b, port_index: 1, port_rate: PortRate::Audio }
+    });
+
+    let _ = runtime.set_sink_key(b);
+
+    c.bench_function("Basic stereo delay", |b| {
+        let ai = [Buffer::<BlockSize>::silent(),Buffer::<BlockSize>::silent()];
+        let ci = [];
+        b.iter(|| {
+            let out = runtime.next_block(Some((&ai, &ci)));
+            black_box(out);
+        });
+    });
+}
+
+
+
+criterion_group!(benches, bench_sine_legato_one, bench_fir, bench_stereo_delay);
 criterion_main!(benches);
 
 

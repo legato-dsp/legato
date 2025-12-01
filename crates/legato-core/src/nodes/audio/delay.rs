@@ -121,23 +121,23 @@ where
     }
 }
 
-pub struct DelayWrite<Ai>
+pub struct DelayWrite<C>
 where
-    Ai: ArrayLength,
+    C: ArrayLength,
 {
     delay_line_key: DelayLineKey,
-    ports: Ports<Ai, U0, U0, U0>,
+    ports: Ports<C, C, U0, U0>,
 }
-impl<Ai> DelayWrite<Ai>
+impl<C> DelayWrite<C>
 where
-    Ai: ArrayLength,
+    C: ArrayLength,
 {
     pub fn new(delay_line_key: DelayLineKey) -> Self {
         Self {
             delay_line_key,
             ports: Ports {
                 audio_inputs: Some(generate_audio_inputs()),
-                audio_outputs: None,
+                audio_outputs: Some(generate_audio_outputs()),
                 control_inputs: None,
                 control_outputs: None,
             },
@@ -145,22 +145,25 @@ where
     }
 }
 
-impl<AF, CF, Ai> Node<AF, CF> for DelayWrite<Ai>
+impl<AF, CF, C> Node<AF, CF> for DelayWrite<C>
 where
     AF: BufferSize,
     CF: BufferSize,
-    Ai: ArrayLength,
+    C: ArrayLength,
 {
     fn process(
         &mut self,
         ctx: &mut AudioContext<AF>,
         ai: &Frame<AF>,
-        _: &mut Frame<AF>,
+        ao: &mut Frame<AF>,
         _: &Frame<CF>,
         _: &mut Frame<CF>,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         ctx.write_block(self.delay_line_key, ai);
+        for c in 0..C::USIZE {
+            ao[c].fill(0.0);
+        }
     }
 }
 

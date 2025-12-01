@@ -5,7 +5,7 @@ pub mod utils;
 use typenum::{Prod, U0, U2};
 use std::{ops::Mul};
 
-use crate::{engine::{node::{BufferSize, Node}, port::Ports, runtime::{Runtime, build_runtime}}, nodes::utils::port_utils::generate_audio_outputs};
+use crate::{engine::{graph::{Connection}, node::{BufferSize, Node}, port::Ports, runtime::{Runtime, build_runtime}}, nodes::utils::port_utils::generate_audio_outputs};
 
 pub fn get_node_test_harness<AF, CF>(node: Box<dyn Node<AF, CF> + Send + 'static>) -> Runtime<AF, CF, U2, U0>
 where
@@ -26,6 +26,3 @@ where
 
     graph
 }
-
-
-

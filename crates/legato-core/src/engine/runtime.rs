@@ -129,6 +129,8 @@ where
                 let (ai, ci) = external_inputs.unwrap();
                 for c in 0..C::USIZE {
                     self.audio_inputs_scratch_buffers[c].copy_from_slice(&ai[c]);
+                }
+                for c in 0..Ci::USIZE {
                     self.control_inputs_scratch_buffers[c].copy_from_slice(&ci[c]);
                 }
             } else {
@@ -146,7 +148,7 @@ where
                             }
                         }
                         (PortRate::Control, PortRate::Control) => {
-                            for n in 0..AF::USIZE {
+                            for n in 0..CF::USIZE {
                                 self.control_inputs_scratch_buffers[connection.sink.port_index]
                                     [n] += self.port_sources_control[connection.source.node_key]
                                     [connection.source.port_index][n];
