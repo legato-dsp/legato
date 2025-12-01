@@ -7,6 +7,7 @@ use crate::{
         Node,
         audio::{
             delay::{DelayLine, DelayRead, DelayWrite},
+            fir::FirFilter,
             mixer::TrackMixer,
             ops::{ApplyOpKind, mult_node_factory},
             sampler::Sampler,
@@ -70,6 +71,11 @@ pub enum AddNode {
         chans_per_track: usize,
         tracks: usize,
         gain: Vec<f32>,
+    },
+    // Filters
+    Fir {
+        chans: usize,
+        coeffs: Vec<f32>,
     },
 }
 
@@ -179,6 +185,8 @@ impl RuntimeBuilder {
                 tracks,
                 gain,
             } => Box::new(TrackMixer::new(chans_per_track, tracks, gain)),
+            // Filters
+            AddNode::Fir { chans, coeffs } => Box::new(FirFilter::new(coeffs, chans)),
         };
         self.runtime.add_node(node)
     }

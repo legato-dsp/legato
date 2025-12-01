@@ -15,12 +15,22 @@ use legato_core_two::{
 };
 
 fn main() {
+    #[cfg(target_os = "linux")]
     let config = Config {
         sample_rate: 48000,
         audio_block_size: 1024,
         channels: 2,
         control_block_size: 1024 / 32,
         control_rate: 48000 / 32,
+    };
+
+    #[cfg(target_os = "macos")]
+    let config = Config {
+        sample_rate: 44_100,
+        audio_block_size: 1024,
+        channels: 2,
+        control_block_size: 1024 / 32,
+        control_rate: 44_100 / 32,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
