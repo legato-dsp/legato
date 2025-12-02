@@ -46,6 +46,10 @@ impl Node for FirFilter {
         _: &NodeInputs,
         _: &mut NodeInputs,
     ) {
+        // These checks are important because we are using this elsewhere for oversampling
+        debug_assert_eq!(ai.len(), ao.len());
+        debug_assert_eq!(ai[0].len(), ao[0].len());
+
         for ((input, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
             for (n, x) in input.iter().enumerate() {
                 state.push(*x);

@@ -6,12 +6,7 @@ use crate::{
     nodes::{
         Node,
         audio::{
-            delay::{DelayLine, DelayRead, DelayWrite},
-            fir::FirFilter,
-            mixer::TrackMixer,
-            ops::{ApplyOpKind, mult_node_factory},
-            sampler::Sampler,
-            sine::Sine,
+            delay::{DelayLine, DelayRead, DelayWrite}, fir::FirFilter, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, oversample::{Oversampler, oversample_by_two_factory}, sampler::Sampler, sine::Sine
         },
         ports::Ports,
     },
@@ -77,6 +72,10 @@ pub enum AddNode {
         chans: usize,
         coeffs: Vec<f32>,
     },
+    Oversample2X {
+        node: Box<dyn Node + Send + 'static>,
+        chans: usize
+    }
 }
 
 pub struct RuntimeBuilder {
@@ -109,6 +108,10 @@ impl RuntimeBuilder {
 
     fn get_sample_rate(&self) -> usize {
         self.runtime.get_config().sample_rate
+    }
+
+    fn get_buffer_size(&self) -> usize {
+        self.runtime.get_config().audio_block_size
     }
 
     pub fn get_port_info(&self, node_key: &NodeKey) -> &Ports {
@@ -193,6 +196,11 @@ impl RuntimeBuilder {
             } => Box::new(TrackMixer::new(chans_per_track, tracks, gain)),
             // Filters
             AddNode::Fir { chans, coeffs } => Box::new(FirFilter::new(coeffs, chans)),
+            // Oversample Node
+            AddNode::Oversample2X { node, chans } => {
+                let buff_size = self.get_buffer_size();
+                Box::new(oversample_by_two_factory(node, chans, buff_size))
+            }
         };
         self.runtime.add_node(node)
     }
