@@ -7,7 +7,6 @@ pub struct PortMeta {
     pub index: usize,
 }
 
-
 /// Ports are responsible to present the preferred algorithm for up and down sampling.
 ///
 /// For instance, if a user connects a lower fidelity control rate LFO to an audio rate,
@@ -89,12 +88,22 @@ pub trait PortedErased {
     fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]>;
     fn get_control_inputs(&self) -> Option<&[ControlInputPort]>;
     fn get_control_outputs(&self) -> Option<&[ControlOutputPort]>;
-    fn get_ports(&self)-> GetPorts {
-        (self.get_audio_inputs(), self.get_audio_outputs(), self.get_control_inputs(), self.get_control_outputs())
+    fn get_ports(&self) -> GetPorts {
+        (
+            self.get_audio_inputs(),
+            self.get_audio_outputs(),
+            self.get_control_inputs(),
+            self.get_control_outputs(),
+        )
     }
 }
 
-pub type GetPorts<'a> = (Option<&'a [AudioInputPort]>, Option<&'a [AudioOutputPort]>, Option<&'a [ControlInputPort]>, Option<&'a [ControlOutputPort]>);
+pub type GetPorts<'a> = (
+    Option<&'a [AudioInputPort]>,
+    Option<&'a [AudioOutputPort]>,
+    Option<&'a [ControlInputPort]>,
+    Option<&'a [ControlOutputPort]>,
+);
 
 /// Utility type for one channel
 pub type Mono = U1;

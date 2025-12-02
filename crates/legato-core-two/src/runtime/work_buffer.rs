@@ -2,7 +2,7 @@ pub struct WorkBuffer {
     data: Vec<f32>,
     channel_slices: Vec<&'static mut [f32]>,
     channels: usize,
-    block_size: usize
+    block_size: usize,
 }
 
 impl WorkBuffer {
@@ -22,7 +22,7 @@ impl WorkBuffer {
             data,
             channel_slices,
             channels: chans,
-            block_size
+            block_size,
         }
     }
     pub fn slice_to_chans_mut(&mut self) -> &mut Vec<&'static mut [f32]> {

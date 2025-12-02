@@ -1,7 +1,7 @@
 use legato_core::{
-    out::render,
     engine::builder::{AddNode, RuntimeBuilder, get_runtime_builder},
     nodes::utils::port_utils::generate_audio_inputs,
+    out::render,
 };
 use legato_core::{engine::port::Ports, nodes::utils::port_utils::generate_audio_outputs};
 use std::{path::Path, time::Duration};

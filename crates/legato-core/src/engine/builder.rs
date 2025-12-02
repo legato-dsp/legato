@@ -152,7 +152,10 @@ where
 
     // Get owned runtime value. In practice, you won't use this struct anymore after this
     pub fn get_owned(self) -> (Runtime<AF, CF, C, Ci>, RuntimeBackend) {
-        (self.runtime,RuntimeBackend::new(self.sample_backend_lookup))
+        (
+            self.runtime,
+            RuntimeBackend::new(self.sample_backend_lookup),
+        )
     }
 
     fn get_sample_rate(&self) -> f32 {

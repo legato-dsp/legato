@@ -5,7 +5,8 @@ use crate::engine::{
     buffer::{Buffer, Frame},
     graph::{AudioGraph, AudioNode, Connection, GraphError, NodeKey},
     node::{BufferSize, Node},
-    port::{GetPorts, PortRate, PortedErased, Ports}, resources::audio_sample::AudioSampleBackend,
+    port::{GetPorts, PortRate, PortedErased, Ports},
+    resources::audio_sample::AudioSampleBackend,
 };
 use generic_array::ArrayLength;
 use slotmap::SecondaryMap;
@@ -234,22 +235,22 @@ where
 }
 
 /// The backend that sends commands to the runtime.
-/// 
+///
 /// For the time being, this is primarily used to load new samples,
 /// but in the future, it will likely use channels for invoking certain
 /// functions on certain nodes.
-/// 
+///
 /// TOOD: Tidy this up a bit, needs better error handling
 pub struct RuntimeBackend {
-    audio_sample_backend: std::collections::HashMap<String, AudioSampleBackend>
+    audio_sample_backend: std::collections::HashMap<String, AudioSampleBackend>,
 }
 impl RuntimeBackend {
     pub fn new(sample_backend: std::collections::HashMap<String, AudioSampleBackend>) -> Self {
         Self {
-            audio_sample_backend: sample_backend
+            audio_sample_backend: sample_backend,
         }
     }
-    pub fn load_sample(&mut self, sampler: &String, path: &str, chans: usize, sr: u32){
+    pub fn load_sample(&mut self, sampler: &String, path: &str, chans: usize, sr: u32) {
         if let Some(backend) = self.audio_sample_backend.get(sampler) {
             backend.load_file(path, chans, sr).unwrap();
         }

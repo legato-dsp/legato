@@ -13,8 +13,7 @@ pub fn render(
     path: &Path,
     sr: u32,
     time: Duration,
-) -> Result<(), hound::Error>
-{
+) -> Result<(), hound::Error> {
     let dur_in_samples = (time.as_secs_f32() * sr as f32) as usize;
     let mut count = 0_usize;
 
@@ -71,8 +70,7 @@ pub fn start_runtime_audio_thread(
     device: &Device,
     config: &StreamConfig,
     mut runtime: Runtime,
-) -> Result<(), BuildStreamError>
-{
+) -> Result<(), BuildStreamError> {
     let stream = device.build_output_stream(
         config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {

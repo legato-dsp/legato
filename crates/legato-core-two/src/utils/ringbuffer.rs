@@ -1,8 +1,13 @@
-use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount, num::{SimdFloat, SimdUint}};
+use std::simd::{
+    LaneCount, Simd, StdFloat, SupportedLaneCount,
+    num::{SimdFloat, SimdUint},
+};
 
 use crate::{
     runtime::lanes::{LANES, Vf32, Vusize},
-    utils::math::{ONE_VF32, ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    utils::math::{
+        ONE_VF32, ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -165,8 +170,9 @@ impl RingBuffer {
         cubic_hermite_simd(a, b, c, d, t)
     }
 
-    fn gather_simd<const N: usize>(&self, indices: Simd<usize, N>) -> Simd<f32, N> 
-    where LaneCount<N>: SupportedLaneCount
+    fn gather_simd<const N: usize>(&self, indices: Simd<usize, N>) -> Simd<f32, N>
+    where
+        LaneCount<N>: SupportedLaneCount,
     {
         // TODO: Is there a better solution?
         let mut out = [0.0; N];
@@ -183,8 +189,6 @@ impl RingBuffer {
     }
 }
 
-
-
 mod test {
     use std::array;
 
@@ -193,9 +197,13 @@ mod test {
     use super::*;
 
     impl RingBuffer {
-    // Generic function, mostly for testing
-        pub fn get_delay_cubic_simd_generic<const N: usize>(&self, offset: Simd<f32, N>) -> Simd<f32, N>
-        where LaneCount<N>: SupportedLaneCount
+        // Generic function, mostly for testing
+        pub fn get_delay_cubic_simd_generic<const N: usize>(
+            &self,
+            offset: Simd<f32, N>,
+        ) -> Simd<f32, N>
+        where
+            LaneCount<N>: SupportedLaneCount,
         {
             let floor_float = offset.floor();
 
@@ -210,8 +218,12 @@ mod test {
 
             cubic_hermite_simd(a, b, c, d, t)
         }
-        pub fn get_delay_linear_simd_generic<const N: usize>(&self, offset: Simd<f32, N>) -> Simd<f32, N>
-        where LaneCount<N>: SupportedLaneCount
+        pub fn get_delay_linear_simd_generic<const N: usize>(
+            &self,
+            offset: Simd<f32, N>,
+        ) -> Simd<f32, N>
+        where
+            LaneCount<N>: SupportedLaneCount,
         {
             let floor_float = offset.floor();
 
@@ -226,7 +238,7 @@ mod test {
         }
     }
 
-        #[test]
+    #[test]
     fn offset_sanity() {
         let mut rb = RingBuffer::new(8);
 
@@ -366,8 +378,6 @@ mod test {
         }
     }
 
-
-
     #[test]
     fn test_cubic_sample_order() {
         let capacity = 32;
@@ -406,7 +416,6 @@ mod test {
 
     #[test]
     fn linear_scalar_simd_interp() {
-
         let mut rb = RingBuffer::new(8);
         for i in 0..8 {
             rb.push(i as f32);
@@ -416,7 +425,7 @@ mod test {
 
         let a = rb.get_delay_linear(1.0);
         let b = rb.get_delay_linear(1.5);
-        
+
         let b_c = rb.get_delay_linear(1.8);
 
         let c = rb.get_delay_linear(2.0);
@@ -426,7 +435,9 @@ mod test {
         assert_eq!(b_c, 5.2);
         assert_eq!(c, 5.0);
 
-        let chunk = rb.get_delay_linear_simd_generic(std::simd::Simd::<f32, 4>::from_array([1.0, 1.5, 1.8, 2.0]));
+        let chunk = rb.get_delay_linear_simd_generic(std::simd::Simd::<f32, 4>::from_array([
+            1.0, 1.5, 1.8, 2.0,
+        ]));
 
         let chunk_arr = chunk.as_array();
 

@@ -24,7 +24,7 @@ impl From<PortBuilder> for Ports {
             audio_in: builder.port_audio_in,
             audio_out: builder.port_audio_out,
             control_in: builder.port_control_in,
-            control_out: builder.port_control_out
+            control_out: builder.port_control_out,
         }
     }
 }
@@ -189,9 +189,7 @@ mod tests {
     #[test]
     fn test_two_chans() {
         let chans = 2;
-        let ports = PortBuilder::default()
-                .audio_out(chans)
-                .build();
+        let ports = PortBuilder::default().audio_out(chans).build();
 
         assert_eq!(ports.audio_out.iter().len(), 2);
     }

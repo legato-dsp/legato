@@ -42,9 +42,8 @@ impl Node for TrackMixer {
         _: &NodeInputs,
         _: &mut NodeInputs,
     ) {
-
         // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
-        for buffer in ao.iter_mut(){
+        for buffer in ao.iter_mut() {
             buffer.fill(0.0);
         }
 

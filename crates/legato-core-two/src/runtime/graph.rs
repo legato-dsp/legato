@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
-use std::{collections::VecDeque};
+use std::collections::VecDeque;
 
 use crate::nodes::{Node, ports::PortRate};
 
@@ -31,8 +31,7 @@ const MAXIMUM_INPUTS: usize = 8;
 pub type AudioNode = Box<dyn Node + Send>;
 
 /// A DAG for grabbing nodes and their dependencies via topological sort.
-pub struct AudioGraph
-{
+pub struct AudioGraph {
     nodes: SlotMap<NodeKey, AudioNode>,
     incoming_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
     outgoing_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
@@ -42,8 +41,7 @@ pub struct AudioGraph
     topo_sorted: Vec<NodeKey>,
 }
 
-impl AudioGraph
-{
+impl AudioGraph {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             nodes: SlotMap::with_capacity_and_key(capacity),
@@ -242,22 +240,34 @@ impl AudioGraph
 
 #[cfg(test)]
 mod test {
-    use crate::{nodes::{Node, NodeInputs, ports::{PortMeta, PortRate, Ported, Ports}}, runtime::graph::{AudioGraph, NodeKey}};
     use super::*;
+    use crate::{
+        nodes::{
+            Node, NodeInputs,
+            ports::{PortMeta, PortRate, Ported, Ports},
+        },
+        runtime::graph::{AudioGraph, NodeKey},
+    };
 
     struct MonoExample {
-        ports: Ports
+        ports: Ports,
     }
 
     impl Default for MonoExample {
         fn default() -> Self {
             Self {
-                ports: Ports { 
-                    audio_in: vec![PortMeta { name: "in", index: 0}], 
-                    audio_out: vec![PortMeta { name: "out", index: 0} ], 
-                    control_in: vec![], control_out: 
-                    vec![] 
-                }
+                ports: Ports {
+                    audio_in: vec![PortMeta {
+                        name: "in",
+                        index: 0,
+                    }],
+                    audio_out: vec![PortMeta {
+                        name: "out",
+                        index: 0,
+                    }],
+                    control_in: vec![],
+                    control_out: vec![],
+                },
             }
         }
     }
@@ -269,16 +279,18 @@ mod test {
     }
 
     impl Node for MonoExample {
-        fn process(&mut self, ctx: &mut crate::runtime::context::AudioContext, 
-                ai: &NodeInputs,
-                ao: &mut NodeInputs,
-                ci: &NodeInputs,
-                co: &mut NodeInputs,
-            ) {}
+        fn process(
+            &mut self,
+            ctx: &mut crate::runtime::context::AudioContext,
+            ai: &NodeInputs,
+            ao: &mut NodeInputs,
+            ci: &NodeInputs,
+            co: &mut NodeInputs,
+        ) {
+        }
     }
-   
-    fn assert_is_valid_topo(g: &mut AudioGraph)
-    {
+
+    fn assert_is_valid_topo(g: &mut AudioGraph) {
         let order = g.invalidate_topo_sort().expect("Could not get topo order");
 
         use std::collections::HashMap;
@@ -604,9 +616,6 @@ mod test {
                 port_rate: PortRate::Audio,
             },
         });
-        assert_eq!(
-            res.unwrap_err(),
-            GraphError::BadConnection
-        );
+        assert_eq!(res.unwrap_err(), GraphError::BadConnection);
     }
 }

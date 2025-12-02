@@ -100,7 +100,7 @@ impl Node for DelayWrite {
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
         let chans = self.ports.audio_in.len();
-        
+
         // For graph semantics when adding connections between delays
         for c in 0..chans {
             ao[c].fill(0.0);

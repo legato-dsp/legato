@@ -29,7 +29,7 @@ impl AudioSample {
 pub enum AudioSampleError {
     PathNotFound,
     FailedDecoding,
-    BackendNotFound
+    BackendNotFound,
 }
 
 /// The audio sample backend is a quick trick to load a sample
@@ -68,12 +68,12 @@ pub fn decode_with_ffmpeg(path: &str, chans: usize, sr: u32) -> std::io::Result<
     let mut child = Command::new("ffmpeg")
         .args([
             "-i",
-            path,               // input
+            path, // input
             "-f",
-            "f32le",            // correct format for f32
-            "-ac",              // number of channels
-            &chans.to_string(), 
-            "-ar",              // sample rate
+            "f32le", // correct format for f32
+            "-ac",   // number of channels
+            &chans.to_string(),
+            "-ar", // sample rate
             &sr.to_string(),
             "-acodec",
             "pcm_f32le",
