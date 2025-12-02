@@ -5,3 +5,4 @@ pub mod ops;
 pub mod sampler;
 pub mod sine;
 pub mod oversample;
+pub mod sweep;

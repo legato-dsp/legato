@@ -1,0 +1,71 @@
+use std::time::Duration;
+
+
+use crate::{nodes::{Node, NodeInputs, ports::{PortBuilder, Ported, Ports}}, runtime::context::AudioContext};
+
+pub struct Sweep {
+    phase: f32,
+    range: (f32, f32),
+    duration: Duration,
+    elapsed: usize,
+    ports: Ports,
+}
+
+impl Sweep {
+    pub fn new(range: (f32, f32), duration: Duration, chans: usize) -> Self {
+        Self {
+            phase: 0.0,
+            range,
+            duration,
+            elapsed: 0,
+            ports: PortBuilder::default()
+                .audio_in(chans)
+                .audio_out(chans)
+                .build()
+        }
+    }
+}
+
+impl Node for Sweep
+
+{
+    fn process(
+        &mut self,
+        ctx: &mut AudioContext,
+        _: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
+    ) {
+        let config = ctx.get_config();
+
+        let fs = config.audio_block_size as f32;
+
+        let block_size = ctx.get_config().audio_block_size;
+
+        let chans = ao.len();
+
+        let (min, max) = self.range;
+
+        for n in 0..block_size {
+            let t = (self.elapsed as f32 / fs).min(self.duration.as_secs_f32());
+            let freq = min * ((max / min).powf(t / self.duration.as_secs_f32()));
+            self.elapsed += 1;
+
+            self.phase += freq / fs;
+            self.phase = self.phase.fract();
+
+            let sample = (self.phase * std::f32::consts::TAU).sin();
+
+            for c in 0..chans {
+                ao[c][n] = sample;
+            }
+        }
+    }
+}
+
+impl Ported for Sweep {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
+    }
+}
