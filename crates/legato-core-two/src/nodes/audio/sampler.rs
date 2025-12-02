@@ -48,7 +48,7 @@ impl Node for Sampler {
             let handle_version = sample_handle.sample_version.load(std::sync::atomic::Ordering::Acquire);
             if let Some(ref mut self_sample) = self.sample {
                 if self.sample_version != handle_version {
-                    // Permit small Arc alloc on sample change. Open to alternatives
+                    // Permit small Arc alloc on sample change. Open to alternatives, maybe a heapless arc swap exploration?
                     permit_alloc(|| {
                         if let Some(handle_sample) = sample_handle.sample.load_full() {
                             *self_sample = handle_sample.clone();

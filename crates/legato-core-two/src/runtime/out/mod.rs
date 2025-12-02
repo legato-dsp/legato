@@ -1,6 +1,5 @@
 use std::{path::Path, time::Duration};
 
-#[cfg(debug_assertions)]
 use cpal::{
     BuildStreamError, Device, FromSample, SizedSample, StreamConfig,
     traits::{DeviceTrait, StreamTrait},
