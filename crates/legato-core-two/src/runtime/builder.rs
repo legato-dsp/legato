@@ -6,7 +6,7 @@ use crate::{
     nodes::{
         Node,
         audio::{
-            delay::{DelayLine, DelayRead, DelayWrite}, fir::FirFilter, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, oversample::{Oversampler, oversample_by_two_factory}, sampler::Sampler, sine::Sine
+            delay::{DelayLine, DelayRead, DelayWrite}, fir::FirFilter, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, oversample::{Oversampler, oversample_by_two_factory}, sampler::Sampler, sine::Sine, sweep::Sweep
         },
         ports::Ports,
     },
@@ -72,6 +72,13 @@ pub enum AddNode {
         chans: usize,
         coeffs: Vec<f32>,
     },
+    // Sweep
+    Sweep {
+        range: (f32, f32),
+        duration: Duration,
+        chans: usize,
+    },
+    // Over and resamplers
     Oversample2X {
         node: Box<dyn Node + Send + 'static>,
         chans: usize
@@ -201,6 +208,8 @@ impl RuntimeBuilder {
                 let buff_size = self.get_buffer_size();
                 Box::new(oversample_by_two_factory(node, chans, buff_size))
             }
+            // Sweep
+            AddNode::Sweep { range, duration, chans } => Box::new(Sweep::new(range, duration, chans))
         };
         self.runtime.add_node(node)
     }

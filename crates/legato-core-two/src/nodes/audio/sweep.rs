@@ -19,7 +19,6 @@ impl Sweep {
             duration,
             elapsed: 0,
             ports: PortBuilder::default()
-                .audio_in(chans)
                 .audio_out(chans)
                 .build()
         }
@@ -39,13 +38,15 @@ impl Node for Sweep
     ) {
         let config = ctx.get_config();
 
-        let fs = config.audio_block_size as f32;
+        let fs = config.sample_rate as f32;
 
         let block_size = ctx.get_config().audio_block_size;
 
         let chans = ao.len();
 
-        let (min, max) = self.range;
+        let (mut min, max) = self.range;
+
+        min = min.clamp(1.0, max);
 
         for n in 0..block_size {
             let t = (self.elapsed as f32 / fs).min(self.duration.as_secs_f32());

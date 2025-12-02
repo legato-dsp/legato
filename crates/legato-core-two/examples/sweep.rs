@@ -1,3 +1,5 @@
+use std::{path::Path, time::Duration};
+
 use cpal::{
     BufferSize, SampleRate, StreamConfig,
     traits::{DeviceTrait, HostTrait},
@@ -8,7 +10,7 @@ use legato_core_two::{
         builder::{AddNode, get_runtime_builder},
         context::Config,
         graph::{Connection, ConnectionEntry},
-        out::start_runtime_audio_thread,
+        out::{render, start_runtime_audio_thread},
     },
 };
 
@@ -35,34 +37,14 @@ fn main() {
 
     let mut runtime_builder = get_runtime_builder(16, config, ports);
 
-    let carrier = runtime_builder.add_node(AddNode::Sine {
-        freq: 440.0,
-        chans: 2,
-    });
+    // let sweep = runtime_builder.add_node(AddNode::Sweep { range: (0.0, 48_000.0), duration: Duration::from_secs(5), chans: 2 });
 
-    // TODO: Apply gain
+    let sweep = runtime_builder.add_node(AddNode::Sweep { range: (40.0, 48_000.0), duration: Duration::from_secs(5), chans: 2 });
 
-    let modulator = runtime_builder.add_node(AddNode::Sine {
-        freq: 440.0 * (5.0 / 4.0),
-        chans: 1,
-    });
 
     let (mut runtime, _) = runtime_builder.get_owned();
 
-    let _ = runtime.add_edge(Connection {
-        source: ConnectionEntry {
-            node_key: modulator,
-            port_index: 0,
-            port_rate: PortRate::Audio,
-        },
-        sink: ConnectionEntry {
-            node_key: carrier,
-            port_index: 0,
-            port_rate: PortRate::Audio,
-        },
-    });
-
-    let _ = runtime.set_sink_key(carrier);
+    let _ = runtime.set_sink_key(sweep);
 
     #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
@@ -74,11 +56,7 @@ fn main() {
 
     println!("{:?}", device.default_output_config());
 
-    let config = StreamConfig {
-        channels: config.channels as u16,
-        sample_rate: SampleRate(config.sample_rate as u32),
-        buffer_size: BufferSize::Fixed(config.audio_block_size as u32),
-    };
+    let path = Path::new("./out.wav");
 
-    start_runtime_audio_thread(&device, config, runtime).expect("Runtime panic!");
+    render(runtime, path, config.sample_rate as u32, Duration::from_secs(5)).unwrap();
 }
