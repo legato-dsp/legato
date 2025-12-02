@@ -80,7 +80,7 @@ pub enum AddNode {
     },
     // Over and resamplers
     Oversample2X {
-        node: Box<dyn Node + Send + 'static>,
+        runtime: Box<Runtime>,
         chans: usize
     }
 }
@@ -204,9 +204,9 @@ impl RuntimeBuilder {
             // Filters
             AddNode::Fir { chans, coeffs } => Box::new(FirFilter::new(coeffs, chans)),
             // Oversample Node
-            AddNode::Oversample2X { node, chans } => {
+            AddNode::Oversample2X { runtime, chans } => {
                 let buff_size = self.get_buffer_size();
-                Box::new(oversample_by_two_factory(node, chans, buff_size))
+                Box::new(oversample_by_two_factory(runtime, chans, buff_size))
             }
             // Sweep
             AddNode::Sweep { range, duration, chans } => Box::new(Sweep::new(range, duration, chans))

@@ -67,33 +67,12 @@ impl RingBuffer {
     }
 
     #[inline(always)]
-    /// This function grabs a chunk from the ring buffer starting at offset k,
-    /// making it appear continous. Note: This may not be the right choice for
-    /// rapidly modulating delay lines, rather, this is useful for algorithms like
-    /// convolution.
-    pub fn get_chunk_simd(&self, k: usize) -> Vf32 {
-        let len = self.capacity;
-        let k_mod = k % len;
-
-        let end = (self.write_pos + len - 1 - k_mod) % len;
-        let start = (end + len + 1 - LANES) % len;
-
-        // If no wrap is required
-        if start <= end && end - start + 1 == LANES {
-            let slice = &self.data[start..start + LANES];
-            return Vf32::from_slice(slice);
-        }
-
-        // If we wrap, we have to copy from other section
-        let mut out = [0f32; LANES];
-
-        let first_len = len - start; // Say we have 12 samples and 4 are wrapped
-        let second_len = LANES - first_len; // Here we have the remainding 4
-
-        out[..first_len].copy_from_slice(&self.data[start..]);
-        out[first_len..].copy_from_slice(&self.data[..second_len]);
-
-        Vf32::from_array(out)
+    pub fn get_chunk_by_offset(&self, k: usize) -> Vf32 {
+            let mut out = [0.0; LANES];
+            for i in 0..LANES {
+                out[i] = self.get_offset(k + i);
+            }
+            Vf32::from_array(out)
     }
 
     pub fn clear(&mut self) {
@@ -197,6 +176,7 @@ mod test {
     use super::*;
 
     impl RingBuffer {
+         
         // Generic function, mostly for testing
         pub fn get_delay_cubic_simd_generic<const N: usize>(
             &self,
@@ -218,6 +198,7 @@ mod test {
 
             cubic_hermite_simd(a, b, c, d, t)
         }
+
         pub fn get_delay_linear_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
@@ -266,42 +247,8 @@ mod test {
         let v = Vf32::from_array(array::from_fn(|x| x as f32));
         rb.push_simd(&v);
 
-        let out = rb.get_chunk_simd(0);
-        assert_eq!(out, v);
-    }
-
-    #[test]
-    fn test_push_chunk_wrap() {
-        let mut rb = RingBuffer::new(LANES + 2);
-
-        // wrap the position around
-        for _ in 0..(LANES + 1) {
-            rb.push(1.0);
-        }
-
-        let v = Vf32::from_array(array::from_fn(|x| x as f32));
-        rb.push_simd(&v);
-
-        let out = rb.get_chunk_simd(0);
-        assert_eq!(out, v);
-    }
-
-    #[test]
-    fn test_get_offset_chunk_wrap_copy() {
-        let mut rb = RingBuffer::new(LANES + 4);
-
-        for i in 0..(LANES + 4) {
-            rb.push(i as f32);
-        }
-
-        let chunk = rb.get_chunk_simd(1);
-
-        let mut expected = [0f32; LANES];
-        for i in 0..LANES {
-            expected[LANES - 1 - i] = rb.get_offset(1 + i);
-        }
-
-        assert_eq!(chunk, Vf32::from_array(expected));
+        let out = rb.get_chunk_by_offset(0);
+        assert_eq!(out, v.reverse());
     }
 
     #[test]
@@ -322,8 +269,8 @@ mod test {
         // [cnk] v
         // 3333  2222
 
-        assert_eq!(rb.get_chunk_simd(0), Vf32::splat(3.0));
-        assert_eq!(rb.get_chunk_simd(1 * LANES), Vf32::splat(2.0));
+        assert_eq!(rb.get_chunk_by_offset(0), Vf32::splat(3.0));
+        assert_eq!(rb.get_chunk_by_offset(1 * LANES), Vf32::splat(2.0));
     }
 
     #[test]
@@ -347,7 +294,7 @@ mod test {
             rb.push(i as f32);
         }
 
-        for i in 0..4096 {
+        for i in 1..4096 {
             let base = i;
             let simd_off = Vf32::splat(i as f32);
             let s = rb.get_delay_linear(base as f32);

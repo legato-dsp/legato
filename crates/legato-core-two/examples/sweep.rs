@@ -5,7 +5,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use legato_core_two::{
-    nodes::ports::{PortBuilder, PortRate},
+    nodes::{audio::sweep::Sweep, ports::{PortBuilder, PortRate}},
     runtime::{
         builder::{AddNode, get_runtime_builder},
         context::Config,
@@ -35,12 +35,29 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
+
+    // Create 2x oversampled config
+
+    let mut os_config = config.clone();
+    
+    os_config.audio_block_size *= 2;
+    os_config.sample_rate *= 2;
+
+    // Make the 2x oversampled graph
+
+    let mut sweep_runtime_builder = get_runtime_builder(1, os_config, ports.clone());
+
+    let sweep_key = sweep_runtime_builder.add_node(AddNode::Sweep { range: (40.0, 42_000.0), duration: Duration::from_secs(5), chans: 2 });
+
+    let (mut sweep_runtime, _) = sweep_runtime_builder.get_owned();
+
+    let _ = sweep_runtime.set_sink_key(sweep_key);
+
+    // Make the normal audio rate graph
+
     let mut runtime_builder = get_runtime_builder(16, config, ports);
 
-    // let sweep = runtime_builder.add_node(AddNode::Sweep { range: (0.0, 48_000.0), duration: Duration::from_secs(5), chans: 2 });
-
-    let sweep = runtime_builder.add_node(AddNode::Sweep { range: (40.0, 48_000.0), duration: Duration::from_secs(5), chans: 2 });
-
+    let sweep = runtime_builder.add_node(AddNode::Oversample2X { runtime: Box::new(sweep_runtime), chans: 2 });
 
     let (mut runtime, _) = runtime_builder.get_owned();
 
