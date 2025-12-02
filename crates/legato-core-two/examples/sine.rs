@@ -80,5 +80,5 @@ fn main() {
         buffer_size: BufferSize::Fixed(config.audio_block_size as u32),
     };
 
-    start_runtime_audio_thread(&device, &config, runtime).expect("Runtime panic!");
+    start_runtime_audio_thread(&device, config, runtime).expect("Runtime panic!");
 }

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicU64};
 
 use arc_swap::ArcSwapOption;
 
@@ -11,6 +11,28 @@ use arc_swap::ArcSwapOption;
 pub struct AudioSample {
     chans: usize,
     data: Vec<Vec<f32>>,
+}
+
+/// The audio sample handle contains a sample version
+/// that lets the audio thread know if it has been updated.
+/// 
+/// This helps prevent ArcSwap loads that allocate on the
+/// on the audio thread.
+pub struct AudioSampleHandle {
+    pub sample: ArcSwapOption<AudioSample>,
+    pub sample_version: AtomicU64
+}
+
+pub struct AudioSampleRef {
+    pub sample: Arc<AudioSample>,
+    pub sample_version: AtomicU64
+}
+
+impl AudioSampleHandle {
+    pub fn invalidate(&self, sample: AudioSample) {
+        self.sample.store(Some(Arc::new(sample)));
+        self.sample_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl AudioSample {
@@ -41,16 +63,16 @@ pub enum AudioSampleError {
 /// in, but for the time being this seems to work okay.
 #[derive(Clone)]
 pub struct AudioSampleBackend {
-    data: Arc<ArcSwapOption<AudioSample>>,
+    handle: Arc<AudioSampleHandle>
 }
 impl AudioSampleBackend {
-    pub fn new(data: Arc<ArcSwapOption<AudioSample>>) -> Self {
-        Self { data }
+    pub fn new(handle: Arc<AudioSampleHandle>) -> Self {
+        Self { handle }
     }
     pub fn load_file(&self, path: &str, chans: usize, sr: u32) -> Result<(), AudioSampleError> {
         match decode_with_ffmpeg(path, chans, sr) {
             Ok(decoded) => {
-                self.data.store(Some(Arc::new(decoded)));
+                self.handle.invalidate(decoded);
                 Ok(())
             }
             Err(_) => Err(AudioSampleError::FailedDecoding), //TODO: Some logging or something?

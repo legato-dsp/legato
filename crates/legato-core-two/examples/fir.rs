@@ -6,6 +6,12 @@ use legato_core_two::runtime::context::Config;
 use legato_core_two::runtime::graph::{Connection, ConnectionEntry};
 use legato_core_two::runtime::out::start_runtime_audio_thread;
 
+use assert_no_alloc::*;
+
+#[cfg(debug_assertions)] // required when disable_release is set (default)
+#[global_allocator]
+static A: AllocDisabler = AllocDisabler;
+
 fn main() {
     #[cfg(target_os = "linux")]
     let config = Config {
@@ -178,5 +184,5 @@ fn main() {
         buffer_size: BufferSize::Fixed(config.audio_block_size as u32),
     };
 
-    start_runtime_audio_thread(&device, &config, runtime).expect("Runtime panic!");
+    start_runtime_audio_thread(&device, config, runtime).expect("Runtime panic!");
 }

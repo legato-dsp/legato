@@ -2,13 +2,14 @@ pub mod audio_sample;
 
 use std::sync::Arc;
 
-use arc_swap::ArcSwapOption;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
     nodes::{NodeInputs, audio::delay::DelayLine},
-    runtime::{lanes::Vf32, resources::audio_sample::AudioSample},
+    runtime::{lanes::Vf32, resources::audio_sample::{AudioSample, AudioSampleHandle, AudioSampleRef}},
 };
+
+use std::sync::atomic::Ordering::AcqRel;
 
 new_key_type! { pub struct DelayLineKey; }
 new_key_type! { pub struct SampleKey; }
@@ -22,14 +23,14 @@ new_key_type! { pub struct SampleKey; }
 #[derive(Default)]
 pub struct Resources {
     delay_lines: SlotMap<DelayLineKey, DelayLine>,
-    samples: SlotMap<SampleKey, Arc<ArcSwapOption<AudioSample>>>,
+    sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>,
 }
 
 impl Resources {
     pub fn new() -> Self {
         Self {
             delay_lines: SlotMap::default(),
-            samples: SlotMap::default(),
+            sample_handles: SlotMap::default(),
         }
     }
     pub fn delay_write_block(&mut self, key: DelayLineKey, block: &NodeInputs) {
@@ -71,16 +72,12 @@ impl Resources {
     pub fn add_delay_line(&mut self, delay_line: DelayLine) -> DelayLineKey {
         self.delay_lines.insert(delay_line)
     }
-    pub fn add_sample_resource(&mut self, sample: Arc<ArcSwapOption<AudioSample>>) -> SampleKey {
-        self.samples.insert(sample)
+
+    pub fn add_sample_resource(&mut self, sample: Arc<AudioSampleHandle>) -> SampleKey {
+        self.sample_handles.insert(sample)
     }
-    pub fn get_sample(&self, sample_key: SampleKey) -> Option<Arc<AudioSample>> {
-        if let Some(inner) = self.samples.get(sample_key) {
-            if let Some(buf) = inner.load_full() {
-                return Some(buf);
-            }
-            return None;
-        }
-        None
+
+    pub fn get_sample(&self, sample_key: SampleKey) -> Option<&Arc<AudioSampleHandle>> {
+        self.sample_handles.get(sample_key)
     }
 }

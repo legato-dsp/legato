@@ -1,12 +1,15 @@
-use std::{ops::Mul, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
+#[cfg(debug_assertions)]
 use cpal::{
     BuildStreamError, Device, FromSample, SizedSample, StreamConfig,
     traits::{DeviceTrait, StreamTrait},
 };
 use hound::{WavSpec, WavWriter};
 
-use crate::runtime::runtime::Runtime;
+use crate::runtime::{runtime::Runtime};
+
+use assert_no_alloc::*;
 
 pub fn render(
     mut runtime: Runtime,
@@ -48,15 +51,13 @@ pub fn render(
 }
 
 #[inline(always)]
-fn write_runtime_data_cpal<T>(output: &mut [T], runtime: &mut Runtime)
+fn write_runtime_data_cpal<T>(output: &mut [T], config: &StreamConfig, runtime: &mut Runtime)
 where
     T: SizedSample + FromSample<f64>,
 {
-    let config = runtime.get_config();
-
     let next_block = runtime.next_block(None);
 
-    let chans = config.channels;
+    let chans = config.channels as usize;
 
     for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
         for (channel, sample) in frame.iter_mut().enumerate() {
@@ -68,14 +69,13 @@ where
 
 pub fn start_runtime_audio_thread(
     device: &Device,
-    config: &StreamConfig,
+    config: StreamConfig,
     mut runtime: Runtime,
 ) -> Result<(), BuildStreamError> {
     let stream = device.build_output_stream(
-        config,
+        &config.clone(),
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            // assert_no_alloc(|| write_data_cpal(data, &mut runtime))
-            write_runtime_data_cpal(data, &mut runtime);
+            assert_no_alloc(|| write_runtime_data_cpal(data, &config, &mut runtime))
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,

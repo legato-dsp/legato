@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::{Arc, atomic::AtomicU64}, time::Duration};
 
 use arc_swap::ArcSwapOption;
 
@@ -18,7 +18,7 @@ use crate::{
     runtime::{
         context::Config,
         graph::NodeKey,
-        resources::{DelayLineKey, SampleKey, audio_sample::AudioSampleBackend},
+        resources::{DelayLineKey, SampleKey, audio_sample::{AudioSampleBackend, AudioSampleHandle}},
         runtime::{Runtime, RuntimeBackend, build_runtime},
     },
 };
@@ -128,12 +128,18 @@ impl RuntimeBuilder {
                 } else {
                     let ctx = self.runtime.get_context_mut();
 
-                    let data = Arc::new(ArcSwapOption::new(None));
-                    let backend = AudioSampleBackend::new(data.clone());
+                    let data = ArcSwapOption::new(None);
+                    
+                    let handle = Arc::new(AudioSampleHandle {
+                        sample: data,
+                        sample_version: AtomicU64::new(0)   
+                    });
 
+                    let backend = AudioSampleBackend::new(handle.clone());
+                        
                     self.sample_backend_lookup.insert(sampler_name, backend);
 
-                    ctx.get_resources_mut().add_sample_resource(data)
+                    ctx.get_resources_mut().add_sample_resource(handle)
                 };
 
                 Box::new(Sampler::new(sample_key, chans))
