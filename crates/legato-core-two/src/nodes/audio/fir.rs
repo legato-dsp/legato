@@ -88,7 +88,7 @@ impl Ported for FirFilter {
 mod test {
     use std::simd::{StdFloat, num::SimdFloat};
 
-    use crate::{nodes::audio::fir::FirFilter, runtime::lanes::{LANES, Vf32}, utils::ringbuffer::RingBuffer};
+    use crate::{nodes::audio::fir::FirFilter, runtime::lanes::{LANES, Vf32}};
 
     impl FirFilter {
         fn process_mono_block(&mut self, input: &[f32]) -> Vec<f32> {
@@ -138,6 +138,7 @@ mod test {
 
     #[test]
     fn fir_impulse_response_matches_coeffs() {
+        // With an impulse of one at the start, we should match the coeffs
         let coeffs = vec![0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, 1.3, 0.3, 0.19, 1.9, 0.6, 7.4];
 
         let mut fir = FirFilter::new(coeffs.clone(), 1);
@@ -166,7 +167,7 @@ mod test {
 
         let mut rng = StdRng::seed_from_u64(1337);
 
-        let coeffs_len = LANES * 2 + 3;
+        let coeffs_len = LANES * 2 + 3; // Awkward number to test wrapping and edge cases
         let mut coeffs = Vec::with_capacity(coeffs_len);
         for _ in 0..coeffs_len {
             coeffs.push(rng.random_range(-1.0..1.0));
