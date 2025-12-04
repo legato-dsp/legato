@@ -69,7 +69,7 @@ impl RingBuffer {
     pub fn get_chunk_by_offset(&self, k: usize) -> Vf32 {
         let len = self.capacity;
         
-        let r = (self.write_pos + len - k % len) % len;
+        let r = (self.write_pos + len.saturating_sub(k)) % len;
         let l = (r + len - LANES) % len;
 
         if r > l  {
@@ -461,24 +461,4 @@ mod test {
             assert_eq!(c1[i], c2[i], "panicking on index {}", i)
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-    #[test]
-    fn chunk_wrap_sanity(){
-        
-    }
-
-
 }
