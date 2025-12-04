@@ -41,10 +41,11 @@ pub struct Config {
     pub audio_block_size: usize,
     pub control_block_size: usize,
     pub channels: usize,
+    pub initial_graph_capacity: usize,
 }
 
 impl Config {
-    pub fn new(sr: usize, cr: usize, block_size: BlockSize, channels: usize) -> Self {
+    pub fn new(sr: usize, cr: usize, block_size: BlockSize, channels: usize, initial_graph_capacity: usize) -> Self {
         let audio_block_size = block_size.to_usize();
         Self {
             sample_rate: sr,
@@ -52,6 +53,7 @@ impl Config {
             audio_block_size: audio_block_size,
             control_block_size: audio_block_size / 32,
             channels,
+            initial_graph_capacity
         }
     }
     pub fn validate(&self) {

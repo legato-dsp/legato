@@ -1,104 +1,76 @@
-use generic_array::ArrayLength;
-use typenum::{U0, U1, U2, U4, U8, U16};
-
 use crate::{
-    engine::{
-        audio_context::AudioContext,
-        buffer::{Buffer, Frame},
-        node::{BufferSize, Node},
-        port::*,
+    nodes::{
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
     },
-    nodes::utils::port_utils::{generate_audio_inputs, generate_audio_outputs},
+    runtime::lanes::{LANES, Vf32},
+    utils::math::fast_tanh_vf32,
 };
 
-pub struct Mixer<Ai, Ao>
-where
-    Ai: ArrayLength,
-    Ao: ArrayLength,
-{
-    ports: Ports<Ai, Ao, U0, U0>,
+// TODO: More mixers, matrix, panning, etc.
+
+/// A simple node for mixing down tracks.
+///
+/// A "track", in this context, is an arbitrary amount of channels.
+///
+/// So, this TrackMixer can take say two tracks of stereo -> one track stereo
+pub struct TrackMixer {
+    chans_per_track: usize,
+    ports: Ports,
+    gain: Vec<Vf32>,
 }
 
-impl<Ai, Ao> Mixer<Ai, Ao>
-where
-    Ai: ArrayLength,
-    Ao: ArrayLength,
-{
-    pub fn default() -> Self {
+impl TrackMixer {
+    pub fn new(chans_per_track: usize, tracks: usize, gain: Vec<f32>) -> Self {
         Self {
-            ports: Ports {
-                audio_inputs: Some(generate_audio_inputs()),
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None,
-                control_outputs: None,
-            },
+            chans_per_track,
+            gain: gain.into_iter().map(|x| Vf32::splat(x)).collect(),
+            ports: PortBuilder::default()
+                .audio_in(chans_per_track * tracks)
+                .audio_out(chans_per_track)
+                .build(),
         }
     }
 }
 
-impl<AF, CF, Ai, Ao> Node<AF, CF> for Mixer<Ai, Ao>
-where
-    AF: BufferSize,
-    CF: BufferSize,
-    Ai: ArrayLength,
-    Ao: ArrayLength,
-{
-    fn process(
+impl Node for TrackMixer {
+    fn process<'a>(
         &mut self,
-        _: &mut AudioContext<AF>,
-        ai: &Frame<AF>,
-        ao: &mut Frame<AF>,
-        _: &Frame<CF>,
-        _: &mut Frame<CF>,
+        ctx: &mut crate::runtime::context::AudioContext,
+        ai: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
-        // For instance, we can have a stereo mixer with 2 stereo tracks.
-        // This would then be mapped like so [[L][R][L][R]].
-        // We sum them all up to the desired outputs.
-        debug_assert_eq!(ai.len(), Ai::USIZE);
-        debug_assert_eq!(ao.len(), Ao::USIZE);
-
-        let tracks = Ai::USIZE / Ao::USIZE;
-        let divisor = (tracks as f32).sqrt();
-
-        for mut buf in ao.iter_mut() {
-            let buffer: &mut Buffer<AF> = buf; // explicit annotation, though usually unnecessary
+        // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
+        for buffer in ao.iter_mut() {
             buffer.fill(0.0);
         }
 
-        for n in 0..AF::USIZE {
-            for c in 0..Ai::USIZE {
-                let index = c % Ao::USIZE;
-                ao[index][n] += ai[c][n] / divisor;
+        for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
+            let gain = self.gain[i];
+            for (chan_idx, chan) in track.into_iter().enumerate() {
+                for (chunk_in, chunk_out) in chan
+                    .chunks_exact(LANES)
+                    .zip(ao[chan_idx].chunks_exact_mut(LANES))
+                {
+                    let gained = Vf32::from_slice(chunk_in) * gain;
+                    let mut out = Vf32::from_slice(chunk_out);
+                    out += gained;
+                    chunk_out.copy_from_slice(&out.to_array());
+                }
+            }
+        }
+        for chan in ao {
+            for chunk in chan.chunks_exact_mut(LANES) {
+                chunk.copy_from_slice(fast_tanh_vf32(Vf32::from_slice(chunk)).as_array());
             }
         }
     }
 }
 
-impl<Ai, Ao> PortedErased for Mixer<Ai, Ao>
-where
-    Ai: ArrayLength,
-    Ao: ArrayLength,
-{
-    fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {
-        self.ports.get_audio_inputs()
-    }
-    fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]> {
-        self.ports.get_audio_outputs()
-    }
-    fn get_control_inputs(&self) -> Option<&[ControlInputPort]> {
-        self.ports.get_control_inputs()
-    }
-    fn get_control_outputs(&self) -> Option<&[ControlOutputPort]> {
-        self.ports.get_control_outputs()
+impl Ported for TrackMixer {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
     }
 }
-
-pub type StereoMixer = Mixer<U2, U2>;
-pub type StereoToMonoMixer = Mixer<U2, U1>;
-pub type FourToMonoMixer = Mixer<U4, U1>;
-
-pub type TwoTrackStereoMixer = Mixer<U4, U2>;
-pub type FourTrackStereoMixer = Mixer<U8, U2>;
-pub type EightTrackStereoMixer = Mixer<U16, U2>;
-
-pub type TwoTrackMonoMixer = Mixer<U2, U1>;

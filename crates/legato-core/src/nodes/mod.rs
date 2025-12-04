@@ -1,42 +1,26 @@
+use crate::{nodes::ports::Ported, runtime::context::AudioContext};
+
 pub mod audio;
-pub mod utils;
+pub mod ports;
 
-use std::ops::Mul;
-use typenum::{Prod, U0, U2};
+pub type NodeInputs = [Box<[f32]>];
 
-use crate::{
-    engine::{
-        graph::Connection,
-        node::{BufferSize, Node},
-        port::Ports,
-        runtime::{Runtime, build_runtime},
-    },
-    nodes::utils::port_utils::generate_audio_outputs,
-};
-
-pub fn get_node_test_harness<AF, CF>(
-    node: Box<dyn Node<AF, CF> + Send + 'static>,
-) -> Runtime<AF, CF, U2, U0>
-where
-    AF: BufferSize + Mul<U2>,
-    Prod<AF, U2>: BufferSize,
-    CF: BufferSize,
-{
-    let mut graph = build_runtime::<AF, CF, U2, U0>(
-        1,
-        48_000.0,
-        48_000.0 / 32.0,
-        Ports {
-            audio_inputs: None,
-            audio_outputs: Some(generate_audio_outputs()),
-            control_inputs: None,
-            control_outputs: None,
-        },
+pub trait Node: Ported {
+    fn process<'a>(
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &NodeInputs,
+        ao: &mut NodeInputs,
+        ci: &NodeInputs,
+        co: &mut NodeInputs,
     );
-
-    let id = graph.add_node(node);
-
-    let _ = graph.set_sink_key(id);
-
-    graph
 }
+
+// pub trait Node: Ported {
+//     fn process(&mut self, ctx: &mut AudioContext,
+//         ai: &[ &Vec<f32> ],
+//         ao: &mut[ &mut Vec<f32> ],
+//         ci: &[ &Vec<f32> ],
+//         co: &mut[ &mut Vec<f32>] ],
+//     );
+// }

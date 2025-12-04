@@ -1,26 +1,23 @@
-use std::{array, time::Duration};
+use std::time::Duration;
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use generic_array::{GenericArray, sequence::GenericSequence};
 use legato_core::{
-    engine::{
-        buffer::{Buffer, Frame},
-        builder::{AddNode, RuntimeBuilder, get_runtime_builder},
-        graph::{self, Connection, ConnectionEntry},
-        port::{PortRate, Ports},
-    },
     nodes::{
-        audio::{filters::fir::FirStereo, sine::SineStereo},
-        get_node_test_harness,
-        utils::port_utils::generate_audio_outputs,
+        audio::{fir::FirFilter, sine::Sine},
+        ports::{PortBuilder, PortRate},
     },
+    runtime::{
+        builder::{AddNode, RuntimeBuilder, get_runtime_builder},
+        context::Config,
+        graph::{Connection, ConnectionEntry},
+    },
+    utils::bench_harness::get_node_test_harness,
 };
-use typenum::{U0, U2, U128, U4096};
 
-fn bench_sine_legato_one(c: &mut Criterion) {
-    let mut graph = get_node_test_harness::<U4096, U128>(Box::new(SineStereo::new(440.0, 0.0)));
+fn bench_stereo_sine(c: &mut Criterion) {
+    let mut graph = get_node_test_harness(Box::new(Sine::new(440.0, 2)));
 
-    c.bench_function("Sine node legato one", |b| {
+    c.bench_function("Sine node legato two", |b| {
         b.iter(|| {
             let out = graph.next_block(None);
             black_box(out);
@@ -109,7 +106,7 @@ fn bench_fir(c: &mut Criterion) {
         0.0,
     ];
 
-    let mut graph = get_node_test_harness::<U4096, U128>(Box::new(FirStereo::new(coeffs)));
+    let mut graph = get_node_test_harness(Box::new(FirFilter::new(coeffs, 2)));
 
     c.bench_function("fir node", |b| {
         b.iter(|| {
@@ -120,36 +117,30 @@ fn bench_fir(c: &mut Criterion) {
 }
 
 fn bench_stereo_delay(c: &mut Criterion) {
-    type BlockSize = U4096;
-    type ControlSize = U128;
-    type ChannelCount = U2;
+    let config = Config {
+        audio_block_size: 4096,
+        control_block_size: 4096 / 32,
+        channels: 2,
+        sample_rate: 44_100,
+        control_rate: 44_100 / 32,
+        initial_graph_capacity: 4
+    };
 
-    const SAMPLE_RATE: u32 = 44_100;
-    const CAPACITY: usize = 16;
-    const DECIMATION_FACTOR: f32 = 32.0;
-    const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
+    let mut runtime_builder: RuntimeBuilder = get_runtime_builder(
+        config,
+        PortBuilder::default().audio_in(2).audio_out(2).build(),
+    );
 
-    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
-        get_runtime_builder(
-            CAPACITY,
-            SAMPLE_RATE as f32,
-            CONTROL_RATE,
-            Ports {
-                audio_inputs: None,
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None,
-                control_outputs: None,
-            },
-        );
-
-    let a = runtime_builder.add_node(AddNode::DelayWriteStereo {
+    let a = runtime_builder.add_node(AddNode::DelayWrite {
+        chans: 2,
         delay_name: 'a'.into(),
         delay_length: Duration::from_secs_f32(1.0),
     });
 
-    let b = runtime_builder.add_node(AddNode::DelayReadStereo {
+    let b = runtime_builder.add_node(AddNode::DelayRead {
+        chans: 2,
         delay_name: 'a'.into(),
-        offsets: vec![Duration::from_millis(120), Duration::from_millis(240)],
+        delay_length: vec![Duration::from_millis(120), Duration::from_millis(240)],
     });
 
     let (mut runtime, _) = runtime_builder.get_owned();
@@ -183,19 +174,17 @@ fn bench_stereo_delay(c: &mut Criterion) {
     let _ = runtime.set_sink_key(b);
 
     c.bench_function("Basic stereo delay", |b| {
-        let ai = [Buffer::<BlockSize>::silent(), Buffer::<BlockSize>::silent()];
-        let ci = [];
+        let ai: &[Box<[f32]>] = &[
+            vec![0.0; config.audio_block_size].into(),
+            vec![0.0; config.audio_block_size].into(),
+        ];
+        let ci = &[];
         b.iter(|| {
-            let out = runtime.next_block(Some((&ai, &ci)));
+            let out = runtime.next_block(Some(&(ai, ci)));
             black_box(out);
         });
     });
 }
 
-criterion_group!(
-    benches,
-    bench_sine_legato_one,
-    bench_fir,
-    bench_stereo_delay
-);
+criterion_group!(benches, bench_stereo_sine, bench_fir, bench_stereo_delay);
 criterion_main!(benches);

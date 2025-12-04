@@ -42,6 +42,13 @@ impl<'a> Params<'a> {
         }
     }
 
+    pub fn get_usize(&self, key: &str) -> Option<usize> {
+        match self.get_u32(key) {
+            Some(i) => Some(i as usize),
+            None => None
+        }
+    }
+
     pub fn get_str(&self, key: &str) -> Option<String> {
         match self.0.get(key) {
             Some(Value::Str(s)) => Some(s.clone()),

@@ -1,11 +1,4 @@
-use generic_array::ArrayLength;
-use legato_core::{
-    application::Application,
-    engine::{node::BufferSize, port::Ports, runtime::RuntimeBackend},
-    nodes::utils::port_utils::generate_audio_outputs,
-};
-use std::ops::Mul;
-use typenum::{Prod, U0, U2};
+use legato_core::{nodes::ports::PortBuilder, runtime::{context::Config, runtime::{Runtime, RuntimeBackend}}};
 
 use crate::{
     ast::{BuildAstError, build_ast},
@@ -14,6 +7,7 @@ use crate::{
 };
 
 pub mod ast;
+#[macro_use]
 pub mod ir;
 pub mod parse;
 
@@ -24,38 +18,26 @@ pub enum BuildApplicationError {
     ValidationError(ValidationError),
 }
 
-pub struct ApplicationConfig {
-    pub intitial_capacity: usize,
-    pub sample_rate: usize,
-    pub control_rate: usize,
-}
-
-pub fn build_application<AF, CF, C>(
+pub fn build_application(
     graph: &String,
-    config: ApplicationConfig,
-) -> Result<(Application<AF, CF, C>, RuntimeBackend), BuildApplicationError>
-where
-    AF: BufferSize + Mul<U2>,
-    Prod<AF, U2>: BufferSize,
-    CF: BufferSize,
-    C: ArrayLength,
+    config: Config,
+) -> Result<(Runtime, RuntimeBackend), BuildApplicationError>
 {
+
     let parsed = parse_legato_file(&graph).map_err(|x| BuildApplicationError::ParseError(x))?;
     let ast = build_ast(parsed).map_err(|x| BuildApplicationError::BuildAstError(x))?;
-    let ir = IR::<AF, CF>::from(ast);
+    let ir = IR::from(ast);
 
-    let (runtime, backend) = build_runtime_from_ir::<AF, CF, C, U0>(
+    let chans = config.channels;
+
+
+    let (runtime, backend) = build_runtime_from_ir(
         ir,
-        config.intitial_capacity,
-        config.sample_rate as u32,
-        config.control_rate,
-        Ports::<C, C, U0, U0> {
-            audio_inputs: None,
-            audio_outputs: Some(generate_audio_outputs()),
-            control_inputs: None,
-            control_outputs: None,
-        },
+        config,
+        PortBuilder::default()
+            .audio_out(chans)
+            .build()
     );
 
-    Ok((Application::new(runtime), backend))
+    Ok((runtime, backend))
 }

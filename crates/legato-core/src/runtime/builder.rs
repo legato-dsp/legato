@@ -216,11 +216,10 @@ impl RuntimeBuilder {
 }
 
 pub fn get_runtime_builder(
-    initial_capacity: usize,
     config: Config,
     ports: Ports,
 ) -> RuntimeBuilder {
     config.validate();
-    let runtime = build_runtime(initial_capacity, config, ports);
+    let runtime = build_runtime(config, ports);
     RuntimeBuilder::new(runtime)
 }

@@ -1,23 +1,17 @@
-use std::ops::Mul;
-
-use generic_array::ArrayLength;
-use legato_core::engine::{
-    builder::{AddNode, RuntimeBuilder, get_runtime_builder},
-    graph::{Connection, ConnectionEntry, NodeKey},
-    node::BufferSize,
-    port::{PortRate, Ports},
-    runtime::{Runtime, RuntimeBackend},
-};
+use legato_core::{nodes::ports::{ PortRate, Ports }, runtime::{
+    builder::{AddNode, RuntimeBuilder, get_runtime_builder}, context::Config, graph::{Connection, ConnectionEntry, NodeKey}, runtime::{Runtime, RuntimeBackend}
+}};
 use std::collections::HashMap;
-use typenum::{Prod, U0, U2};
 
 use crate::{
     ast::{Ast, AstNodeConnection, PortConnectionType, Sink},
-    ir::{params::Params, registry::LegatoRegistryContainer},
+    ir::{params::Params, registry::AudioRegistry},
 };
 
 pub mod params;
 pub mod registry;
+#[macro_use]
+pub mod node_spec;
 
 /// ValidationError covers logical issues
 /// when lowering from the AST to the IR.
@@ -33,25 +27,17 @@ pub enum ValidationError {
     MissingRequiredParameter(String),
 }
 
-pub struct IR<AF, CF>
-where
-    AF: BufferSize + Mul<U2>,
-    Prod<AF, U2>: BufferSize,
-    CF: BufferSize,
+pub struct IR
 {
-    add_node_instructions: HashMap<String, AddNode<AF, CF>>, // A hashmap of working names -> add node commands
+    add_node_instructions: HashMap<String, AddNode>, // A hashmap of working names -> add node commands
     connections: Vec<AstNodeConnection>,
     sink: Sink, // TODO: Exports
 }
 
-impl<AF, CF> From<Ast> for IR<AF, CF>
-where
-    AF: BufferSize + Mul<U2>,
-    Prod<AF, U2>: BufferSize,
-    CF: BufferSize,
+impl From<Ast> for IR
 {
     fn from(ast: Ast) -> Self {
-        let registry = LegatoRegistryContainer::new();
+        let registry = AudioRegistry::default();
 
         let mut add_node_instructions = HashMap::new();
 
@@ -84,24 +70,14 @@ where
     }
 }
 
-pub fn build_runtime_from_ir<AF, CF, C, Ci>(
-    ir: IR<AF, CF>,
-    initial_capacity: usize,
-    sample_rate: u32,
-    control_rate: usize,
-    ports: Ports<C, C, Ci, U0>,
-) -> (Runtime<AF, CF, C, Ci>, RuntimeBackend)
-where
-    AF: BufferSize + Mul<U2>,
-    Prod<AF, U2>: BufferSize,
-    CF: BufferSize,
-    C: ArrayLength,
-    Ci: ArrayLength,
+pub fn build_runtime_from_ir(
+    ir: IR,
+    config: Config,
+    ports: Ports,
+) -> (Runtime, RuntimeBackend)
 {
-    let mut runtime_builder: RuntimeBuilder<AF, CF, C, Ci> = get_runtime_builder(
-        initial_capacity,
-        sample_rate as f32,
-        control_rate as f32,
+    let mut runtime_builder: RuntimeBuilder = get_runtime_builder(
+        config,
         ports,
     );
 

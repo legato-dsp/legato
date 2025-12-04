@@ -2,7 +2,7 @@ use cpal::{
     BufferSize, SampleRate, StreamConfig,
     traits::{DeviceTrait, HostTrait},
 };
-use legato_core_two::{
+use legato_core::{
     nodes::ports::PortBuilder,
     runtime::{
         builder::{AddNode, get_runtime_builder},
@@ -19,6 +19,7 @@ fn main() {
         channels: 2,
         control_block_size: 1024 / 32,
         control_rate: 48000 / 32,
+        initial_graph_capacity: 4
     };
 
     #[cfg(target_os = "macos")]
@@ -28,11 +29,12 @@ fn main() {
         channels: 2,
         control_block_size: 1024 / 32,
         control_rate: 44_100 / 32,
+        initial_graph_capacity: 4
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let mut runtime_builder = get_runtime_builder(16, config, ports);
+    let mut runtime_builder = get_runtime_builder(config, ports);
 
     let sampler = runtime_builder.add_node(AddNode::Sampler {
         chans: 2,
