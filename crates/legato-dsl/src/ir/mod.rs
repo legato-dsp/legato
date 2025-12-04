@@ -34,10 +34,14 @@ pub struct IR
     sink: Sink, // TODO: Exports
 }
 
+
+
+
+
 impl From<Ast> for IR
 {
     fn from(ast: Ast) -> Self {
-        let registry = AudioRegistry::default();
+        let registry = AudioRegistry::default(); // TODO: Add more registries
 
         let mut add_node_instructions = HashMap::new();
 
@@ -46,8 +50,7 @@ impl From<Ast> for IR
                 let params_ref = node.params.as_ref().map(|o| Params(o));
 
                 let add_node = registry
-                    .get(&scope.namespace, &node.node_type, params_ref.as_ref())
-                    .unwrap();
+                    .get_node(&node.node_type, params_ref.as_ref()).expect(&format!("Unable to find {} node from registry", node.node_type));
 
                 let working_name = node.alias.unwrap_or_else(|| node.node_type);
 
@@ -100,22 +103,17 @@ pub fn build_runtime_from_ir(
             .get(&connection.sink_name)
             .expect("Could not find sink key in connection");
 
-        let (_, source_audio_ports_out, _, _) = runtime_builder.get_port_info(&source_key);
-        let (sink_audio_ports_in, _, _, _) = runtime_builder.get_port_info(&sink_key);
-
-        let source_ports = source_audio_ports_out.unwrap();
-        let sink_ports = sink_audio_ports_in.unwrap();
+        let source_ports = runtime_builder.get_port_info(&source_key);
+        let sink_ports = runtime_builder.get_port_info(&sink_key);
 
         // Assume audio for now
 
         let manual_port_source: Option<usize> = match connection.source_port {
             PortConnectionType::Auto => None,
             PortConnectionType::Named { ref port } => {
-                let found = source_ports.iter().find(|x| x.meta.name == port);
+                let found = source_ports.audio_out.iter().find(|x| x.name == port);
                 let index = found
-                    .expect(&format!("Port {:?} not found", &port))
-                    .meta
-                    .index;
+                    .expect(&format!("Port {:?} not found", &port)).index;
                 Some(index)
             }
             PortConnectionType::Indexed { port } => Some(port),
@@ -124,10 +122,9 @@ pub fn build_runtime_from_ir(
         let manual_port_sink: Option<usize> = match connection.sink_port {
             PortConnectionType::Auto => None,
             PortConnectionType::Named { ref port } => {
-                let found = sink_ports.iter().find(|x| x.meta.name == port);
+                let found = sink_ports.audio_in.iter().find(|x| x.name == port);
                 let index = found
                     .expect(&format!("Port {:?} not found", &port))
-                    .meta
                     .index;
                 Some(index)
             }

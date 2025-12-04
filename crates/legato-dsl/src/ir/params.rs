@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet}, time::Duration};
 
 use crate::{
     ast::{Object, Value},
@@ -13,6 +13,7 @@ impl<'a> Params<'a> {
     pub fn new(obj: &'a Object) -> Self {
         Self(obj)
     }
+
     pub fn get_f32(&self, key: &str) -> Option<f32> {
         match self.0.get(key) {
             Some(Value::F32(x)) => Some(*x),
