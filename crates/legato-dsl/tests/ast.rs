@@ -31,7 +31,7 @@ fn ast_node_with_alias_and_params() {
     assert_eq!(node.alias.as_deref(), Some("square_wave_one"));
 
     let params = node.params.as_ref().unwrap();
-    assert_eq!(params["freq"], Value::I32(440));
+    assert_eq!(params["freq"], Value::U32(440));
     assert_eq!(params["gain"], Value::F32(0.2));
 
     let sink = ast.sink;
