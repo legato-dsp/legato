@@ -1,10 +1,8 @@
-pub mod audio_ops;
 pub mod delay;
-pub mod filters;
+pub mod fir;
 pub mod mixer;
-pub mod resample;
+pub mod ops;
 pub mod sampler;
 pub mod sine;
-pub mod stereo;
-pub mod subgraph;
+pub mod oversample;
 pub mod sweep;

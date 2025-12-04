@@ -1,39 +1,41 @@
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{BufferSize, SampleRate, StreamConfig};
-use legato_core::engine::builder::{RuntimeBuilder, get_runtime_builder};
-use legato_core::{
-    engine::{
-        builder::AddNode,
-        graph::{Connection, ConnectionEntry},
-        port::{PortRate, Ports},
-    },
-    nodes::utils::port_utils::generate_audio_outputs,
-    out::start_runtime_audio_thread,
-};
-use typenum::{U0, U2, U64, U4096, Unsigned};
+use legato_core::nodes::ports::{PortBuilder, PortRate};
+use legato_core::runtime::builder::{AddNode, get_runtime_builder};
+use legato_core::runtime::context::Config;
+use legato_core::runtime::graph::{Connection, ConnectionEntry};
+use legato_core::runtime::out::start_runtime_audio_thread;
+
+use assert_no_alloc::*;
+
+#[cfg(debug_assertions)] // required when disable_release is set (default)
+#[global_allocator]
+static A: AllocDisabler = AllocDisabler;
 
 fn main() {
-    type BlockSize = U4096;
-    type ControlSize = U64;
-    type ChannelCount = U2;
+    #[cfg(target_os = "linux")]
+    let config = Config {
+        sample_rate: 48000,
+        audio_block_size: 1024,
+        channels: 2,
+        control_block_size: 1024 / 32,
+        control_rate: 48000 / 32,
+        initial_graph_capacity: 4
+    };
 
-    const SAMPLE_RATE: u32 = 44_100;
-    const CAPACITY: usize = 16;
-    const DECIMATION_FACTOR: f32 = 32.0;
-    const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
+    #[cfg(target_os = "macos")]
+    let config = Config {
+        sample_rate: 44_100,
+        audio_block_size: 1024,
+        channels: 2,
+        control_block_size: 1024 / 32,
+        control_rate: 44_100 / 32,
+        initial_graph_capacity: 4
+    };
 
-    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
-        get_runtime_builder(
-            CAPACITY,
-            SAMPLE_RATE as f32,
-            CONTROL_RATE,
-            Ports {
-                audio_inputs: None,
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None,
-                control_outputs: None,
-            },
-        );
+    let ports = PortBuilder::default().audio_out(2).build();
+
+    let mut runtime_builder = get_runtime_builder(config, ports);
 
     // Would suggest using Python + numpy + scipy. In the future there should be a tool for this here.
     // Here is a cool tool, the blog post is great as well: https://fiiir.com/
@@ -117,19 +119,23 @@ fn main() {
         0.0,
     ];
 
-    let fir = runtime_builder.add_node(AddNode::FirStereo { coeffs });
+    let fir = runtime_builder.add_node(AddNode::Fir {
+        coeffs: coeffs,
+        chans: 2,
+    });
 
-    let sampler = runtime_builder.add_node(AddNode::SamplerStereo {
+    let sampler = runtime_builder.add_node(AddNode::Sampler {
         sampler_name: String::from("amen"),
+        chans: 2,
     });
 
     let (mut runtime, mut backend) = runtime_builder.get_owned();
 
-    backend.load_sample(
+    let _ = backend.load_sample(
         &String::from("amen"),
-        "./samples/amen.wav",
+        "../samples/amen.wav",
         2,
-        SAMPLE_RATE as u32,
+        config.sample_rate as u32,
     );
 
     runtime
@@ -175,10 +181,10 @@ fn main() {
     println!("{:?}", device.default_output_config());
 
     let config = StreamConfig {
-        channels: U2::U16,
-        sample_rate: SampleRate(SAMPLE_RATE),
-        buffer_size: BufferSize::Fixed(BlockSize::U32),
+        channels: config.channels as u16,
+        sample_rate: SampleRate(config.sample_rate as u32),
+        buffer_size: BufferSize::Fixed(config.audio_block_size as u32),
     };
 
-    start_runtime_audio_thread(&device, &config, runtime).expect("Runtime panic!");
+    start_runtime_audio_thread(&device, config, runtime).expect("Runtime panic!");
 }

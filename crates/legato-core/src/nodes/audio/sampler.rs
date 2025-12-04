@@ -1,104 +1,104 @@
+use std::sync::{Arc};
+
 use assert_no_alloc::permit_alloc;
-use generic_array::ArrayLength;
-use typenum::U0;
 
 use crate::{
-    engine::{
-        audio_context::AudioContext,
-        buffer::Frame,
-        node::{FrameSize, Node},
-        port::{Stereo, *},
-        resources::SampleKey,
+    nodes::{
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
     },
-    nodes::utils::port_utils::generate_audio_outputs,
+    runtime::{context::AudioContext, resources::{SampleKey, audio_sample::{AudioSample}}},
 };
 
-pub struct Sampler<Ao>
-where
-    Ao: ArrayLength,
-{
+pub struct Sampler {
     sample_key: SampleKey,
     read_pos: usize,
     is_looping: bool,
-    ports: Ports<U0, Ao, U0, U0>,
+    ports: Ports,
+    sample: Option<Arc<AudioSample>>,
+    sample_version: u64
 }
 
-impl<Ao> Sampler<Ao>
-where
-    Ao: ArrayLength,
-{
-    pub fn new(sample_key: SampleKey) -> Self {
+impl Sampler {
+    pub fn new(sample_key: SampleKey, chans: usize) -> Self {
         Self {
             sample_key,
             read_pos: 0,
             is_looping: true,
-            ports: Ports {
-                audio_inputs: None,
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None, // TODO, Trig, Volume, etc.
-                control_outputs: None,
-            },
+            ports: PortBuilder::default().audio_out(chans).build(),
+            sample: None,
+            sample_version: 0
         }
     }
 }
 
-impl<AF, CF, Ao> Node<AF, CF> for Sampler<Ao>
-where
-    AF: FrameSize,
-    CF: FrameSize,
-    Ao: ArrayLength,
-{
-    fn process(
+impl Node for Sampler {
+    fn process<'a>(
         &mut self,
-        ctx: &mut AudioContext<AF>,
-        _: &Frame<AF>,
-        ao: &mut Frame<AF>,
-        _: &Frame<CF>,
-        _: &mut Frame<CF>,
+        ctx: &mut AudioContext,
+        _: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
-        permit_alloc(|| {
-            // 128 bytes allocated in the load_full. Can we do better?
-            if let Some(inner) = ctx.get_sample(self.sample_key) {
-                let buf = inner.data();
-                let len = buf[0].len();
-                for n in 0..AF::USIZE {
-                    let i = self.read_pos + n;
-                    for c in 0..Ao::USIZE {
-                        ao[c][n] = if i < len {
-                            buf[c][i]
-                        } else if self.is_looping {
-                            buf[c][i % len]
-                        } else {
-                            0.0
-                        };
-                    }
+        let resources = ctx.get_resources();
+        // Check for sample update by seeing if the handle and local version match
+        // This is all done rather than directly using the swap option, because Arc has a small allocation.
+        if let Some(sample_handle) = resources.get_sample(self.sample_key) {
+            let handle_version = sample_handle.sample_version.load(std::sync::atomic::Ordering::Acquire);
+            if let Some(ref mut self_sample) = self.sample {
+                if self.sample_version != handle_version {
+                    // Permit small Arc alloc on sample change. Open to alternatives, maybe a heapless arc swap exploration?
+                    permit_alloc(|| {
+                        if let Some(handle_sample) = sample_handle.sample.load_full() {
+                            *self_sample = handle_sample.clone();
+                    }});
+                    self.sample_version = handle_version;
                 }
-                self.read_pos = if self.is_looping {
-                    (self.read_pos + AF::USIZE) % len // If we're looping, wrap around
-                } else {
-                    (self.read_pos + AF::USIZE).min(len) // If we're not looping, cap at the end
-                };
             }
-        })
-    }
-}
-impl<Ao> PortedErased for Sampler<Ao>
-where
-    Ao: ArrayLength,
-{
-    fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {
-        self.ports.get_audio_inputs()
-    }
-    fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]> {
-        self.ports.get_audio_outputs()
-    }
-    fn get_control_inputs(&self) -> Option<&[ControlInputPort]> {
-        self.ports.get_control_inputs()
-    }
-    fn get_control_outputs(&self) -> Option<&[ControlOutputPort]> {
-        self.ports.get_control_outputs()
+            else {
+                permit_alloc(|| {
+                    if let Some(handle_sample) = sample_handle.sample.load_full() {
+                        self.sample = Some(handle_sample.clone());
+                        self.sample_version = handle_version;
+                }});
+            }
+        }
+
+        if let Some(sample) = &self.sample {
+            let inner = &sample;
+            let config = ctx.get_config();
+
+            let block_size = config.audio_block_size;
+            let chans = self.ports.audio_out.iter().len();
+
+            let buf = inner.data();
+
+            let len = buf[0].len();
+
+            for n in 0..block_size {
+                let i = self.read_pos + n;
+                for c in 0..chans {
+                    ao[c][n] = if i < len {
+                        buf[c][i]
+                    } else if self.is_looping {
+                        buf[c][i % len]
+                    } else {
+                        0.0
+                    };
+                }
+            }
+            self.read_pos = if self.is_looping {
+                (self.read_pos + block_size) % len // If we're looping, wrap around
+            } else {
+                (self.read_pos + block_size).min(len) // If we're not looping, cap at the end
+            };
+        }
     }
 }
 
-pub type SamplerMono<const AF: usize> = Sampler<Mono>;
-pub type SamplerStereo<const AF: usize> = Sampler<Stereo>;
+impl Ported for Sampler {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
+    }
+}

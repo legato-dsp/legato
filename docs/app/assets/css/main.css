@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@theme {
+  --font-display: "Satoshi", "sans-serif";
+  --font-heading: "Chillax", "sans-serif";
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+}
+
+:root {
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  --bg: #080711;
+  --bg-gradient: radial-gradient(
+    40.3% 40.53% at 46.77% 37.39%,
+    rgba(101, 255, 81, 0.35) 0%,
+    rgba(188, 242, 183, 0) 100%
+  );
+  --text-primary: #ffffff;
+  --text-secondary: #bfbfbf;
+}
+
+body {
+  color: var(--text-primary);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  @apply font-heading font-semibold text-primary;
+}
+
+span,
+p {
+  @apply font-display text-primary;
+}
+
+.bg-gradient {
+  background: var(--bg-gradient);
+  position: absolute;
+  width: 4096px;
+  height: 4096px;
+  left: -1215px;
+  top: -1624px;
+  opacity: 0.25;
+  border-radius: 100%;
+}

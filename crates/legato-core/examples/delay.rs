@@ -1,67 +1,70 @@
-use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{BufferSize, SampleRate, StreamConfig};
-use legato_core::engine::builder::{RuntimeBuilder, get_runtime_builder};
-use legato_core::{
-    engine::{
-        builder::AddNode,
-        graph::{Connection, ConnectionEntry},
-        port::{PortRate, Ports},
-    },
-    nodes::utils::port_utils::generate_audio_outputs,
-    out::start_runtime_audio_thread,
-};
 use std::time::Duration;
-use typenum::{U0, U2, U128, U4096, Unsigned};
+
+use cpal::{
+    BufferSize, SampleRate, StreamConfig,
+    traits::{DeviceTrait, HostTrait},
+};
+use legato_core::{
+    nodes::ports::{PortBuilder, PortRate},
+    runtime::{
+        builder::{AddNode, get_runtime_builder},
+        context::Config,
+        graph::{Connection, ConnectionEntry},
+        out::start_runtime_audio_thread,
+    },
+};
 
 fn main() {
-    type BlockSize = U4096;
-    type ControlSize = U128;
-    type ChannelCount = U2;
+    #[cfg(target_os = "linux")]
+    let config = Config {
+        sample_rate: 48000,
+        audio_block_size: 1024,
+        channels: 2,
+        control_block_size: 1024 / 32,
+        control_rate: 48000 / 32,
+        initial_graph_capacity: 4
+    };
 
-    const SAMPLE_RATE: u32 = 44_100;
-    const CAPACITY: usize = 16;
-    const DECIMATION_FACTOR: f32 = 32.0;
-    const CONTROL_RATE: f32 = SAMPLE_RATE as f32 / DECIMATION_FACTOR;
+    #[cfg(target_os = "macos")]
+    let config = Config {
+        sample_rate: 44_100,
+        audio_block_size: 1024,
+        channels: 2,
+        control_block_size: 1024 / 32,
+        control_rate: 44_100 / 32,
+        initial_graph_capacity: 4
+    };
 
-    let mut runtime_builder: RuntimeBuilder<BlockSize, ControlSize, ChannelCount, U0> =
-        get_runtime_builder(
-            CAPACITY,
-            SAMPLE_RATE as f32,
-            CONTROL_RATE,
-            Ports {
-                audio_inputs: None,
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None,
-                control_outputs: None,
-            },
-        );
+    let ports = PortBuilder::default().audio_out(2).build();
 
-    let sampler = runtime_builder.add_node(AddNode::SamplerStereo {
+    let mut runtime_builder = get_runtime_builder(config, ports);
+
+    let sampler = runtime_builder.add_node(AddNode::Sampler {
+        chans: 2,
         sampler_name: String::from("amen"),
     });
 
-    let delay_write = runtime_builder.add_node(AddNode::DelayWriteStereo {
+    let delay_write = runtime_builder.add_node(AddNode::DelayWrite {
         delay_name: String::from("amen"),
+        chans: 2,
         delay_length: Duration::from_secs_f32(3.0),
     });
 
-    let delay_read = runtime_builder.add_node(AddNode::DelayReadStereo {
+    let delay_read = runtime_builder.add_node(AddNode::DelayRead {
         delay_name: String::from("amen"),
-        offsets: vec![Duration::from_millis(12), Duration::from_millis(32)],
+        chans: 2,
+        delay_length: vec![Duration::from_millis(17), Duration::from_millis(23)],
     });
 
-    let mixer = runtime_builder.add_node(AddNode::TwoTrackStereoMixer);
+    let delay_gain = runtime_builder.add_node(AddNode::Gain { val: 0.4, chans: 2 });
 
-    let delay_gain = runtime_builder.add_node(AddNode::MultStereo { props: 0.6 });
+    let mixer = runtime_builder.add_node(AddNode::TrackMixer {
+        chans_per_track: 2,
+        tracks: 2,
+        gain: vec![0.6, 0.6], // TODO: Log values as well
+    });
 
     let (mut runtime, mut backend) = runtime_builder.get_owned();
-
-    backend.load_sample(
-        &String::from("amen"),
-        "./samples/amen.wav",
-        2,
-        SAMPLE_RATE as u32,
-    );
 
     runtime
         .add_edge(Connection {
@@ -213,7 +216,16 @@ fn main() {
         })
         .unwrap();
 
-    runtime.set_sink_key(mixer).expect("Bad sink key!");
+    let _ = runtime.set_sink_key(mixer);
+
+    backend
+        .load_sample(
+            &String::from("amen"),
+            "../samples/amen.wav",
+            config.channels,
+            config.sample_rate as u32,
+        )
+        .expect("Could not load sample");
 
     #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
@@ -226,10 +238,10 @@ fn main() {
     println!("{:?}", device.default_output_config());
 
     let config = StreamConfig {
-        channels: U2::U16,
-        sample_rate: SampleRate(SAMPLE_RATE),
-        buffer_size: BufferSize::Fixed(BlockSize::to_u32()),
+        channels: config.channels as u16,
+        sample_rate: SampleRate(config.sample_rate as u32),
+        buffer_size: BufferSize::Fixed(config.audio_block_size as u32),
     };
 
-    start_runtime_audio_thread(&device, &config, runtime).expect("Runtime panic!");
+    start_runtime_audio_thread(&device, config, runtime).expect("Runtime panic!");
 }

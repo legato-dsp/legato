@@ -1,270 +1,267 @@
-use std::{marker::PhantomData, time::Duration};
-
-use generic_array::{ArrayLength, GenericArray, arr, sequence::GenericSequence};
-use typenum::U0;
+use std::time::Duration;
 
 use crate::{
-    engine::{
-        audio_context::AudioContext,
-        buffer::Frame,
-        node::{FrameSize, Node},
-        port::{
-            AudioInputPort, AudioOutputPort, ControlInputPort, ControlOutputPort, Mono,
-            PortedErased, Ports, Stereo,
-        },
+    nodes::{
+        Node, NodeInputs,
+        ports::{PortBuilder, Ported, Ports},
+    },
+    runtime::{
+        context::AudioContext,
+        lanes::{LANES, Vf32},
         resources::DelayLineKey,
     },
-    nodes::utils::port_utils::{generate_audio_inputs, generate_audio_outputs},
+    utils::ringbuffer::RingBuffer,
 };
 
-pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
-    (1.0 - t) * v0 + t * v1
-}
-
 #[derive(Clone)]
-pub struct DelayLine<N, C>
-where
-    N: FrameSize + Send + Sync + 'static,
-    C: ArrayLength + Send + Sync + 'static,
-{
-    buffers: GenericArray<Vec<f32>, C>,
+pub struct DelayLine {
+    buffers: Vec<RingBuffer>,
     capacity: usize,
-    write_pos: GenericArray<usize, C>,
-    phantom: PhantomData<N>,
+    write_pos: Vec<usize>,
+    chans: usize,
 }
 
-// Erasing delay line so we can store in a global context
-pub trait DelayLineErased<N>: Send + Sync
-where
-    N: FrameSize + Send + Sync + 'static,
-{
-    fn get_write_pos_erased(&self, channel: usize) -> &usize;
-    fn write_block_erased(&mut self, block: &Frame<N>);
-    fn get_delay_linear_interp_erased(&self, channel: usize, offset: f32) -> f32;
-}
-
-impl<N, C> DelayLine<N, C>
-where
-    N: FrameSize + Send + Sync + 'static,
-    C: ArrayLength + Send + Sync + 'static,
-{
-    pub fn new(capacity: usize) -> Self {
-        let buffers = GenericArray::generate(|_| vec![0.0; capacity]);
+impl DelayLine {
+    pub fn new(capacity: usize, chans: usize) -> Self {
+        let buffers = vec![RingBuffer::new(capacity); chans];
         Self {
             buffers,
             capacity,
-            write_pos: GenericArray::generate(|_| 0),
-            phantom: PhantomData::<N>,
+            write_pos: vec![0; chans],
+            chans,
         }
     }
     #[inline(always)]
     pub fn get_write_pos(&self, channel: usize) -> &usize {
         &self.write_pos[channel]
     }
-    pub fn write_block(&mut self, block: &Frame<N>) {
-        // We're assuming single threaded, with the graph firing in order, so no aliasing writes
-        // Our first writing block is whatever capacity is leftover from the writing position
-        // Our maximum write size is the block N
-        // Our second write size is whatever leftover from N we still have
 
-        for c in 0..C::USIZE {
-            let first_write_size = (self.capacity - self.write_pos[c]).min(N::USIZE);
-            let second_write_size = N::USIZE - first_write_size;
-
-            let buf = &mut self.buffers[c];
-            buf[self.write_pos[c]..self.write_pos[c] + first_write_size]
-                .copy_from_slice(&block[c][0..first_write_size]);
-            // TODO: Maybe some sort of mask?
-            if second_write_size > 0 {
-                buf[0..second_write_size].copy_from_slice(
-                    &block[c][first_write_size..first_write_size + second_write_size],
-                );
+    #[inline(always)]
+    pub fn write_block(&mut self, block: &NodeInputs) {
+        for (c, chan) in block.iter().enumerate() {
+            for chunk in chan.chunks_exact(LANES) {
+                self.buffers[c].push_simd(&Vf32::from_slice(chunk));
             }
-            self.write_pos[c] = (self.write_pos[c] + N::USIZE) % self.capacity;
         }
     }
-    /// This uses f32 sample indexes, as we allow for interpolated values
+
     #[inline(always)]
     pub fn get_delay_linear_interp(&self, channel: usize, offset: f32) -> f32 {
-        // Get the remainder of the difference of the write position and fractional sample index we need
-        let read_pos = (self.write_pos[channel] as f32 - offset).rem_euclid(self.capacity as f32);
-
-        let pos_floor = read_pos.floor() as usize;
-        let pos_floor = pos_floor.min(self.capacity - 1); // clamp to valid index
-
-        let next_sample = (pos_floor + 1) % self.capacity; // TODO: can we have some sort of mask if we make the delay a power of 2?
-
         let buffer = &self.buffers[channel];
+        buffer.get_delay_linear(offset)
+    }
 
-        lerp(
-            buffer[pos_floor],
-            buffer[next_sample],
-            read_pos - pos_floor as f32,
-        )
+    #[inline(always)]
+    pub fn get_delay_cubic_interp(&self, channel: usize, offset: f32) -> f32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_cubic(offset)
+    }
+
+    #[inline(always)]
+    // This gives an SIMD "chunk" of size LANES after the offset
+    pub fn get_delay_linear_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_linear_simd(offset)
+    }
+
+    #[inline(always)]
+    pub fn get_delay_cubic_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
+        let buffer = &self.buffers[channel];
+        buffer.get_delay_cubic_simd(offset)
     }
 }
 
-impl<N, C> DelayLineErased<N> for DelayLine<N, C>
-where
-    N: FrameSize + Send + Sync + 'static,
-    C: ArrayLength + Send + Sync + 'static,
-{
-    fn get_delay_linear_interp_erased(&self, channel: usize, offset: f32) -> f32 {
-        self.get_delay_linear_interp(channel, offset)
-    }
-    fn get_write_pos_erased(&self, channel: usize) -> &usize {
-        self.get_write_pos(channel)
-    }
-    fn write_block_erased(&mut self, block: &Frame<N>) {
-        self.write_block(block)
-    }
-}
-
-pub struct DelayWrite<Ai>
-where
-    Ai: ArrayLength,
-{
+pub struct DelayWrite {
     delay_line_key: DelayLineKey,
-    ports: Ports<Ai, U0, U0, U0>,
+    ports: Ports,
 }
-impl<Ai> DelayWrite<Ai>
-where
-    Ai: ArrayLength,
-{
-    pub fn new(delay_line_key: DelayLineKey) -> Self {
+impl DelayWrite {
+    pub fn new(delay_line_key: DelayLineKey, chans: usize) -> Self {
         Self {
             delay_line_key,
-            ports: Ports {
-                audio_inputs: Some(generate_audio_inputs()),
-                audio_outputs: None,
-                control_inputs: None,
-                control_outputs: None,
-            },
+            ports: PortBuilder::default()
+                .audio_in(chans)
+                .audio_out(chans) // Just for graph semantics
+                .build(),
         }
     }
 }
 
-impl<AF, CF, Ai> Node<AF, CF> for DelayWrite<Ai>
-where
-    AF: FrameSize,
-    CF: FrameSize,
-    Ai: ArrayLength,
-{
+impl Node for DelayWrite {
     fn process(
         &mut self,
-        ctx: &mut AudioContext<AF>,
-        ai: &Frame<AF>,
-        _: &mut Frame<AF>,
-        _: &Frame<CF>,
-        _: &mut Frame<CF>,
+        ctx: &mut AudioContext,
+        ai: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
-        ctx.write_block(self.delay_line_key, ai);
-    }
-}
+        let resources = ctx.get_resources_mut();
+        resources.delay_write_block(self.delay_line_key, ai);
+        let chans = self.ports.audio_in.len();
 
-impl<Ai> PortedErased for DelayWrite<Ai>
-where
-    Ai: ArrayLength,
-{
-    fn get_audio_inputs(&self) -> Option<&[crate::engine::port::AudioInputPort]> {
-        self.ports.get_audio_inputs()
-    }
-    fn get_audio_outputs(&self) -> Option<&[crate::engine::port::AudioOutputPort]> {
-        self.ports.get_audio_outputs()
-    }
-    fn get_control_inputs(&self) -> Option<&[crate::engine::port::ControlInputPort]> {
-        self.ports.get_control_inputs()
-    }
-    fn get_control_outputs(&self) -> Option<&[crate::engine::port::ControlOutputPort]> {
-        self.ports.get_control_outputs()
-    }
-}
-
-pub struct DelayRead<AF, Ao>
-where
-    AF: FrameSize,
-    Ao: ArrayLength,
-{
-    delay_line_key: DelayLineKey,
-    delay_times: GenericArray<Duration, Ao>, // Different times for each channel if desired
-    ports: Ports<U0, Ao, U0, U0>,
-    phantom: PhantomData<AF>,
-}
-impl<AF, Ao> DelayRead<AF, Ao>
-where
-    AF: FrameSize,
-    Ao: ArrayLength,
-{
-    pub fn new(delay_line_key: DelayLineKey, delay_times: Vec<Duration>) -> Self {
-        let delay_read_times = GenericArray::<Duration, Ao>::generate(|i| {
-            delay_times
-                .get(i)
-                .copied()
-                .unwrap_or_else(|| Duration::from_millis(200))
-        });
-
-        Self {
-            delay_line_key,
-            delay_times: delay_read_times,
-            ports: Ports {
-                audio_inputs: None,
-                audio_outputs: Some(generate_audio_outputs()),
-                control_inputs: None, // TODO: modulate delay times per channel
-                control_outputs: None,
-            },
-            phantom: PhantomData::<AF>,
+        // For graph semantics when adding connections between delays
+        for c in 0..chans {
+            ao[c].fill(0.0);
         }
     }
 }
 
-impl<AF, CF, Ao> Node<AF, CF> for DelayRead<AF, Ao>
-where
-    AF: FrameSize,
-    CF: FrameSize,
-    Ao: ArrayLength,
-{
+impl Ported for DelayWrite {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
+    }
+}
+
+pub struct DelayRead {
+    delay_line_key: DelayLineKey,
+    delay_times: Vec<Duration>, // Different times for each channel if desired
+    ports: Ports,
+}
+impl DelayRead {
+    pub fn new(chans: usize, delay_line_key: DelayLineKey, delay_times: Vec<Duration>) -> Self {
+        Self {
+            delay_line_key,
+            delay_times,
+            ports: PortBuilder::default().audio_out(chans).build(),
+        }
+    }
+}
+
+impl Node for DelayRead {
     fn process(
         &mut self,
-        ctx: &mut AudioContext<AF>,
-        _: &Frame<AF>,
-        ao: &mut Frame<AF>,
-        _: &Frame<CF>,
-        _: &mut Frame<CF>,
+        ctx: &mut AudioContext,
+        _: &NodeInputs,
+        ao: &mut NodeInputs,
+        _: &NodeInputs,
+        _: &mut NodeInputs,
     ) {
-        debug_assert_eq!(Ao::USIZE, ao.len());
-        for n in 0..AF::USIZE {
-            for c in 0..Ao::USIZE {
-                let offset = (self.delay_times[c].as_secs_f32() * ctx.get_sample_rate())
-                    + (AF::USIZE - n) as f32;
-                // Read delay line based on per channel delay time. Must cast to sample index.
-                ao[c][n] = ctx.get_delay_linear_interp(self.delay_line_key, c, offset)
+        let config = ctx.get_config();
+
+        let block_size = config.audio_block_size;
+
+        let resources = ctx.get_resources();
+
+        let sr = config.sample_rate as f32;
+
+        for (c, chan) in ao.iter_mut().enumerate() {
+            let delay_time = self.delay_times[c].as_secs_f32();
+
+            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                let chunk_start = LANES * cidx;
+
+                let mut offset = [0.0; LANES];
+
+                // Apply additional offset for each step, maybe this could also be a rotation or so.
+                // This is needed, because otherwise we would just grab offsets from chunk_start for each item
+                for lane in 0..LANES {
+                    offset[lane] = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
+                }
+
+                // Note, about 75% slower than the linear interpolation alg.
+                let interpolated = resources.get_delay_cubic_interp_simd(
+                    self.delay_line_key,
+                    c,
+                    Vf32::from_array(offset),
+                );
+
+                chunk[..].copy_from_slice(&interpolated.to_array());
             }
         }
     }
 }
 
-impl<AF, Ao> PortedErased for DelayRead<AF, Ao>
-where
-    AF: FrameSize,
-    Ao: ArrayLength,
-{
-    fn get_audio_inputs(&self) -> Option<&[AudioInputPort]> {
-        self.ports.get_audio_inputs()
-    }
-    fn get_audio_outputs(&self) -> Option<&[AudioOutputPort]> {
-        self.ports.get_audio_outputs()
-    }
-    fn get_control_inputs(&self) -> Option<&[ControlInputPort]> {
-        self.ports.get_control_inputs()
-    }
-    fn get_control_outputs(&self) -> Option<&[ControlOutputPort]> {
-        self.ports.get_control_outputs()
+impl Ported for DelayRead {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
     }
 }
 
-pub type DelayReadMono<AF> = DelayRead<AF, Mono>;
-pub type DelayReadStereo<AF> = DelayRead<AF, Stereo>;
+#[cfg(test)]
+mod test_delay_simd_equivalence {
+    use super::*;
+    use rand::Rng;
 
-pub type DelayWriteMono = DelayWrite<Mono>;
-pub type DelayWriteStereo = DelayWrite<Stereo>;
+    #[test]
+    fn scalar_and_simd_reads_match() {
+        const CHANS: usize = 1;
+        const CAP: usize = 4096;
+        const BLOCK: usize = 256;
+
+        let mut dl = DelayLine::new(CAP, CHANS);
+
+        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
+
+        let input: &mut NodeInputs = &mut inputs_raw;
+
+        let mut rng = rand::rng();
+        for s in &mut input[0] {
+            *s = rng.random::<f32>();
+        }
+
+        dl.write_block(&input);
+
+        for _ in 0..10_000 {
+            let off = rng.random::<f32>() * (CAP as f32 - 4.0);
+
+            let s = dl.get_delay_linear_interp(0, off);
+
+            let off_simd = Vf32::from_array(std::array::from_fn(|_| off));
+            let v = dl.get_delay_linear_interp_simd(0, off_simd);
+
+            // all SIMD lanes must match the scalar sample
+            for lane in v.as_array().iter() {
+                assert!(
+                    (lane - s).abs() < 1e-5,
+                    "SIMD mismatch: scalar={s}, simd={lane}, offset={off}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_and_simd_writes_match() {
+        const CHANS: usize = 1;
+        const CAP: usize = 2048;
+        const BLOCK: usize = 4096;
+
+        let mut rb_scalar = RingBuffer::new(CAP);
+        let mut rb_simd = RingBuffer::new(CAP);
+
+        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
+
+        let input: &mut NodeInputs = &mut inputs_raw;
+
+        let mut rng = rand::rng();
+        for s in &mut input[0] {
+            *s = rng.random::<f32>();
+        }
+
+        let buf = &input[0];
+
+        for n in 0..BLOCK {
+            rb_scalar.push(buf[n]);
+        }
+
+        for chunk in buf.iter().as_slice().chunks(LANES) {
+            rb_simd.push_simd(&Vf32::from_slice(chunk));
+        }
+
+        let data_scalar = rb_scalar.get_data();
+        let data_simd = rb_simd.get_data();
+
+        for i in 0..CAP {
+            let a = data_scalar[i];
+            let b = data_simd[i];
+            assert!(
+                (a - b).abs() < 1e-10,
+                "data mismatch at index {}: scalar={}, simd={}",
+                i,
+                a,
+                b
+            );
+        }
+    }
+}

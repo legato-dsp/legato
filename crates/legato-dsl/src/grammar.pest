@@ -17,7 +17,7 @@ boolean = { true_keyword | false_keyword }
 
 float = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 uint = @{ ASCII_DIGIT+ }
-int = @{ "-"? ~ ASCII_DIGIT+ }
+int = @{ "-" ~ ASCII_DIGIT+ }
 string = @{ "\"" ~ ( "\\\"" | !"\"" ~ ANY )* ~ "\"" }
 
 value = { float | int | uint | string | boolean | object | array | ident }
