@@ -7,14 +7,26 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
-            sine: mod { freq: 550.0, chans: 1 },
-            sine: carrier { freq: 440.0, chans: 2 },
-            mult: fm_gain { val: 1000.0, chans: 1 }
+            sampler { sampler_name: "amen" },
+            delay_write: dw1 { delay_name: "d_one", chans: 2 },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 310, 330 ] },
+            track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.2, 0.2] }
         }
 
-        mod >> fm_gain >> carrier.fm
+        sampler[0] >> track_mixer[0]
+        sampler[1] >> track_mixer[1]
 
-        { carrier }
+        sampler[0] >> dw1[0]
+        sampler[1] >> dw1[1]
+
+        dr1[0] >> track_mixer[2]
+        dr1[1] >> track_mixer[3]
+
+        dr2[0] >> track_mixer[4]
+        dr2[0] >> track_mixer[5]
+
+        { track_mixer }
     "#,
     );
 
@@ -27,7 +39,14 @@ fn main() {
             initial_graph_capacity: 4
         };
 
-    let (runtime, _) = build_application(&graph, config).expect("Could not build application");
+    let (runtime, mut backend) = build_application(&graph, config).expect("Could not build application");
+
+    let _ = backend.load_sample(
+        &String::from("amen"),
+        "../../crates/samples/amen.wav",
+        2,
+        config.sample_rate as u32,
+    );
 
     dbg!(&runtime);
 

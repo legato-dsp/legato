@@ -1,6 +1,8 @@
-use std::{collections::HashMap};
+use std::collections::{HashMap};
 use legato_core::{nodes::{audio::mixer::TrackMixer, ports::{PortBuilder, PortRate}}, runtime::{builder::{AddNode, get_runtime_builder}, context::Config, graph::{Connection, ConnectionEntry, NodeKey}, runtime::{Runtime, RuntimeBackend}}};
 use crate::{ast::{Ast, PortConnectionType}, ir::{params::Params, registry::AudioRegistry}};
+
+use indexmap::{IndexMap, IndexSet};
 
 pub mod params;
 pub mod registry;
@@ -38,10 +40,11 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
 
     let mut builder = get_runtime_builder(config, ports);
 
-    let mut add_node_instructions: HashMap<String, (NodeKind, AddNode)> = HashMap::new();
+    let mut add_node_instructions: IndexMap<String, (NodeKind, AddNode)> = IndexMap::new();
 
     for scope in ast.declarations.iter() {
         for node in scope.declarations.iter() {
+            dbg!(&node);
             let params_ref = node.params.as_ref().map(|o| Params(o));
 
             let add_node = registries
@@ -66,6 +69,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
     let mut working_name_to_key = HashMap::<String, NodeKey>::new();
 
     for (w_name, (n_kind, instr)) in add_node_instructions {
+        dbg!(&w_name);
         let key = builder.add_node(instr, n_kind, w_name.clone());
         working_name_to_key.insert(w_name, key);
     }

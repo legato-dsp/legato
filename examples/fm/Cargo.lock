@@ -343,6 +343,7 @@ dependencies = [
 name = "legato-dsl"
 version = "0.0.5"
 dependencies = [
+ "indexmap",
  "legato-core",
  "pest",
  "pest_derive",
