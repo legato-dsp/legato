@@ -257,8 +257,6 @@ impl RuntimeBackend {
 }
 
 pub fn build_runtime(config: Config, ports: Ports) -> Runtime {
-    
-    
     let graph = AudioGraph::with_capacity(config.initial_graph_capacity);
     let context = AudioContext::new(config);
 

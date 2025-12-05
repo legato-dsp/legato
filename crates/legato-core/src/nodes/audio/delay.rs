@@ -13,7 +13,7 @@ use crate::{
     utils::ringbuffer::RingBuffer,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DelayLine {
     buffers: Vec<RingBuffer>,
     capacity: usize,

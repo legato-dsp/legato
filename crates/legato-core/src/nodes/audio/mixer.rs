@@ -3,7 +3,7 @@ use crate::{
         Node, NodeInputs,
         ports::{PortBuilder, Ported, Ports},
     },
-    runtime::lanes::{LANES, Vf32},
+    runtime::{context::AudioContext, lanes::{LANES, Vf32}},
     utils::math::fast_tanh_vf32,
 };
 
@@ -70,6 +70,54 @@ impl Node for TrackMixer {
 }
 
 impl Ported for TrackMixer {
+    fn get_ports(&self) -> &Ports {
+        &self.ports
+    }
+}
+
+
+
+
+/// A mono -> N mixer with unity gain
+pub struct MonoFanOut {
+    ports: Ports,
+}
+
+impl MonoFanOut {
+    pub fn new(chans_out: usize) -> Self {
+        Self {
+            ports: PortBuilder::default()
+                .audio_in(1)
+                .audio_out(chans_out)
+                .build()
+        }
+    }
+}
+
+impl Node for MonoFanOut {
+    fn process<'a>(
+            &mut self,
+            _: &mut AudioContext,
+            ai: &NodeInputs,
+            ao: &mut NodeInputs,
+            _: &NodeInputs,
+            _: &mut NodeInputs,
+        ) {
+        // TODO: Chunks + SIMD
+        let chans_out = self.ports.audio_out.len();
+        let gain = 1.0 / f32::sqrt(chans_out as f32);
+
+        for (i, sample) in ai[0].iter().enumerate() {
+            let normalized = sample * gain;
+            for chan_out in ao.iter_mut() {
+                chan_out[i] = normalized
+            }
+        }
+    }
+}
+
+
+impl Ported for MonoFanOut {
     fn get_ports(&self) -> &Ports {
         &self.ports
     }

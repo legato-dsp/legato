@@ -2,7 +2,7 @@ use legato_core::{nodes::ports::PortBuilder, runtime::{context::Config, runtime:
 
 use crate::{
     ast::{BuildAstError, build_ast},
-    ir::{IR, ValidationError, build_runtime_from_ir},
+    ir::{ValidationError, build_runtime_from_ast},
     parse::parse_legato_file,
 };
 
@@ -26,17 +26,10 @@ pub fn build_application(
 
     let parsed = parse_legato_file(&graph).map_err(|x| BuildApplicationError::ParseError(x))?;
     let ast = build_ast(parsed).map_err(|x| BuildApplicationError::BuildAstError(x))?;
-    let ir = IR::from(ast);
-
-    let chans = config.channels;
-
-
-    let (runtime, backend) = build_runtime_from_ir(
-        ir,
+    
+    let (runtime, backend) = build_runtime_from_ast(
+        ast,
         config,
-        PortBuilder::default()
-            .audio_out(chans)
-            .build()
     );
 
     Ok((runtime, backend))

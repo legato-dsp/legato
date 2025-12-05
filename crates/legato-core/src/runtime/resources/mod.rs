@@ -20,7 +20,7 @@ new_key_type! { pub struct SampleKey; }
 /// This is nice becuase it avoids some general
 /// annoyances with sharing delay lines, samples, etc,
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Resources {
     delay_lines: SlotMap<DelayLineKey, DelayLine>,
     sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>,

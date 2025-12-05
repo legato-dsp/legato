@@ -8,6 +8,7 @@ use arc_swap::ArcSwapOption;
 /// However, channels can change, but we want to
 /// store channels in a type-erased way, so that
 /// samples can live on the audio context
+#[derive(Debug, Clone)]
 pub struct AudioSample {
     chans: usize,
     data: Vec<Vec<f32>>,

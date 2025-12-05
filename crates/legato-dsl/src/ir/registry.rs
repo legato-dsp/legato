@@ -5,7 +5,7 @@ use std::{
 
 use legato_core::runtime::builder::AddNode;
 
-use crate::{ir::{ValidationError, node_spec::NodeSpec, params::{Params}}};
+use crate::ir::{ValidationError, node_spec::NodeSpec, params::Params};
 use crate::node_spec;
 
 pub struct AudioRegistry {

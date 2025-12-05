@@ -6,7 +6,7 @@ use crate::{
     nodes::{
         Node,
         audio::{
-            delay::{DelayLine, DelayRead, DelayWrite}, fir::FirFilter, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, oversample::{Oversampler, oversample_by_two_factory}, sampler::Sampler, sine::Sine, sweep::Sweep
+            delay::{DelayLine, DelayRead, DelayWrite}, fir::FirFilter, mixer::{MonoFanOut, TrackMixer}, ops::{ApplyOpKind, mult_node_factory}, oversample::{Oversampler, oversample_by_two_factory}, sampler::Sampler, sine::Sine, sweep::Sweep
         },
         ports::Ports,
     },
@@ -66,6 +66,9 @@ pub enum AddNode {
         chans_per_track: usize,
         tracks: usize,
         gain: Vec<f32>,
+    },
+    MonoFanOut {
+        chans_out: usize
     },
     // Filters
     Fir {
@@ -169,6 +172,7 @@ impl RuntimeBuilder {
             AddNode::Gain { val, chans } => {
                 Box::new(mult_node_factory(val, chans, ApplyOpKind::Gain))
             }
+            // Delay
             AddNode::DelayWrite {
                 delay_name,
                 delay_length,
@@ -196,11 +200,13 @@ impl RuntimeBuilder {
                     .expect("Delay read instantiated before line initialized");
                 Box::new(DelayRead::new(chans, delay_line_key.clone(), delay_length))
             }
+            // Mixers
             AddNode::TrackMixer {
                 chans_per_track,
                 tracks,
                 gain,
             } => Box::new(TrackMixer::new(chans_per_track, tracks, gain)),
+            AddNode::MonoFanOut { chans_out } => Box::new(MonoFanOut::new(chans_out)),
             // Filters
             AddNode::Fir { chans, coeffs } => Box::new(FirFilter::new(coeffs, chans)),
             // Oversample Node
