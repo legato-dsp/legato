@@ -135,13 +135,13 @@ fn bench_stereo_delay(c: &mut Criterion) {
         chans: 2,
         delay_name: 'a'.into(),
         delay_length: Duration::from_secs_f32(1.0),
-    });
+    }, "".into(), "".into());
 
     let b = runtime_builder.add_node(AddNode::DelayRead {
         chans: 2,
         delay_name: 'a'.into(),
         delay_length: vec![Duration::from_millis(120), Duration::from_millis(240)],
-    });
+    }, "".into(), "".into());
 
     let (mut runtime, _) = runtime_builder.get_owned();
 

@@ -49,7 +49,7 @@ fn main() {
 
     let mut sweep_runtime_builder = get_runtime_builder(os_config, ports.clone());
 
-    let sweep_key = sweep_runtime_builder.add_node(AddNode::Sweep { range: (40.0, 42_000.0), duration: Duration::from_secs(5), chans: 2 });
+    let sweep_key = sweep_runtime_builder.add_node(AddNode::Sweep { range: (40.0, 42_000.0), duration: Duration::from_secs(5), chans: 2 }, "oversample_2x".into(), "oversample_2x".into());
 
     let (mut sweep_runtime, _) = sweep_runtime_builder.get_owned();
 
@@ -59,7 +59,7 @@ fn main() {
 
     let mut runtime_builder = get_runtime_builder(config, ports);
 
-    let sweep = runtime_builder.add_node(AddNode::Oversample2X { runtime: Box::new(sweep_runtime), chans: 2 });
+    let sweep = runtime_builder.add_node(AddNode::Oversample2X { runtime: Box::new(sweep_runtime), chans: 2 }, "oversample_2x".into(), "oversample_2x".into());
 
     let (mut runtime, _) = runtime_builder.get_owned();
 

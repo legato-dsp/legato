@@ -40,14 +40,14 @@ fn main() {
     let carrier = runtime_builder.add_node(AddNode::Sine {
         freq: 440.0,
         chans: 2,
-    });
+    }, "sine".into(), "sine".into());
 
     // TODO: Apply gain
 
     let modulator = runtime_builder.add_node(AddNode::Sine {
         freq: 440.0 * (5.0 / 4.0),
         chans: 1,
-    });
+    }, "sine".into(), "sine".into());
 
     let (mut runtime, _) = runtime_builder.get_owned();
 

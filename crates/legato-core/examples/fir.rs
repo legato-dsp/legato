@@ -122,12 +122,12 @@ fn main() {
     let fir = runtime_builder.add_node(AddNode::Fir {
         coeffs: coeffs,
         chans: 2,
-    });
+    }, "fir".into(), "fir".into());
 
     let sampler = runtime_builder.add_node(AddNode::Sampler {
         sampler_name: String::from("amen"),
         chans: 2,
-    });
+    }, "sampler".into(), "sampler".into());
 
     let (mut runtime, mut backend) = runtime_builder.get_owned();
 

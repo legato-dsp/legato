@@ -42,27 +42,29 @@ fn main() {
     let sampler = runtime_builder.add_node(AddNode::Sampler {
         chans: 2,
         sampler_name: String::from("amen"),
-    });
+    }, "sampler".into(), "sampler".into());
 
     let delay_write = runtime_builder.add_node(AddNode::DelayWrite {
         delay_name: String::from("amen"),
         chans: 2,
         delay_length: Duration::from_secs_f32(3.0),
-    });
+    }, "delay_write".into(), "delay_write".into());
 
     let delay_read = runtime_builder.add_node(AddNode::DelayRead {
         delay_name: String::from("amen"),
         chans: 2,
         delay_length: vec![Duration::from_millis(17), Duration::from_millis(23)],
-    });
+    }, "delay_read".into(), "delay_read".into());
 
-    let delay_gain = runtime_builder.add_node(AddNode::Gain { val: 0.4, chans: 2 });
+    let delay_gain = runtime_builder.add_node(AddNode::Gain { val: 0.4, chans: 2 },
+        "delay_gain".into(), "delay_gain".into()
+    );
 
     let mixer = runtime_builder.add_node(AddNode::TrackMixer {
         chans_per_track: 2,
         tracks: 2,
         gain: vec![0.6, 0.6], // TODO: Log values as well
-    });
+    }, "mixer".into(), "mixer".into());
 
     let (mut runtime, mut backend) = runtime_builder.get_owned();
 
@@ -235,7 +237,7 @@ fn main() {
 
     let device = host.default_output_device().unwrap();
 
-    println!("{:?}", device.default_output_config());
+    dbg!(device.default_output_config().unwrap());
 
     let config = StreamConfig {
         channels: config.channels as u16,

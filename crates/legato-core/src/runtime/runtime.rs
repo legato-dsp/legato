@@ -4,9 +4,10 @@ use crate::runtime::context::Config;
 use crate::runtime::resources::audio_sample::AudioSampleError;
 use crate::runtime::{
     context::AudioContext,
-    graph::{AudioGraph, AudioNode, Connection, GraphError, NodeKey},
+    graph::{AudioGraph, Connection, GraphError, NodeKey},
     resources::audio_sample::AudioSampleBackend,
 };
+use std::fmt::Debug;
 use std::vec;
 
 use slotmap::SecondaryMap;
@@ -54,13 +55,13 @@ impl Runtime {
             ports,
         }
     }
-    pub fn add_node(&mut self, node: AudioNode) -> NodeKey {
+    pub fn add_node(&mut self, node: Box<dyn Node + Send>, name: String, node_kind: String) -> NodeKey {
         let ports = node.get_ports();
 
         let audio_chan_size = ports.audio_out.iter().len();
         let control_chan_size = ports.control_out.iter().len();
 
-        let node_key = self.graph.add_node(node);
+        let node_key = self.graph.add_node(node, name, node_kind);
 
         let config = self.context.get_config();
 
@@ -121,7 +122,7 @@ impl Runtime {
         for (i, node_key) in sorted_order.iter().enumerate() {
             // Reset all of the inputs about to be passed into this node
 
-            let ports = nodes[*node_key].get_ports();
+            let ports = nodes[*node_key].get_node().get_ports();
 
             let audio_inputs_size = ports.audio_in.len();
             let control_inputs_size = ports.control_in.len();
@@ -188,7 +189,8 @@ impl Runtime {
 
             let node = nodes
                 .get_mut(*node_key)
-                .expect("Could not find node at index {node_index:?}");
+                .expect("Could not find node at index {node_index:?}")
+                .get_node_mut();
 
             node.process(
                 &mut self.context,
@@ -266,5 +268,16 @@ pub fn build_runtime(config: Config, ports: Ports) -> Runtime {
 impl Ported for Runtime {
     fn get_ports(&self) -> &Ports {
         &self.ports
+    }
+}
+
+impl Debug for Runtime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entry(&"config", &self.context.get_config())
+            .key(&"graph").value(&self.graph)
+            .entry(&"ports", &self.ports)
+            .entry(&"sink_key", &self.sink_key)
+            .finish()
     }
 }

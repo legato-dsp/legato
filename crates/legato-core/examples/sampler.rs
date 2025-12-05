@@ -39,7 +39,7 @@ fn main() {
     let sampler = runtime_builder.add_node(AddNode::Sampler {
         chans: 2,
         sampler_name: String::from("amen"),
-    });
+    }, "sampler".into(), "sampler".into());
 
     let (mut runtime, mut backend) = runtime_builder.get_owned();
 

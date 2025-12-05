@@ -12,7 +12,7 @@ fn main() {
             mult: fm_gain { val: 1000.0, chans: 1 }
         }
 
-        mod >> fm_gain >> carrier[0]
+        mod >> fm_gain >> carrier.fm
 
         { carrier }
     "#,
@@ -28,6 +28,8 @@ fn main() {
         };
 
     let (runtime, _) = build_application(&graph, config).expect("Could not build application");
+
+    dbg!(&runtime);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");

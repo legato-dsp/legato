@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc, atomic::AtomicU64}, time::Duration};
+use std::{collections::HashMap, fmt::{Debug, Display}, sync::{Arc, atomic::AtomicU64}, time::Duration};
 
 use arc_swap::ArcSwapOption;
 
@@ -88,6 +88,20 @@ pub enum AddNode {
     }
 }
 
+impl Debug for AddNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Display for AddNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+
+
 pub struct RuntimeBuilder {
     runtime: Runtime,
     delay_resource_lookup: HashMap<String, DelayLineKey>,
@@ -129,7 +143,7 @@ impl RuntimeBuilder {
     }
 
     // Add nodes to runtime
-    pub fn add_node(&mut self, node_to_add: AddNode) -> NodeKey {
+    pub fn add_node(&mut self, node_to_add: AddNode, node_kind: String, working_name: String) -> NodeKey {
         let node: Box<dyn Node + Send> = match node_to_add {
             AddNode::Sine { freq, chans } => Box::new(Sine::new(freq, chans)),
             AddNode::Sampler {
@@ -217,7 +231,7 @@ impl RuntimeBuilder {
             // Sweep
             AddNode::Sweep { range, duration, chans } => Box::new(Sweep::new(range, duration, chans))
         };
-        self.runtime.add_node(node)
+        self.runtime.add_node(node, node_kind, working_name)
     }
 }
 

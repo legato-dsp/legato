@@ -3,7 +3,7 @@ use std::vec::Vec;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::parse::{Rule, print_pair};
+use crate::parse::{Rule};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
@@ -88,7 +88,6 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
     let mut ast = Ast::default();
 
     for declaration in pairs.into_iter() {
-        print_pair(&declaration, 4);
         match declaration.as_rule() {
             Rule::scope_block => ast.declarations.push(parse_scope_block(declaration)?),
             Rule::connection => ast.connections.append(&mut parse_connection(declaration)?),
@@ -103,6 +102,8 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
             _ => (),
         }
     }
+
+    dbg!(&ast);
 
     Ok(ast)
 }

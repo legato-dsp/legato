@@ -9,25 +9,9 @@ use pest::Parser;
 fn parse_ok(rule: Rule, input: &str) {
     match LegatoParser::parse(rule, input) {
         Ok(pairs) => {
-            println!("\n=== {:?} ===", rule);
-            for pair in pairs {
-                print_pair(&pair, 0);
-            }
+            dbg!(pairs);
         }
         Err(e) => panic!("Parse failed for {:?}: {}", rule, e),
-    }
-}
-
-fn print_pair(pair: &pest::iterators::Pair<Rule>, indent: usize) {
-    println!(
-        "{:indent$}{:?}: {:?}",
-        "",
-        pair.as_rule(),
-        pair.as_str(),
-        indent = indent * 2
-    );
-    for inner in pair.clone().into_inner() {
-        print_pair(&inner, indent + 1);
     }
 }
 

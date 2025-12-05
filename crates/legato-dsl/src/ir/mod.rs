@@ -21,6 +21,8 @@ pub enum ValidationError {
     MissingRequiredParameter(String),
 }
 
+type NodeKind = String;
+
 // TODO: A proper IR for users that don't want to use the DSL. 
 pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBackend) {
     let default_registry = AudioRegistry::default();
@@ -36,7 +38,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
 
     let mut builder = get_runtime_builder(config, ports);
 
-    let mut add_node_instructions: HashMap<String, AddNode> = HashMap::new();
+    let mut add_node_instructions: HashMap<String, (NodeKind, AddNode)> = HashMap::new();
 
     for scope in ast.declarations.iter() {
         for node in scope.declarations.iter() {
@@ -46,7 +48,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                 .get(&scope.namespace)
                 .expect(&format!("Could not find namespace {}", scope.namespace))
                 .get_node(&node.node_type, params_ref.as_ref())
-                .expect(&format!("Unable to find {} node from registry", node.node_type));
+                .expect(&format!("Unable to find {} node from registry", node.node_type.clone()));
 
             let working_name = node.alias.clone().unwrap_or_else(|| node.clone().node_type);
 
@@ -57,14 +59,14 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                 );
             }
 
-            add_node_instructions.insert(working_name, add_node);
+            add_node_instructions.insert(working_name, (node.node_type.clone(), add_node));
         }
     }
 
     let mut working_name_to_key = HashMap::<String, NodeKey>::new();
 
-    for (w_name, instr) in add_node_instructions {
-        let key = builder.add_node(instr);
+    for (w_name, (n_kind, instr)) in add_node_instructions {
+        let key = builder.add_node(instr, n_kind, w_name.clone());
         working_name_to_key.insert(w_name, key);
     }
 
@@ -73,8 +75,6 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
     // Now, we start adding explicit connections, as well as nodes for mixing with port automapping
 
     for connection in ast.connections.iter() {
-        dbg!(connection);
-
         let source_key = working_name_to_key
             .get(&connection.source_name)
             .expect(&format!("Could not find source key in connection {}", &connection.source_name));
@@ -122,7 +122,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 1, 
                                 1, 
                                 vec![0.71],
-                            )));
+                            )), "track_mixer".into(), "track_mixer".into());
 
                             runtime.add_edge(Connection { 
                                 source: ConnectionEntry { 
@@ -158,7 +158,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 1, 
                                 2, 
                                 vec![0.71, 0.71],
-                            )));
+                            )), "track_mixer".into(), "track_mixer".into());
 
                             for i in 0..2 {
                                 runtime.add_edge(Connection { 
@@ -229,7 +229,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                         1, 
                         source_arity, 
                         vec![0.71, 0.71],
-                    )));
+                    )), "track_mixer".into(), "track_mixer".into());
 
                     for n in 0..source_arity {
                         runtime.add_edge(Connection { 
@@ -280,7 +280,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 1, 
                                 1, 
                                 vec![1.0 / f32::sqrt(sink_arity as f32)],
-                        )));
+                        )), "track_mixer".into(), "track_mixer".into());
 
                     runtime.add_edge(Connection { 
                         source: ConnectionEntry { 
@@ -352,12 +352,12 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
         }
     }   
 
-    let sink_ref = working_name_to_key
+    let sink_key = working_name_to_key
             .get(&ast.sink.name)
             .expect("Could not find sink!");
 
     runtime
-        .set_sink_key(*sink_ref)
+        .set_sink_key(*sink_key)
         .expect("Could not set sink!");
 
 
