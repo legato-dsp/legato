@@ -9,10 +9,10 @@ fn main() {
         audio {
             sine: mod { freq: 550.0, chans: 1 },
             sine: carrier { freq: 440.0, chans: 2 },
-            mult: fm_gain { val: 1000.0, chans: 2 }
+            mult: fm_gain { val: 1000.0, chans: 1 }
         }
 
-        mod[0] >> fm_gain[0] >> carrier[0]
+        mod >> fm_gain >> carrier[0]
 
         { carrier }
     "#,

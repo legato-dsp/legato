@@ -112,7 +112,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 port_index: i, 
                                 port_rate: PortRate::Audio 
                             } 
-                        });
+                        }).expect("Could not add edge");
                     }
                 }
                 else {
@@ -134,7 +134,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                     port_index: 0, 
                                     port_rate: PortRate::Audio 
                                 } 
-                            });
+                            }).expect("Could not add edge");
 
                             for i in 0..2 {
                                 runtime.add_edge(
@@ -149,7 +149,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                             port_rate: PortRate::Audio 
                                         } 
                                     }
-                                );
+                                ).expect("Could not add edge");
                             }
                         },
                         (2, 1) => {
@@ -171,7 +171,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                         port_index: i, 
                                         port_rate: PortRate::Audio 
                                     } 
-                                });
+                                }).expect("Could not add edge");
                             }
 
                             runtime.add_edge(Connection { 
@@ -184,7 +184,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                     port_index: 0, 
                                     port_rate: PortRate::Audio 
                                 } 
-                            });
+                            }).expect("Could not add edge");
                         },
                         _ => panic!("Auto mapping not supported for arities: {} {}, found on nodes {} and {}.", source_arity, sink_arity, connection.source_name, connection.sink_name)
                     }
@@ -219,7 +219,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                             port_index: manual_port_sink, 
                             port_rate: PortRate::Audio 
                         } 
-                    });
+                    }).expect("Could not add edge");
                 }
 
                 // In this case, a user wants to automap say a port of size N to a mono signal
@@ -242,7 +242,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 port_index: n, 
                                 port_rate: PortRate::Audio 
                         } 
-                        });
+                        }).expect("Could not add edge");
                     }
 
                     runtime.add_edge(Connection { 
@@ -255,7 +255,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 port_index: 0, 
                                 port_rate: PortRate::Audio 
                         } 
-                    });
+                    }).expect("Could not add edge");
                 }
             },
             // Map explicit to auto. m => n
@@ -272,7 +272,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 port_index: 0, 
                                 port_rate: PortRate::Audio 
                         } 
-                    });
+                    }).expect("Could not add edge");
                 }
                 else {
                     // We now need to insert a number of normalized connections for each sink. This may be a bit more costly and perhaps we just add gain to connections in the future
@@ -291,7 +291,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                             node_key: mono_to_n.clone(), 
                             port_index: 0, 
                             port_rate: PortRate::Audio } 
-                    });
+                    }).expect("Could not add edge");
 
                     for i in 0..sink_arity {
                         runtime.add_edge(
@@ -305,7 +305,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                                 port_index: i, 
                                 port_rate: PortRate::Audio 
                             }
-                        });
+                        }).expect("Could not add edge");
                     }
                 }
 
@@ -335,7 +335,7 @@ pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBack
                     PortConnectionType::Indexed { port } => Some(port),
                 };
 
-                runtime.add_edge(Connection {
+                let _ = runtime.add_edge(Connection {
                     source: ConnectionEntry {
                         node_key: *source_key,
                         port_index: manual_port_source.unwrap(),
