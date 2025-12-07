@@ -64,4 +64,4 @@ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.
 
 Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
 
-- We need delay compensation for the runtime, which will be on a per-port trait. Basically, we just run all of the nodes for some block size (say 4096), which incurs some latency, but then we can easily 
+- We need delay compensation for the runtime, which will be on a per-port trait. Basically, we just run all of the nodes for some block size (say 4096), which incurs some latency, but then we can easily compensate to prevent phasing issues.

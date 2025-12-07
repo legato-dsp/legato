@@ -81,10 +81,14 @@ pub enum AddNode {
         duration: Duration,
         chans: usize,
     },
-    // Over and resamplers
+    // Oversampler
     Oversample2X {
         runtime: Box<Runtime>,
         chans: usize
+    },
+    //
+    Subgraph {
+        runtime: Box<Runtime>,
     }
 }
 
@@ -229,7 +233,9 @@ impl RuntimeBuilder {
                 Box::new(oversample_by_two_factory(runtime, chans, buff_size))
             }
             // Sweep
-            AddNode::Sweep { range, duration, chans } => Box::new(Sweep::new(range, duration, chans))
+            AddNode::Sweep { range, duration, chans } => Box::new(Sweep::new(range, duration, chans)),
+            // Subgraph
+            AddNode::Subgraph { runtime } => runtime
         };
         self.runtime.add_node(node, node_kind, working_name)
     }

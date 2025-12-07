@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use legato_core::runtime::builder::AddNode;
+use legato_core::{nodes::Node, runtime::{builder::AddNode, runtime::Runtime}};
 
 use crate::ir::{ValidationError, node_spec::NodeSpec, params::Params};
 use crate::node_spec;
@@ -13,6 +13,12 @@ pub struct AudioRegistry {
 }
 
 impl AudioRegistry {
+    pub fn new() -> Self {
+        let data = HashMap::new();
+        Self {
+            data
+        }
+    }
     pub fn get_node(&self, name: &String, params: Option<&Params>) -> Result<AddNode, ValidationError> {
         if let Some(p) = params {
             return match self.data.get(name) {
@@ -27,6 +33,20 @@ impl AudioRegistry {
             None => Err(ValidationError::NodeNotFound(format!("Could not find node {}", name)))
         }
     }
+    pub fn declare_node(&mut self, name: String, spec: NodeSpec) {
+        self.data.insert(name, spec).expect("Could not declare node!");
+    }
+}
+
+pub fn get_spec_for_runtime(name: String, runtime: Box<Runtime>) -> (String, NodeSpec) {
+    let spec = node_spec!(
+        name,
+        required = [],
+        optional = [],
+        build = move |_| Ok(AddNode::Subgraph { runtime })
+        
+    );
+    spec
 }
 
 impl Default for AudioRegistry {

@@ -8,6 +8,7 @@ pub mod params;
 pub mod registry;
 #[macro_use]
 pub mod node_spec;
+pub mod pipes;
 
 /// ValidationError covers logical issues
 /// when lowering from the AST to the IR.
@@ -26,12 +27,7 @@ pub enum ValidationError {
 type NodeKind = String;
 
 // TODO: A proper IR for users that don't want to use the DSL. 
-pub fn build_runtime_from_ast(ast: Ast, config: Config) -> (Runtime, RuntimeBackend) {
-    let default_registry = AudioRegistry::default();
-
-    let mut registries: HashMap<String, AudioRegistry> = HashMap::new();
-    registries.insert("audio".into(), default_registry);
-
+pub fn build_runtime_from_ast(ast: Ast, registries: &HashMap<String, AudioRegistry>,  config: Config) -> (Runtime, RuntimeBackend) {
     // TODO: Explicit source ports?
 
     let ports = PortBuilder::default()

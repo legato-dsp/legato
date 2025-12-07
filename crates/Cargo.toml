@@ -9,6 +9,7 @@ resolver = "3"
 
 [features]
 default = ["core","dsl"]
+full = ["default"]
 core = ["dep:legato-core"]
 dsl = ["dep:legato-dsl"]
 

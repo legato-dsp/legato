@@ -37,7 +37,7 @@ fn main() {
             control_block_size: 1024 / 32,
             channels: 2,
             initial_graph_capacity: 4
-        };
+    };
 
     let (runtime, mut backend) = build_application(&graph, config).expect("Could not build application");
 
