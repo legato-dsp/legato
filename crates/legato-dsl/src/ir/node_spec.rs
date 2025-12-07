@@ -1,21 +1,19 @@
-use std::{collections::BTreeSet, ops::Add};
+use std::collections::BTreeSet;
 
 use legato_core::runtime::builder::AddNode;
 
 use crate::ir::{ValidationError, params::Params};
 
-
 /// This is needed because some times we want to build once with an owned value (runtime),
 /// and sometimes we need a factory
-pub enum BuildType {
-    Factory(Box<dyn Fn(&Params) -> Result<AddNode, ValidationError> + Send + Sync>),
-    Once(Option<Box<dyn FnOnce(&Params) -> Result<AddNode, ValidationError> + Send>>),
-}
 
 pub struct NodeSpec {
     pub required: BTreeSet<String>,
     pub optional: BTreeSet<String>,
-    pub build: BuildType,}
+    pub build: NodeFactory,
+}
+
+pub type NodeFactory = fn(&Params) -> Result<AddNode, ValidationError>;
 
 macro_rules! param_list {
     ($($param:expr),* $(,)?) => {
@@ -47,10 +45,9 @@ macro_rules! node_spec {
                 NodeSpec {
                     required: req_params,
                     optional: opt_params,
-                    build: $build, // build must be BuildType::Factory or BuildType::Once
+                    build: $build, // build must be factory function with type Box<dyn Fn(&Params) -> Result<AddNode, ValidationError> + Send + Sync>
                 }
             )
         }
     };
 }
-
