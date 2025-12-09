@@ -1,0 +1,68 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE | COMMENT }
+NEWLINE    = _{ "\r\n" | "\n" | "\r" }
+
+COMMENT = _{
+    "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)
+  | "/*" ~ (!"*/" ~ ANY)* ~ "*/"
+}
+
+// Primatives
+
+ident = @{ (ASCII_ALPHANUMERIC | "_" | "-")+ }
+
+true_keyword = { "true" }
+false_keyword = { "false" }
+
+boolean = { true_keyword | false_keyword }
+
+float = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+uint = @{ ASCII_DIGIT+ }
+int = @{ "-" ~ ASCII_DIGIT+ }
+string = @{ "\"" ~ ( "\\\"" | !"\"" ~ ANY )* ~ "\"" }
+
+value = { float | int | uint | string | boolean | object | array | ident }
+kv = { ident ~ ":" ~ value }
+
+object = { "{" ~ (kv ~ ("," ~ kv)* ~ ","?)? ~ "}" }
+array = { "[" ~ (value ~ ("," ~ value)*)? ~ ","? ~ "]" }
+
+// Project Graph
+
+graph = _{ WHITESPACE* ~ scope_block+ ~ connections? ~ sink ~ WHITESPACE* }
+
+// Declaration Scopes
+
+scope_name = @{ ident }
+scope_block = { scope_name ~ "{" ~ add_nodes? ~ "}" }
+
+node_type = @{ ident }
+node_alias = _{ ":" ~ alias_name }
+alias_name = @{ ident }
+
+node_params = { object }
+
+node_pipe = { "|" ~ ident ~ "(" ~ pipe_params? ~ ")" }
+pipe_params = _{ value }
+
+add_nodes = { add_node ~ ("," ~ add_node)* ~ ","? }
+add_node = {
+    node_type ~ (node_alias)? ~ node_params? ~ node_pipe*
+}
+
+// Connections
+
+node = @{ ident }
+
+port_name = { ident }
+port_index = { "[" ~ uint ~ "]"}
+
+node_with_port = { node ~ !WHITESPACE ~ ("." ~ !WHITESPACE ~ port_name | port_index) }
+
+connection = { (node_with_port | node) ~ (">>" ~ (node_with_port | node))+ }
+connections = _{ connection+ }
+
+
+// Sink
+
+sink = { "{" ~ ident ~ "}" }
+

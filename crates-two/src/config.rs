@@ -1,15 +1,19 @@
-use std::sync::Arc;
+use crate::simd::LANES;
 
-use arc_swap::ArcSwapOption;
-
-use crate::{
-    nodes::NodeInputs,
-    runtime::{
-        lanes::LANES,
-        resources::{DelayLineKey, Resources, SampleKey, audio_sample::AudioSample},
-    },
-};
-
+/// The config that determines the interior application 
+/// sample rate, as well as a few other settings.
+/// 
+/// Note: The audio block size is the internal graph rate. 
+/// This does not need to match the audio callback rate of your end device, as you can adapt if needed
+/// with a ringbuffer, double buffer, etc.
+/// 
+/// In summary, depending on your latency requirements,
+/// you may need to change the blocksize somewhat.
+/// 
+/// The control rate is by default 1/32 of the audio rate.
+/// So, this is not suitable for say audio rate FM, but it is reasonable for changing parameters.
+/// 
+/// If you need smoothing, try using a lowpass filter or some averaging filter to prevent any sharp changes.
 pub enum BlockSize {
     Block64,
     Block128,
@@ -59,34 +63,5 @@ impl Config {
     pub fn validate(&self) {
         assert!(self.audio_block_size % LANES == 0);
         assert!(self.control_block_size % LANES == 0);
-    }
-}
-
-
-/// The AudioContext struct contains information about the current audio graph, as well as 
-/// some resources that are hosted up for nodes to access within a specific runtime. 
-/// 
-/// This prevents complex state sharing or unsafe ptr logic when using things like shared buffers 
-/// for delay lines or samples. 
-pub struct AudioContext {
-    config: Config,
-    resources: Resources,
-}
-
-impl AudioContext {
-    pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            resources: Resources::default(),
-        }
-    }
-    pub fn get_config(&self) -> Config {
-        self.config.clone()
-    }
-    pub fn get_resources(&self) -> &Resources {
-        &self.resources
-    }
-    pub fn get_resources_mut(&mut self) -> &mut Resources {
-        &mut self.resources
     }
 }

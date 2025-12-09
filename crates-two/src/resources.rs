@@ -1,13 +1,8 @@
-pub mod audio_sample;
-
 use std::sync::Arc;
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{
-    nodes::{NodeInputs, audio::delay::DelayLine},
-    runtime::{lanes::Vf32, resources::audio_sample::{AudioSample, AudioSampleHandle, AudioSampleRef}},
-};
+use crate::{node::Channels, nodes::audio::delay::DelayLine, sample::AudioSampleHandle, simd::Vf32};
 
 new_key_type! { pub struct DelayLineKey; }
 new_key_type! { pub struct SampleKey; }
@@ -31,7 +26,7 @@ impl Resources {
             sample_handles: SlotMap::default(),
         }
     }
-    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &NodeInputs) {
+    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &Channels) {
         let delay_line = self.delay_lines.get_mut(key).unwrap();
         delay_line.write_block(block);
     }

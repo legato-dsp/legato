@@ -2,7 +2,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::nodes::{Node, NodeWithMeta, ports::PortRate};
+use crate::{node::{Node, NodeWithMeta}, ports::PortRate};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -259,11 +259,10 @@ impl Debug for AudioGraph {
 mod test {
     use super::*;
     use crate::{
-        nodes::{
-            Node, NodeInputs,
-            ports::{PortMeta, PortRate, Ported, Ports},
-        },
-        runtime::graph::{AudioGraph, NodeKey},
+        context::AudioContext, 
+        node::{Channels, Node},
+        graph::{AudioGraph, NodeKey},
+        ports::{PortMeta, PortRate, Ports}
     };
 
     struct MonoExample {
@@ -289,21 +288,18 @@ mod test {
         }
     }
 
-    impl Ported for MonoExample {
-        fn get_ports(&self) -> &Ports {
-            &self.ports
-        }
-    }
-
     impl Node for MonoExample {
         fn process(
             &mut self,
-            ctx: &mut crate::runtime::context::AudioContext,
-            ai: &NodeInputs,
-            ao: &mut NodeInputs,
-            ci: &NodeInputs,
-            co: &mut NodeInputs,
+            ctx: &mut AudioContext,
+            ai: &Channels,
+            ao: &mut Channels,
+            ci: &Channels,
+            co: &mut Channels,
         ) {
+        }
+        fn ports(&self) -> &Ports {
+            &self.ports
         }
     }
 
