@@ -87,9 +87,6 @@ pub fn start_runtime_audio_thread(
     Ok(())
 }
 
-
-
-
 #[inline(always)]
 fn write_runtime_data_cpal_app<T>(output: &mut [T], config: &StreamConfig, app: &mut LegatoApp)
 where

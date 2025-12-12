@@ -1,7 +1,10 @@
 use std::time::Duration;
 
-
-use crate::{node::{Node, Channels}, ports::{PortBuilder, Ported, Ports}, context::AudioContext};
+use crate::{
+    context::AudioContext,
+    node::{Channels, Node},
+    ports::{PortBuilder, Ported, Ports},
+};
 
 pub struct Sweep {
     phase: f32,
@@ -18,16 +21,12 @@ impl Sweep {
             range,
             duration,
             elapsed: 0,
-            ports: PortBuilder::default()
-                .audio_out(chans)
-                .build()
+            ports: PortBuilder::default().audio_out(chans).build(),
         }
     }
 }
 
-impl Node for Sweep
-
-{
+impl Node for Sweep {
     fn process(
         &mut self,
         ctx: &mut AudioContext,

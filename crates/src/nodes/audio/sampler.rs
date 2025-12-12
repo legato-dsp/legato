@@ -1,14 +1,13 @@
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use assert_no_alloc::permit_alloc;
 
 use crate::{
-    node::{
-        Node, Channels,
-    },ports::{PortBuilder, Ports},
-    context::AudioContext, 
-    resources::SampleKey, 
-    sample::{AudioSample},
+    context::AudioContext,
+    node::{Channels, Node},
+    ports::{PortBuilder, Ports},
+    resources::SampleKey,
+    sample::AudioSample,
 };
 
 pub struct Sampler {
@@ -17,7 +16,7 @@ pub struct Sampler {
     is_looping: bool,
     ports: Ports,
     sample: Option<Arc<AudioSample>>,
-    sample_version: u64
+    sample_version: u64,
 }
 
 impl Sampler {
@@ -28,7 +27,7 @@ impl Sampler {
             is_looping: true,
             ports: PortBuilder::default().audio_out(chans).build(),
             sample: None,
-            sample_version: 0
+            sample_version: 0,
         }
     }
 }
@@ -46,23 +45,26 @@ impl Node for Sampler {
         // Check for sample update by seeing if the handle and local version match
         // This is all done rather than directly using the swap option, because Arc has a small allocation.
         if let Some(sample_handle) = resources.get_sample(self.sample_key) {
-            let handle_version = sample_handle.sample_version.load(std::sync::atomic::Ordering::Acquire);
+            let handle_version = sample_handle
+                .sample_version
+                .load(std::sync::atomic::Ordering::Acquire);
             if let Some(ref mut self_sample) = self.sample {
                 if self.sample_version != handle_version {
                     // Permit small Arc alloc on sample change. Open to alternatives, maybe a heapless arc swap exploration?
                     permit_alloc(|| {
                         if let Some(handle_sample) = sample_handle.sample.load_full() {
                             *self_sample = handle_sample.clone();
-                    }});
+                        }
+                    });
                     self.sample_version = handle_version;
                 }
-            }
-            else {
+            } else {
                 permit_alloc(|| {
                     if let Some(handle_sample) = sample_handle.sample.load_full() {
                         self.sample = Some(handle_sample.clone());
                         self.sample_version = handle_version;
-                }});
+                    }
+                });
             }
         }
 

@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, time::Duration};
 
-use crate::{ValidationError, ast::{Object, Value}};
+use crate::{
+    ValidationError,
+    ast::{Object, Value},
+};
 
 pub struct Params<'a>(pub &'a Object);
 
@@ -41,7 +44,7 @@ impl<'a> Params<'a> {
     pub fn get_usize(&self, key: &str) -> Option<usize> {
         match self.get_u32(key) {
             Some(i) => Some(i as usize),
-            None => None
+            None => None,
         }
     }
 

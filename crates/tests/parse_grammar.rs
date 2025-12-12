@@ -273,6 +273,6 @@ fn parse_node_with_multiple_pipes_and_args() {
 }
 
 #[test]
-fn parse_slice(){
+fn parse_slice() {
     parse_ok(Rule::port_slice, "[0..2]");
 }

@@ -2,7 +2,11 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{node::{Node, NodeWithMeta}, ports::PortRate, runtime::NodeKey};
+use crate::{
+    node::{Node, NodeWithMeta},
+    ports::PortRate,
+    runtime::NodeKey,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -49,7 +53,12 @@ impl AudioGraph {
         }
     }
 
-    pub fn add_node(&mut self, node: Box<dyn Node + Send>, name: String, node_kind: String) -> NodeKey {
+    pub fn add_node(
+        &mut self,
+        node: Box<dyn Node + Send>,
+        name: String,
+        node_kind: String,
+    ) -> NodeKey {
         // Insert the node
         let key = self.nodes.insert(NodeWithMeta::new(name, node_kind, node));
 
@@ -73,16 +82,16 @@ impl AudioGraph {
     pub fn get_node(&self, key: NodeKey) -> Option<&Box<dyn Node + Send>> {
         match self.nodes.get(key) {
             Some(inner) => Some(inner.get_node()),
-            None => None
-        }        
+            None => None,
+        }
     }
 
     #[inline(always)]
     pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut Box<dyn Node + Send>> {
         match self.nodes.get_mut(key) {
             Some(inner) => Some(inner.get_node_mut()),
-            None => None
-        }      
+            None => None,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -242,14 +251,13 @@ impl AudioGraph {
     }
 }
 
-
 impl Debug for AudioGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-        .entry(&"capacity", &self.nodes.len())
-        .entry(&"topo_sorted", &self.topo_sorted)
-        .entry(&"nodes", &self.nodes.iter().collect::<Vec<_>>())
-        .finish()
+            .entry(&"capacity", &self.nodes.len())
+            .entry(&"topo_sorted", &self.topo_sorted)
+            .entry(&"nodes", &self.nodes.iter().collect::<Vec<_>>())
+            .finish()
     }
 }
 
@@ -257,10 +265,10 @@ impl Debug for AudioGraph {
 mod test {
     use super::*;
     use crate::{
-        context::AudioContext, 
-        node::{Channels, Node},
+        context::AudioContext,
         graph::{AudioGraph, NodeKey},
-        ports::{PortMeta, PortRate, Ports}
+        node::{Channels, Node},
+        ports::{PortMeta, PortRate, Ports},
     };
 
     struct MonoExample {
@@ -321,9 +329,21 @@ mod test {
     fn test_topo_sort_simple_chain() {
         let mut graph: AudioGraph = AudioGraph::with_capacity(3);
 
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
-        let b = graph.add_node(Box::new(MonoExample::default()), "b".into(), "MonoExample".into());
-        let c = graph.add_node(Box::new(MonoExample::default()), "c".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
+        let b = graph.add_node(
+            Box::new(MonoExample::default()),
+            "b".into(),
+            "MonoExample".into(),
+        );
+        let c = graph.add_node(
+            Box::new(MonoExample::default()),
+            "c".into(),
+            "MonoExample".into(),
+        );
 
         graph
             .add_edge(Connection {
@@ -361,9 +381,21 @@ mod test {
     fn test_remove_edges() {
         let mut graph = AudioGraph::with_capacity(3);
 
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
-        let b = graph.add_node(Box::new(MonoExample::default()), "b".into(), "MonoExample".into());
-        let c = graph.add_node(Box::new(MonoExample::default()), "c".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
+        let b = graph.add_node(
+            Box::new(MonoExample::default()),
+            "b".into(),
+            "MonoExample".into(),
+        );
+        let c = graph.add_node(
+            Box::new(MonoExample::default()),
+            "c".into(),
+            "MonoExample".into(),
+        );
 
         let e1 = graph
             .add_edge(Connection {
@@ -429,11 +461,31 @@ mod test {
     fn test_larger_graph_parallel_inputs() {
         let mut graph = AudioGraph::with_capacity(5);
 
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
-        let b = graph.add_node(Box::new(MonoExample::default()), "b".into(), "MonoExample".into());
-        let c = graph.add_node(Box::new(MonoExample::default()), "c".into(), "MonoExample".into());
-        let d = graph.add_node(Box::new(MonoExample::default()), "d".into(), "MonoExample".into());
-        let e = graph.add_node(Box::new(MonoExample::default()), "e".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
+        let b = graph.add_node(
+            Box::new(MonoExample::default()),
+            "b".into(),
+            "MonoExample".into(),
+        );
+        let c = graph.add_node(
+            Box::new(MonoExample::default()),
+            "c".into(),
+            "MonoExample".into(),
+        );
+        let d = graph.add_node(
+            Box::new(MonoExample::default()),
+            "d".into(),
+            "MonoExample".into(),
+        );
+        let e = graph.add_node(
+            Box::new(MonoExample::default()),
+            "e".into(),
+            "MonoExample".into(),
+        );
 
         graph
             .add_edge(Connection {
@@ -498,8 +550,16 @@ mod test {
     #[test]
     fn test_cycle_detection_two_node_cycle() {
         let mut graph = AudioGraph::with_capacity(2);
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
-        let b = graph.add_node(Box::new(MonoExample::default()), "b".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
+        let b = graph.add_node(
+            Box::new(MonoExample::default()),
+            "b".into(),
+            "MonoExample".into(),
+        );
 
         let _ = graph
             .add_edge(Connection {
@@ -536,7 +596,11 @@ mod test {
     #[test]
     fn test_cycle_detection_self_loop() {
         let mut graph = AudioGraph::with_capacity(1);
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
         let res = graph.add_edge(Connection {
             source: ConnectionEntry {
                 node_key: a,
@@ -555,7 +619,11 @@ mod test {
     #[test]
     fn single_node_order() {
         let mut graph = AudioGraph::with_capacity(1);
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
 
         assert_eq!(graph.topo_sorted, vec![a])
     }
@@ -563,9 +631,21 @@ mod test {
     #[test]
     fn test_remove_node_cleans_edges_and_topo() {
         let mut graph = AudioGraph::with_capacity(3);
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
-        let b = graph.add_node(Box::new(MonoExample::default()), "b".into(), "MonoExample".into());
-        let c = graph.add_node(Box::new(MonoExample::default()), "c".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
+        let b = graph.add_node(
+            Box::new(MonoExample::default()),
+            "b".into(),
+            "MonoExample".into(),
+        );
+        let c = graph.add_node(
+            Box::new(MonoExample::default()),
+            "c".into(),
+            "MonoExample".into(),
+        );
 
         graph
             .add_edge(Connection {
@@ -607,10 +687,18 @@ mod test {
     #[test]
     fn test_add_edge_rejects_missing_endpoints() {
         let mut graph = AudioGraph::with_capacity(2);
-        let a = graph.add_node(Box::new(MonoExample::default()), "a".into(), "MonoExample".into());
+        let a = graph.add_node(
+            Box::new(MonoExample::default()),
+            "a".into(),
+            "MonoExample".into(),
+        );
         // Add a bad key, should throw error when we add an edge
         let nonexistent_key = {
-            let temp = graph.add_node(Box::new(MonoExample::default()), "temp".into(), "MonoExample".into());
+            let temp = graph.add_node(
+                Box::new(MonoExample::default()),
+                "temp".into(),
+                "MonoExample".into(),
+            );
             let _ = graph.remove_node(temp);
             temp
         };

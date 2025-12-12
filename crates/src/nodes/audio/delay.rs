@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use crate::{
-    node::{Node, Channels},
-    ports::{PortBuilder, Ported, Ports},
     context::AudioContext,
-    simd::{LANES, Vf32},
+    node::{Channels, Node},
+    ports::{PortBuilder, Ported, Ports},
     resources::DelayLineKey,
     ring::RingBuffer,
+    simd::{LANES, Vf32},
 };
 
 #[derive(Clone, Debug)]
@@ -168,7 +168,6 @@ impl Node for DelayRead {
         &self.ports
     }
 }
-
 
 #[cfg(test)]
 mod test_delay_simd_equivalence {

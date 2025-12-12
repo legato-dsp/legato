@@ -16,23 +16,24 @@ pub struct AudioSample {
 
 /// The audio sample handle contains a sample version
 /// that lets the audio thread know if it has been updated.
-/// 
+///
 /// This helps prevent ArcSwap loads that allocate on the
 /// on the audio thread.
 pub struct AudioSampleHandle {
     pub sample: ArcSwapOption<AudioSample>,
-    pub sample_version: AtomicU64
+    pub sample_version: AtomicU64,
 }
 
 pub struct AudioSampleRef {
     pub sample: Arc<AudioSample>,
-    pub sample_version: AtomicU64
+    pub sample_version: AtomicU64,
 }
 
 impl AudioSampleHandle {
     pub fn invalidate(&self, sample: AudioSample) {
         self.sample.store(Some(Arc::new(sample)));
-        self.sample_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.sample_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -64,7 +65,7 @@ pub enum AudioSampleError {
 /// in, but for the time being this seems to work okay.
 #[derive(Clone)]
 pub struct AudioSampleBackend {
-    handle: Arc<AudioSampleHandle>
+    handle: Arc<AudioSampleHandle>,
 }
 impl AudioSampleBackend {
     pub fn new(handle: Arc<AudioSampleHandle>) -> Self {

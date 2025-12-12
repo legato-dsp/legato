@@ -1,10 +1,10 @@
 use crate::{config::Config, resources::Resources};
 
-/// The AudioContext struct contains information about the current audio graph, as well as 
-/// some resources that are hosted up for nodes to access within a specific runtime. 
-/// 
-/// This prevents complex state sharing or unsafe ptr logic when using things like shared buffers 
-/// for delay lines or samples. 
+/// The AudioContext struct contains information about the current audio graph, as well as
+/// some resources that are hosted up for nodes to access within a specific runtime.
+///
+/// This prevents complex state sharing or unsafe ptr logic when using things like shared buffers
+/// for delay lines or samples.
 pub struct AudioContext {
     config: Config,
     resources: Resources,

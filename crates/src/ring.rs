@@ -3,7 +3,10 @@ use std::simd::{
     num::{SimdFloat, SimdUint},
 };
 
-use crate::{math::{ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd}, simd::{LANES, Vf32, Vusize}};
+use crate::{
+    math::{ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    simd::{LANES, Vf32, Vusize},
+};
 
 #[derive(Debug, Clone)]
 pub struct RingBuffer {
@@ -64,12 +67,12 @@ impl RingBuffer {
     #[inline(always)]
     pub fn get_chunk_by_offset(&self, k: usize) -> Vf32 {
         let len = self.capacity;
-        
+
         let r = (self.write_pos + len.saturating_sub(k)) % len;
         let l = (r + len - LANES) % len;
 
-        if r > l  {
-            return Vf32::from_slice(&self.data[l..r]).reverse()
+        if r > l {
+            return Vf32::from_slice(&self.data[l..r]).reverse();
         }
 
         let mut out = [0f32; LANES];
@@ -185,7 +188,6 @@ mod test {
     use super::*;
 
     impl RingBuffer {
-         
         // Generic function, mostly for testing
         pub fn get_delay_cubic_simd_generic<const N: usize>(
             &self,
@@ -208,13 +210,13 @@ mod test {
             cubic_hermite_simd(a, b, c, d, t)
         }
 
-    pub fn get_delay_linear_simd_generic<const N: usize>(
+        pub fn get_delay_linear_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
-    ) -> Simd<f32, N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
+        ) -> Simd<f32, N>
+        where
+            LaneCount<N>: SupportedLaneCount,
+        {
             let floor_float = offset.floor();
 
             let floor_usize = floor_float.cast::<usize>();
@@ -399,7 +401,7 @@ mod test {
     }
 
     #[test]
-    fn scalar_and_chunk_push_small(){
+    fn scalar_and_chunk_push_small() {
         use rand::random_range;
 
         let mut rb_a = RingBuffer::new(16);
@@ -413,13 +415,18 @@ mod test {
         }
 
         samples.iter().for_each(|x| rb_a.push(*x));
-        samples.chunks_exact(LANES).for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
+        samples
+            .chunks_exact(LANES)
+            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
 
         // Assert that data is right
         assert_eq!(rb_a.data, rb_b.data);
 
         let c1: Vec<f32> = (0..16).map(|x| rb_a.get_offset(x)).collect();
-        let c2: Vec<f32> = (0..4).map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array()).flat_map(|x| x).collect();
+        let c2: Vec<f32> = (0..4)
+            .map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
+            .flat_map(|x| x)
+            .collect();
 
         for i in 0..16 {
             assert_eq!(c1[i], c2[i])
@@ -427,7 +434,7 @@ mod test {
     }
 
     #[test]
-    fn scalar_and_chunk_push_random(){
+    fn scalar_and_chunk_push_random() {
         use rand::random_range;
 
         let mut rb_a = RingBuffer::new(16);
@@ -442,13 +449,18 @@ mod test {
         }
 
         samples.iter().for_each(|x| rb_a.push(*x));
-        samples.chunks_exact(LANES).for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
+        samples
+            .chunks_exact(LANES)
+            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
 
         // Assert that data is right
         assert_eq!(rb_a.data, rb_b.data);
 
         let c1: Vec<f32> = (0..256).map(|x| rb_a.get_offset(x)).collect();
-        let c2: Vec<f32> = (0..256).map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array()).flat_map(|x| x).collect();
+        let c2: Vec<f32> = (0..256)
+            .map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
+            .flat_map(|x| x)
+            .collect();
 
         dbg!(&c1[..16]);
         dbg!(&c2[..16]);

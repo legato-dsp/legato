@@ -1,8 +1,8 @@
-use crate::ports::{PortRate, Ports};
-use crate::node::{Node, Channels};
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
+use crate::node::{Channels, Node};
+use crate::ports::{PortRate, Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleBackend, AudioSampleError};
 use std::fmt::Debug;
@@ -13,9 +13,9 @@ use slotmap::{SecondaryMap, new_key_type};
 // Arbitrary max init. inputs
 pub const MAX_INITIAL_INPUTS: usize = 32;
 
-new_key_type! { 
+new_key_type! {
     /// A slotmap key corresponding to a particular node.
-    pub struct NodeKey; 
+    pub struct NodeKey;
 }
 
 pub struct Runtime {
@@ -58,7 +58,12 @@ impl Runtime {
             ports,
         }
     }
-    pub fn add_node(&mut self, node: Box<dyn Node + Send>, name: String, node_kind: String) -> NodeKey {
+    pub fn add_node(
+        &mut self,
+        node: Box<dyn Node + Send>,
+        name: String,
+        node_kind: String,
+    ) -> NodeKey {
         let ports = node.ports();
 
         let audio_chan_size = ports.audio_out.iter().len();
@@ -98,7 +103,7 @@ impl Runtime {
             false => Err(GraphError::NodeDoesNotExist),
         }
     }
-    pub fn set_resources(&mut self, resources: Resources){
+    pub fn set_resources(&mut self, resources: Resources) {
         self.context.set_resources(resources);
     }
     pub fn get_context_mut(&mut self) -> &mut AudioContext {
@@ -122,10 +127,7 @@ impl Runtime {
         self.graph.get_node(*key)
     }
     // TODO: Graphs as nodes again
-    pub fn next_block(
-        &mut self,
-        external_inputs: Option<&(&Channels, &Channels)>,
-    ) -> &Channels {
+    pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
         for (i, node_key) in sorted_order.iter().enumerate() {
@@ -281,7 +283,8 @@ impl Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
             .entry(&"config", &self.context.get_config())
-            .key(&"graph").value(&self.graph)
+            .key(&"graph")
+            .value(&self.graph)
             .entry(&"ports", &self.ports)
             .entry(&"sink_key", &self.sink_key)
             .finish()

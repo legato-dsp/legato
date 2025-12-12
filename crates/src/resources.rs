@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{node::Channels, nodes::audio::delay::DelayLine, sample::AudioSampleHandle, simd::Vf32};
+use crate::{
+    node::Channels, nodes::audio::delay::DelayLine, sample::AudioSampleHandle, simd::Vf32,
+};
 
 new_key_type! { pub struct DelayLineKey; }
 new_key_type! { pub struct SampleKey; }

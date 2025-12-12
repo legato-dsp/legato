@@ -1,6 +1,12 @@
 // A collection of naive oversamplers. May be worth checking out halfband and polyphase filters in the future
 
-use crate::{context::AudioContext, node::{Channels, Node}, nodes::audio::fir::FirFilter, ports::{PortBuilder, Ports}, runtime::Runtime};
+use crate::{
+    context::AudioContext,
+    node::{Channels, Node},
+    nodes::audio::fir::FirFilter,
+    ports::{PortBuilder, Ports},
+    runtime::Runtime,
+};
 
 pub struct Upsample<const N: usize> {
     filter: FirFilter,
@@ -18,22 +24,20 @@ impl<const N: usize> Upsample<N> {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_out(chans)
-                .build()
-            ,
+                .build(),
         }
     }
 }
 
 impl<const N: usize> Node for Upsample<N> {
     fn process(
-            &mut self,
-            ctx: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            ci: &Channels,
-            co: &mut Channels,
-        ) {
-        
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &Channels,
+        ao: &mut Channels,
+        ci: &Channels,
+        co: &mut Channels,
+    ) {
         debug_assert_eq!(ai.len(), ao.len()); // Channels match
         debug_assert_eq!(ai[0].len() * N, ao[0].len()); // Conversion matches
 
@@ -74,25 +78,25 @@ impl<const N: usize> Downsample<N> {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_out(chans)
-                .build()
+                .build(),
         }
     }
 }
 
 impl<const N: usize> Node for Downsample<N> {
     fn process<'a>(
-            &mut self,
-            ctx: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            ci: &Channels,
-            co: &mut Channels,
-        ) {
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &Channels,
+        ao: &mut Channels,
+        ci: &Channels,
+        co: &mut Channels,
+    ) {
         // Ensure that ai = ao * N
         debug_assert_eq!(ai[0].len(), ao[0].len() * N);
         // Filter the audio before decimating to prevent aliasing
         self.filter.process(ctx, ai, &mut self.filtered, ci, co);
-        
+
         // Decimate the filtered audio
         for c in 0..self.chans {
             let input = &self.filtered[c];
@@ -115,11 +119,17 @@ pub struct Oversampler<const N: usize> {
     downsampled_inputs: Vec<Box<[f32]>>,
     // Fir downsampler
     downsampler: Downsample<N>,
-    ports: Ports
+    ports: Ports,
 }
 
 impl<const N: usize> Oversampler<N> {
-    pub fn new(node: Box<Runtime>, upsampler: Upsample<N>, downsampler: Downsample<N>, chans: usize, buff_size: usize) -> Self {
+    pub fn new(
+        node: Box<Runtime>,
+        upsampler: Upsample<N>,
+        downsampler: Downsample<N>,
+        chans: usize,
+        buff_size: usize,
+    ) -> Self {
         Self {
             runtime: node,
             upsampler,
@@ -129,23 +139,31 @@ impl<const N: usize> Oversampler<N> {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_out(chans)
-                .build()
+                .build(),
         }
     }
 }
 
 impl<const N: usize> Node for Oversampler<N> {
     fn process<'a>(
-            &mut self,
-            ctx: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            ci: &Channels,
-            co: &mut Channels,
-        ) {
-        self.upsampler.process(ctx, ai, &mut self.upsampled_outputs, ci, co);
-        self.runtime.process(ctx, &self.upsampled_outputs, &mut self.downsampled_inputs, ci, co);
-        self.downsampler.process(ctx, &self.downsampled_inputs, ao, ci, co);
+        &mut self,
+        ctx: &mut AudioContext,
+        ai: &Channels,
+        ao: &mut Channels,
+        ci: &Channels,
+        co: &mut Channels,
+    ) {
+        self.upsampler
+            .process(ctx, ai, &mut self.upsampled_outputs, ci, co);
+        self.runtime.process(
+            ctx,
+            &self.upsampled_outputs,
+            &mut self.downsampled_inputs,
+            ci,
+            co,
+        );
+        self.downsampler
+            .process(ctx, &self.downsampled_inputs, ao, ci, co);
     }
     fn ports(&self) -> &Ports {
         &self.ports
@@ -154,14 +172,26 @@ impl<const N: usize> Node for Oversampler<N> {
 
 // TODO: Create a filter designer rather than pasting in SciPy coeffs
 pub fn upsample_by_two_factory(buff_size: usize, chans: usize) -> Upsample<2> {
-    Upsample::<2>::new(buff_size, chans, FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans))
+    Upsample::<2>::new(
+        buff_size,
+        chans,
+        FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
+    )
 }
 
 pub fn downsample_by_two_factory(buff_size: usize, chans: usize) -> Downsample<2> {
-    Downsample::<2>::new(buff_size, FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans), chans)
+    Downsample::<2>::new(
+        buff_size,
+        FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
+        chans,
+    )
 }
 
-pub fn oversample_by_two_factory(node: Box<Runtime>, chans: usize, buff_size: usize) -> Oversampler<2> {
+pub fn oversample_by_two_factory(
+    node: Box<Runtime>,
+    chans: usize,
+    buff_size: usize,
+) -> Oversampler<2> {
     let upsampler = upsample_by_two_factory(buff_size, chans);
     let downsampler = downsample_by_two_factory(buff_size, chans);
 
@@ -235,9 +265,3 @@ const CUTOFF_24K_COEFFS_FOR_96K: [f32; 64] = [
     -0.00106131,
     -0.00078997,
 ];
-
-
-
-
-
-

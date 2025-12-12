@@ -1,5 +1,10 @@
-use crate::{context::AudioContext, math::fast_tanh_vf32, node::{Channels, Node}, ports::{PortBuilder, Ports}, simd::{LANES, Vf32}};
-
+use crate::{
+    context::AudioContext,
+    math::fast_tanh_vf32,
+    node::{Channels, Node},
+    ports::{PortBuilder, Ports},
+    simd::{LANES, Vf32},
+};
 
 pub struct ApplyOp {
     val: f32,

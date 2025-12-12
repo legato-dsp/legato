@@ -1,6 +1,7 @@
 use legato::{
     ast::{Ast, ExpandedNode, PortConnectionType, Sink, Value, build_ast},
-    parse::{LegatoParser, Rule, print_pair}, pipes::PipeRegistry,
+    parse::{LegatoParser, Rule, print_pair},
+    pipes::PipeRegistry,
 };
 use pest::Parser;
 
@@ -16,7 +17,6 @@ fn parse_ast(input: &str) -> Ast {
 
 #[test]
 fn ast_node_with_alias_and_params() {
-
     let ast = parse_ast(
         r#"
         audio {
@@ -40,8 +40,8 @@ fn ast_node_with_alias_and_params() {
 
             assert_eq!(inner.params["freq"], Value::U32(440));
             assert_eq!(inner.params["gain"], Value::F32(0.2));
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     };
 
     let sink = ast.sink;
@@ -92,7 +92,6 @@ fn ast_graph_with_connections() {
     ));
 }
 
-
 #[test]
 fn ast_graph_with_port_slices() {
     let graph = r#"
@@ -119,20 +118,18 @@ fn ast_graph_with_port_slices() {
 
     match osc {
         ExpandedNode::Node(inner) => {
-             assert_eq!(inner.node_type, "osc");
+            assert_eq!(inner.node_type, "osc");
             assert_eq!(inner.alias, "stereo_osc");
-
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     };
 
     match gain {
         ExpandedNode::Node(inner) => {
-             assert_eq!(inner.node_type, "gain");
+            assert_eq!(inner.node_type, "gain");
             assert_eq!(inner.alias, "stereo_gain");
-
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     };
 
     assert_eq!(ast.connections.len(), 1);
@@ -141,12 +138,20 @@ fn ast_graph_with_port_slices() {
     assert_eq!(conn.source_name, "stereo_osc");
     assert_eq!(conn.sink_name, "stereo_gain");
 
-    assert_eq!(conn.source_port, PortConnectionType::Slice { start: 0, end: 1 });
-    assert_eq!(conn.sink_port, PortConnectionType::Slice { start: 2, end: 4 });
+    assert_eq!(
+        conn.source_port,
+        PortConnectionType::Slice { start: 0, end: 1 }
+    );
+    assert_eq!(
+        conn.sink_port,
+        PortConnectionType::Slice { start: 2, end: 4 }
+    );
 
     assert_eq!(
         ast.sink,
-        Sink { name: "gain_stage".to_string() }
+        Sink {
+            name: "gain_stage".to_string()
+        }
     );
 }
 

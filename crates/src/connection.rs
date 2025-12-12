@@ -10,5 +10,5 @@ pub struct ConnectionEntry {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Connection {
     pub source: ConnectionEntry,
-    pub sink: ConnectionEntry
+    pub sink: ConnectionEntry,
 }

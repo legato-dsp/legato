@@ -3,7 +3,10 @@ use std::vec::Vec;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::{parse::Rule, pipes::{PipeRegistry, PipeResult}};
+use crate::{
+    parse::Rule,
+    pipes::{PipeRegistry, PipeResult},
+};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
@@ -31,7 +34,7 @@ pub struct NodeDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpandedNode {
     Node(ExpandedNodeItem),
-    Multiple(Vec<ExpandedNodeItem>)
+    Multiple(Vec<ExpandedNodeItem>),
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -85,7 +88,7 @@ pub enum PortConnectionType {
     },
     Slice {
         start: usize,
-        end: usize
+        end: usize,
     },
     #[default]
     Auto,
@@ -106,7 +109,9 @@ pub fn build_ast(pairs: Pairs<Rule>, pipe_registry: &PipeRegistry) -> Result<Ast
 
     for declaration in pairs.into_iter() {
         match declaration.as_rule() {
-            Rule::scope_block => ast.declarations.push(parse_scope_block(declaration, pipe_registry)?),
+            Rule::scope_block => ast
+                .declarations
+                .push(parse_scope_block(declaration, pipe_registry)?),
             Rule::connection => ast.connections.append(&mut parse_connection(declaration)?),
             Rule::sink => {
                 let mut inner = declaration.into_inner();
@@ -123,7 +128,10 @@ pub fn build_ast(pairs: Pairs<Rule>, pipe_registry: &PipeRegistry) -> Result<Ast
     Ok(ast)
 }
 
-fn parse_scope_block<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> Result<DeclarationScope, BuildAstError> {
+fn parse_scope_block<'i>(
+    pair: Pair<'i, Rule>,
+    pipe_registry: &PipeRegistry,
+) -> Result<DeclarationScope, BuildAstError> {
     let mut inner = pair.into_inner();
     let scope_name = inner.next().unwrap().as_str().to_string();
     let mut declarations = vec![];
@@ -145,7 +153,10 @@ fn parse_scope_block<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> 
     })
 }
 
-fn parse_node<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> Result<ExpandedNode, BuildAstError> {
+fn parse_node<'i>(
+    pair: Pair<'i, Rule>,
+    pipe_registry: &PipeRegistry,
+) -> Result<ExpandedNode, BuildAstError> {
     let mut node = NodeDeclaration::default();
 
     node.alias = None;
@@ -168,23 +179,35 @@ fn parse_node<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> Result<
     let mut result = PipeResult::Node(node.clone());
 
     for pipe in node.pipes {
-        let boxed_pipe = pipe_registry.get(&pipe.name).map_err(|_| BuildAstError::ConstructionError(format!("Cannot find pipe {}", pipe.name)))?;
+        let boxed_pipe = pipe_registry.get(&pipe.name).map_err(|_| {
+            BuildAstError::ConstructionError(format!("Cannot find pipe {}", pipe.name))
+        })?;
         result = boxed_pipe.as_ref().pipe(result, pipe.params);
     }
 
     match result {
-        PipeResult::Node(n) => {
-            Ok(ExpandedNode::Node(ExpandedNodeItem { node_type: n.node_type.clone(), alias: n.alias.unwrap_or(n.node_type), params: n.params.unwrap_or(BTreeMap::new()) }))
-        },
-        PipeResult::Vec(nodes) => {
-            Ok(ExpandedNode::Multiple(
-                nodes.iter().cloned().enumerate().map(|(i, x)| {
+        PipeResult::Node(n) => Ok(ExpandedNode::Node(ExpandedNodeItem {
+            node_type: n.node_type.clone(),
+            alias: n.alias.unwrap_or(n.node_type),
+            params: n.params.unwrap_or(BTreeMap::new()),
+        })),
+        PipeResult::Vec(nodes) => Ok(ExpandedNode::Multiple(
+            nodes
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(i, x)| {
                     let alias_name = x.alias.unwrap_or(x.node_type.clone());
                     let alias_with_index = format!("{}.{}", alias_name, i);
 
-                    ExpandedNodeItem { node_type: x.node_type, alias: alias_with_index, params: x.params.unwrap_or(BTreeMap::new()) }
-            }).collect()))
-        }
+                    ExpandedNodeItem {
+                        node_type: x.node_type,
+                        alias: alias_with_index,
+                        params: x.params.unwrap_or(BTreeMap::new()),
+                    }
+                })
+                .collect(),
+        )),
     }
 }
 
@@ -254,7 +277,7 @@ fn parse_node_or_node_with_port(
                             .parse::<usize>()
                             .map_err(|e| BuildAstError::ConstructionError(format!("{}", e)))?;
                         PortConnectionType::Indexed { port: num }
-                    },
+                    }
                     Rule::port_slice => {
                         let mut inner = port_spec.into_inner();
 
@@ -334,4 +357,3 @@ fn parse_object<'i>(pair: Pair<'i, Rule>) -> Result<Object, BuildAstError> {
 fn parse_array(pair: Pair<Rule>) -> Result<Vec<Value>, BuildAstError> {
     Ok(pair.into_inner().map(|x| parse_value(x).unwrap()).collect())
 }
-

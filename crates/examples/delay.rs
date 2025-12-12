@@ -1,7 +1,12 @@
 use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
-use legato::{builder::LegatoBuilder, config::Config, out::{start_application_audio_thread, start_runtime_audio_thread}, ports::PortBuilder};
+use legato::{
+    builder::LegatoBuilder,
+    config::Config,
+    out::{start_application_audio_thread, start_runtime_audio_thread},
+    ports::PortBuilder,
+};
 
 fn main() {
     let graph = String::from(
@@ -24,20 +29,17 @@ fn main() {
     );
 
     let config = Config {
-            sample_rate: 48_000,
-            control_rate: 48_000 / 32,
-            audio_block_size: 1024,
-            control_block_size: 1024 / 32,
-            channels: 2,
-            initial_graph_capacity: 4
+        sample_rate: 48_000,
+        control_rate: 48_000 / 32,
+        audio_block_size: 1024,
+        control_block_size: 1024 / 32,
+        channels: 2,
+        initial_graph_capacity: 4,
     };
 
-    let (app, mut backend) = LegatoBuilder::new(config, 
-        PortBuilder::default()
-        .audio_out(2)
-        .build()
-    ).build_from_str(&graph);
-
+    let (app, mut backend) =
+        LegatoBuilder::new(config, PortBuilder::default().audio_out(2).build())
+            .build_from_str(&graph);
 
     let _ = backend.load_sample(
         &String::from("amen"),

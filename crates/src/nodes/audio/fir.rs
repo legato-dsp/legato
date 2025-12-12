@@ -1,6 +1,12 @@
-use std::{simd::{StdFloat, num::SimdFloat}};
+use std::simd::{StdFloat, num::SimdFloat};
 
-use crate::{context::AudioContext, node::{Channels, Node}, ports::{PortBuilder, Ports}, ring::RingBuffer, simd::{LANES, Vf32}};
+use crate::{
+    context::AudioContext,
+    node::{Channels, Node},
+    ports::{PortBuilder, Ports},
+    ring::RingBuffer,
+    simd::{LANES, Vf32},
+};
 
 // A semi-naitve FIR filter. In the future, it will be
 // nice to have one in the frequency domain as well.
@@ -73,7 +79,10 @@ impl Node for FirFilter {
 mod test {
     use std::simd::{StdFloat, num::SimdFloat};
 
-    use crate::{nodes::audio::fir::FirFilter, simd::{LANES, Vf32}};
+    use crate::{
+        nodes::audio::fir::FirFilter,
+        simd::{LANES, Vf32},
+    };
 
     impl FirFilter {
         fn process_mono_block(&mut self, input: &[f32]) -> Vec<f32> {
@@ -124,7 +133,9 @@ mod test {
     #[test]
     fn fir_impulse_response_matches_coeffs() {
         // With an impulse of one at the start, we should match the coeffs
-        let coeffs = vec![0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, 1.3, 0.3, 0.19, 1.9, 0.6, 7.4];
+        let coeffs = vec![
+            0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, 1.3, 0.3, 0.19, 1.9, 0.6, 7.4,
+        ];
 
         let mut fir = FirFilter::new(coeffs.clone(), 1);
 
@@ -147,8 +158,8 @@ mod test {
 
     #[test]
     fn fir_matches_scalar_reference_for_random_signal() {
-        use rand::{Rng, SeedableRng};
         use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
 
         let mut rng = StdRng::seed_from_u64(1337);
 

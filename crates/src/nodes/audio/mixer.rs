@@ -1,7 +1,13 @@
-use std::{simd::{StdFloat, num::SimdFloat}};
+use std::simd::{StdFloat, num::SimdFloat};
 
-use crate::{context::AudioContext, math::fast_tanh_vf32, node::{Channels, Node}, ports::{PortBuilder, Ports}, ring::RingBuffer, simd::{LANES, Vf32}};
-
+use crate::{
+    context::AudioContext,
+    math::fast_tanh_vf32,
+    node::{Channels, Node},
+    ports::{PortBuilder, Ports},
+    ring::RingBuffer,
+    simd::{LANES, Vf32},
+};
 
 // TODO: More mixers, matrix, panning, etc.
 
@@ -68,7 +74,6 @@ impl Node for TrackMixer {
     }
 }
 
-
 /// A mono -> N mixer with unity gain
 pub struct MonoFanOut {
     ports: Ports,
@@ -80,20 +85,20 @@ impl MonoFanOut {
             ports: PortBuilder::default()
                 .audio_in(1)
                 .audio_out(chans_out)
-                .build()
+                .build(),
         }
     }
 }
 
 impl Node for MonoFanOut {
     fn process(
-            &mut self,
-            _: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            _: &Channels,
-            _: &mut Channels,
-        ) {
+        &mut self,
+        _: &mut AudioContext,
+        ai: &Channels,
+        ao: &mut Channels,
+        _: &Channels,
+        _: &mut Channels,
+    ) {
         // TODO: Chunks + SIMD
         let chans_out = self.ports.audio_out.len();
         let gain = 1.0 / f32::sqrt(chans_out as f32);

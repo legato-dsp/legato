@@ -1,25 +1,30 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
-use crate::{ValidationError, ast::{NodeDeclaration, Value}};
-
+use crate::{
+    ValidationError,
+    ast::{NodeDeclaration, Value},
+};
 
 pub struct PipeRegistry {
-    data: HashMap<String, Box<dyn Pipe>>
+    data: HashMap<String, Box<dyn Pipe>>,
 }
 
 impl PipeRegistry {
     pub fn new(data: HashMap<String, Box<dyn Pipe>>) -> Self {
-        Self {
-            data
-        }
+        Self { data }
     }
 
-    pub fn add(&mut self, name: String, pipe: Box<dyn Pipe>){
+    pub fn add(&mut self, name: String, pipe: Box<dyn Pipe>) {
         self.data.insert(name, pipe);
     }
 
     pub fn get(&self, name: &String) -> Result<&Box<dyn Pipe>, ValidationError> {
-        self.data.get(name).ok_or(ValidationError::PipeNotFound(format!("Could not find pipe {}", name)))
+        self.data
+            .get(name)
+            .ok_or(ValidationError::PipeNotFound(format!(
+                "Could not find pipe {}",
+                name
+            )))
     }
 }
 
@@ -34,7 +39,7 @@ impl Default for PipeRegistry {
 
 pub enum PipeResult {
     Node(NodeDeclaration),
-    Vec(Vec<NodeDeclaration>)
+    Vec(Vec<NodeDeclaration>),
 }
 
 pub trait Pipe {
@@ -55,12 +60,18 @@ impl Pipe for Replicate {
 
                 match val {
                     Value::U32(i) => {
-                        return PipeResult::Vec((0..i).collect::<Vec<_>>().iter().map(|_|  n.clone()).collect())
-                    },
-                    _ => panic!("Must provide U32 to replicate")
+                        return PipeResult::Vec(
+                            (0..i)
+                                .collect::<Vec<_>>()
+                                .iter()
+                                .map(|_| n.clone())
+                                .collect(),
+                        );
+                    }
+                    _ => panic!("Must provide U32 to replicate"),
                 }
-            },
-            PipeResult::Vec(_) => panic!("Must provide single node for replicate pipe.")
+            }
+            PipeResult::Vec(_) => panic!("Must provide single node for replicate pipe."),
         };
     }
 }

@@ -1,10 +1,24 @@
-use std::{collections::{HashMap}, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
-use crate::{ValidationError, builder::ResourceBuilderView, node::Node, node_spec, nodes::audio::{delay::{DelayLine, DelayRead, DelayWrite}, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, sampler::Sampler, sine::Sine}, params::Params, spec::{NodeFactory, NodeSpec}};
+use crate::{
+    ValidationError,
+    builder::ResourceBuilderView,
+    node::Node,
+    node_spec,
+    nodes::audio::{
+        delay::{DelayLine, DelayRead, DelayWrite},
+        mixer::TrackMixer,
+        ops::{ApplyOpKind, mult_node_factory},
+        sampler::Sampler,
+        sine::Sine,
+    },
+    params::Params,
+    spec::{NodeFactory, NodeSpec},
+};
 
 /// Audio registries are simply hashmaps of String node names, and their
 /// corresponding NodeSpec.
-/// 
+///
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
 
 pub struct AudioRegistry {
@@ -38,7 +52,12 @@ impl AudioRegistry {
 }
 
 pub fn get_spec_for_runtime(name: String, runtime_factory: NodeFactory) -> (String, NodeSpec) {
-    node_spec!(name.clone(), required = [], optional = [], build = runtime_factory)
+    node_spec!(
+        name.clone(),
+        required = [],
+        optional = [],
+        build = runtime_factory
+    )
 }
 
 impl Default for AudioRegistry {
@@ -113,7 +132,9 @@ impl Default for AudioRegistry {
 
                     let chans = p.get_usize("chans").unwrap_or(2);
 
-                    let key = rb.get_delay_line_key(&name).expect(&format!("Could not find delay line key {}", name));
+                    let key = rb
+                        .get_delay_line_key(&name)
+                        .expect(&format!("Could not find delay line key {}", name));
 
                     let node = DelayRead::new(chans, key, len);
 
