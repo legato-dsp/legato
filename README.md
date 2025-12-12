@@ -18,22 +18,29 @@ Legato does not aim to be a live coding environment, rather a library to allow d
 
 At the moment, it's fairly DIY. There are a few examples for setting this up with CPAL. 
 
-If you use the DSL (WIP), you can construct a graph easily (more in /examples), like so:
+If you use the DSL (WIP), you can construct a graph easily (more in /examples).
+
+This example (examples/delay.rs) show custom pipes, node renaming, slice mapping, and setting a sink. 
 
 ```rust
 let graph = String::from(
-        r#"
-        audio {
-            sine_mono: mod { freq: 550.0 },
-            sine_stereo: carrier { freq: 440.0 },
-            mult_mono: fm_gain { val: 1000.0 }
-        }
+    r#"
+    audio {
+        sampler { sampler_name: "amen" } | logger(),
+        delay_write: dw1 { delay_name: "d_one", chans: 2 },
+        delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
+        delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 310, 330 ] },
+        track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.2, 0.2] }
+    }
 
-        mod[0] >> fm_gain[0] >> carrier[0]
+    sampler[0..2] >> track_mixer[0..2]
+    sampler[0..2] >> dw1[0..2]
+    dr1[0..2] >> track_mixer[2..4]
+    dr2[0] >> track_mixer[4..6]
 
-        { carrier }
+    { track_mixer }
     "#,
-    );
+);
     
 ```
 
@@ -47,21 +54,20 @@ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.
 
 ### Planned Features For 0.1.0
 
-- Minimal DSL or macros for graph construction
-- Port automapping in DSL
-- "Pipes" to allow users to instatiate or modify nodes -> replicate(4) gives us four nodes, something like 
-    offset({ param: "gain", alg: "linear", bounds: [0.2, 0.8]}) is planned as well.
-- Convenient abstractions for the UI layer. I think I will be targetting Tauri, Iced, and Flutter for examples for the time being.
-- Semi-tuned NixOS images
-- WASM bindings
-- FFI bindings
-- MIDI context (will poll or block dedicated thread, handle voicings) and graph
+- Delay compensation for ports
+- More nodes (pitch shifter, convolution, iir filters)
+- Matrix mixers
+- More control and UI abstractions.
+- Semi-tuned NixOS images, perhaps also Zephyr?
+- WASM bindings?
+- FFI bindings?
+- MIDI context (will poll or block dedicated thread, handle voicings) and midi graph?
 - Fancy docs
-- A number of examples (Wavetable FM, reverb, some midi stuff)
-- IIR filters (biquad, onepole, SVF)
+- A number of examples (FM, reverb, some midi stuff)
+- VST, CLAP, etc. support? Likely will look for contributions here
 
 ### Cleanup
 
 Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
 
-- We need delay compensation for the runtime, which will be on a per-port trait. Basically, we just run all of the nodes for some block size (say 4096), which incurs some latency, but then we can easily compensate to prevent phasing issues.
+- We need delay compensation down the line to prevent phasing issues if there is group delay (not sure if using term correctly).

@@ -3,7 +3,7 @@ use legato::{
     builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness,
-    nodes::audio::{delay::DelayWrite, fir::FirFilter, sine::Sine},
+    nodes::audio::{fir::FirFilter, sine::Sine},
     ports::PortBuilder,
 };
 
