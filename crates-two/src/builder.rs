@@ -1,17 +1,15 @@
 
 use std::{collections::HashMap, sync::{Arc, atomic::AtomicU64}};
-
 use arc_swap::ArcSwapOption;
-
-use crate::{ValidationError, config::Config, graph::{Connection, ConnectionEntry}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec };
+use crate::{LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::Node, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{self, NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec };
 
 
 
 pub struct AddConnectionProps {
     source: NodeKey,
-    source_kind: AddConnectionKind,
+    source_kind: PortConnectionType,
     sink: NodeKey,
-    sink_kind: AddConnectionKind,
+    sink_kind: PortConnectionType,
     rate: PortRate // Determines whether or not we look for control or audio matches
 }
 
@@ -74,10 +72,6 @@ impl<'a> ResourceBuilderView<'a> {
     }
 }
 
-
-
-
-
 /// The legato application builder.
 pub struct LegatoBuilder {
     // Namespaces are collections of registries, e.g a namespace "reverb" might contain a custom reverb alg.
@@ -115,6 +109,7 @@ impl LegatoBuilder {
 
     }
 
+    // Add a node using the params object
     pub fn add_node(&mut self, namespace: &String, name: &String, alias: Option<&String>, params: Option<&Params>) -> Result<NodeKey, ValidationError> {
         let ns = self.namespaces.get(namespace).ok_or_else(|| ValidationError::NamespaceNotFound(format!("Could not find namespace {}", namespace)))?;
         
@@ -137,9 +132,20 @@ impl LegatoBuilder {
         Ok(key)
     }
 
+    /// Ignore the params and DSL ceremony and insert a node directly
+    pub fn add_node_raw(&mut self, node: Box<dyn Node + Send>, name: &String, alias: Option<&String>, kind: &String) -> NodeKey {
+        let working_name = alias.map_or(name.clone(), |inner| inner.clone());
+
+        let key = self.runtime.add_node(node, working_name.clone(), kind.clone());
+
+        self.working_name_to_key.insert(working_name, key.clone());
+
+        key
+    }
+
     pub fn add_connection(&mut self, connection: AddConnectionProps){
         let source_indicies: Vec<usize> = match connection.source_kind  {
-            AddConnectionKind::Auto => {
+            PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let indicies = match connection.rate {
                     PortRate::Audio =>  ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
@@ -147,20 +153,20 @@ impl LegatoBuilder {
                 };
                 indicies
             }
-            AddConnectionKind::Index(i) => vec![i],
-            AddConnectionKind::Named(name) => {
+            PortConnectionType::Indexed {port} => vec![port],
+            PortConnectionType::Named {ref port} => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = match connection.rate {
-                    PortRate::Audio => ports.audio_out.iter().find(|x| x.name == name),
-                    PortRate::Control => ports.control_out.iter().find(|x| x.name == name)
-                }.expect(&format!("Could not find index for named port {}", name)).index;
+                    PortRate::Audio => ports.audio_out.iter().find(|x| x.name == port),
+                    PortRate::Control => ports.control_out.iter().find(|x| x.name == port)
+                }.expect(&format!("Could not find index for named port {}", port)).index;
                 
                 vec![index]
             },
         }; 
 
         let sink_indicies: Vec<usize> = match connection.sink_kind  {
-            AddConnectionKind::Auto => {
+            PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let indicies = match connection.rate {
                     PortRate::Audio =>  ports.audio_in.iter().enumerate().map(|(i, _)| i).collect(),
@@ -168,13 +174,13 @@ impl LegatoBuilder {
                 };
                 indicies
             }
-            AddConnectionKind::Index(i) => vec![i],
-            AddConnectionKind::Named(name) => {
+            PortConnectionType::Indexed { port } => vec![port],
+            PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = match connection.rate {
-                    PortRate::Audio => ports.audio_in.iter().find(|x| x.name == name),
-                    PortRate::Control => ports.control_in.iter().find(|x| x.name == name)
-                }.expect(&format!("Could not find index for named port {}", name)).index;
+                    PortRate::Audio => ports.audio_in.iter().find(|x| x.name == port),
+                    PortRate::Control => ports.control_in.iter().find(|x| x.name == port)
+                }.expect(&format!("Could not find index for named port {}", port)).index;
                 
                 vec![index]
             },
@@ -204,10 +210,63 @@ impl LegatoBuilder {
         Err(ValidationError::NamespaceNotFound(format!("Could not find namespace {}", namespace)))
     }
 
-    pub fn build(self) -> (Runtime, RuntimeBackend) {
+    pub fn build_from_str(mut self, file_contents: &String) -> (LegatoApp, LegatoBackend) {
+        let pairs = parse_legato_file(file_contents).unwrap();
+        let ast = build_ast(pairs).unwrap();
+
+        for scope in ast.declarations.iter(){
+            for node in scope.declarations.iter(){
+                let params_ref = node.params.as_ref().map(|o| Params(o));
+                self.add_node(&scope.namespace, &node.node_type, node.alias.as_ref(), params_ref.as_ref()).unwrap();
+            }
+        }
+
+        for connection in ast.connections.iter() {
+            let source_key = self.working_name_to_key
+                .get(&connection.source_name)
+                .expect(&format!("Could not find source key in connection {}", &connection.source_name));
+            
+            let sink_key = self.working_name_to_key
+                .get(&connection.sink_name)
+                .expect(&format!("Could not find sink key in connection {}", &connection.sink_name));
+                
+            self.add_connection(AddConnectionProps {
+                source: *source_key,
+                sink: *sink_key,
+                source_kind: connection.source_port.clone(),
+                sink_kind: connection.sink_port.clone(),
+                rate: PortRate::Audio // TODO: Control as well
+            });
+        }
+
+        let sink_key = self.working_name_to_key
+            .get(&ast.sink.name)
+            .expect("Could not find sink!");
+
+        self.runtime.set_sink_key(*sink_key)
+            .expect("Could not set sink!");
+
+        self.build()
+    }
+
+    pub fn build(mut self) -> (LegatoApp, LegatoBackend) {
+        // I am okay with leaking this onto the heap here, maybe some Rustaceans can give a second opinion
+        // I am using heapless::spsc for it's better realtime performance, not because I explicitly want to keep it on the stack
+        let queue: &'static mut heapless::spsc::Queue<LegatoMsg, 128> = Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 128>::new()));
+                
+        let (tx, rx) = queue.split();
+
+        let runtime_backend = RuntimeBackend::new(self.sample_backends);
+
+        // important because we only pass a small window of resources, instead of the whole runtime, to node's factory functions
+        self.runtime.set_resources(self.resources);
+
+        let app = LegatoApp::new(self.runtime, rx);
+        let backend = LegatoBackend::new(runtime_backend, tx);
+
         (
-            self.runtime,
-            RuntimeBackend::new(self.sample_backends)
+            app,
+            backend
         )
     }
 }

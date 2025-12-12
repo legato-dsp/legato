@@ -18,6 +18,28 @@ pub struct Ports {
     pub control_out: Vec<PortMeta>,
 }
 
+impl Ports {
+    pub fn find_port_in(&self, name: &String) -> Option<(PortMeta, PortRate)> {
+        if let Some(port) = self.audio_in.iter().find(|x| x.name == name){
+            return Some((port.clone(), PortRate::Audio))
+        }
+        if let Some(port) = self.control_in.iter().find(|x| x.name == name){
+            return Some((port.clone(), PortRate::Control))
+        }
+        None
+    }
+    pub fn find_port_out(&self, name: &String) -> Option<(PortMeta, PortRate)>{
+        if let Some(port) = self.audio_out.iter().find(|x| x.name == name){
+            return Some((port.clone(), PortRate::Audio))
+        }
+        if let Some(port) = self.control_out.iter().find(|x| x.name == name){
+            return Some((port.clone(), PortRate::Control))
+        }
+        None
+    }
+}
+
+
 impl From<PortBuilder> for Ports {
     fn from(builder: PortBuilder) -> Self {
         Ports {

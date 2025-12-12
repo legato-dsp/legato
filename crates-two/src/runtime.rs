@@ -3,6 +3,7 @@ use crate::node::{Node, Channels};
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
+use crate::resources::Resources;
 use crate::sample::{AudioSampleBackend, AudioSampleError};
 use std::fmt::Debug;
 use std::vec;
@@ -97,6 +98,9 @@ impl Runtime {
             false => Err(GraphError::NodeDoesNotExist),
         }
     }
+    pub fn set_resources(&mut self, resources: Resources){
+        self.context.set_resources(resources);
+    }
     pub fn get_context_mut(&mut self) -> &mut AudioContext {
         &mut self.context
     }
@@ -113,6 +117,9 @@ impl Runtime {
     pub fn get_node_ports(&self, key: &NodeKey) -> &Ports {
         // Unwrapping becuase for now this is only used during application creation
         self.graph.get_node(*key).unwrap().ports()
+    }
+    pub fn get_node(&self, key: &NodeKey) -> Option<&Box<dyn Node + Send>> {
+        self.graph.get_node(*key)
     }
     // TODO: Graphs as nodes again
     pub fn next_block(

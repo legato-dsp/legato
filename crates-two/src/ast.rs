@@ -103,8 +103,6 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
         }
     }
 
-    dbg!(&ast);
-
     Ok(ast)
 }
 
@@ -279,3 +277,4 @@ fn parse_object<'i>(pair: Pair<'i, Rule>) -> Result<Object, BuildAstError> {
 fn parse_array(pair: Pair<Rule>) -> Result<Vec<Value>, BuildAstError> {
     Ok(pair.into_inner().map(|x| parse_value(x).unwrap()).collect())
 }
+

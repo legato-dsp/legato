@@ -43,12 +43,12 @@ macro_rules! node_spec {
             $(opt_params.insert(String::from($opt));)*
 
             
-            NodeSpec {
+            ($name, NodeSpec {
                 name: $name,
                 required_params: req_params,
                 optional_params: opt_params,
                 build: $build, // build must be factory function with type Box<dyn Fn(&Params) -> Result<AddNode, ValidationError> + Send + Sync>
-            }
+            })
             
         }
     };
