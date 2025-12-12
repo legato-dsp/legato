@@ -163,6 +163,13 @@ impl LegatoBuilder {
                 
                 vec![index]
             },
+            PortConnectionType::Slice { start, end } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).collect::<Vec<_>>()
+            }
         }; 
 
         let sink_indicies: Vec<usize> = match connection.sink_kind  {
@@ -184,6 +191,13 @@ impl LegatoBuilder {
                 
                 vec![index]
             },
+            PortConnectionType::Slice { start, end } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).collect::<Vec<_>>()
+            }
         }; 
 
         let source_arity = source_indicies.len();

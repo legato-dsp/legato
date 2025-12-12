@@ -53,10 +53,11 @@ add_node = {
 
 node = @{ ident }
 
-port_name = { ident }
+port_name = { "." ~ !WHITESPACE ~ ident }
+port_slice = { "[" ~ uint ~ ".." ~ uint ~ "]" }
 port_index = { "[" ~ uint ~ "]"}
 
-node_with_port = { node ~ !WHITESPACE ~ ("." ~ !WHITESPACE ~ port_name | port_index) }
+node_with_port = { node ~ !WHITESPACE ~ (port_name | port_slice | port_index) }
 
 connection = { (node_with_port | node) ~ (">>" ~ (node_with_port | node))+ }
 connections = _{ connection+ }

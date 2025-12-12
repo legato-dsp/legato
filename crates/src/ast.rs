@@ -70,6 +70,10 @@ pub enum PortConnectionType {
     Named {
         port: String,
     },
+    Slice {
+        start: usize,
+        end: usize
+    },
     #[default]
     Auto,
 }
@@ -216,6 +220,25 @@ fn parse_node_or_node_with_port(
                             .parse::<usize>()
                             .map_err(|e| BuildAstError::ConstructionError(format!("{}", e)))?;
                         PortConnectionType::Indexed { port: num }
+                    },
+                    Rule::port_slice => {
+                        let mut inner = port_spec.into_inner();
+
+                        let start = inner
+                            .next()
+                            .unwrap()
+                            .as_str()
+                            .parse::<usize>()
+                            .map_err(|e| BuildAstError::ConstructionError(format!("{}", e)))?;
+
+                        let end = inner
+                            .next()
+                            .unwrap()
+                            .as_str()
+                            .parse::<usize>()
+                            .map_err(|e| BuildAstError::ConstructionError(format!("{}", e)))?;
+
+                        PortConnectionType::Slice { start, end }
                     }
                     _ => PortConnectionType::Auto,
                 }

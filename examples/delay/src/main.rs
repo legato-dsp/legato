@@ -14,17 +14,10 @@ fn main() {
             track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.2, 0.2] }
         }
 
-        sampler[0] >> track_mixer[0]
-        sampler[1] >> track_mixer[1]
-
-        sampler[0] >> dw1[0]
-        sampler[1] >> dw1[1]
-
-        dr1[0] >> track_mixer[2]
-        dr1[1] >> track_mixer[3]
-
-        dr2[0] >> track_mixer[4]
-        dr2[0] >> track_mixer[5]
+        sampler[0..2] >> track_mixer[0..2]
+        sampler[0..2] >> dw1[0..2]
+        dr1[0..2] >> track_mixer[2..4]
+        dr2[0] >> track_mixer[4..6]
 
         { track_mixer }
     "#,
