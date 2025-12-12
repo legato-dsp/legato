@@ -1,0 +1,101 @@
+diff --git a/crates/grammar.pest b/crates/grammar.pest
+index b7116ee..284f260 100644
+--- a/crates/grammar.pest
++++ b/crates/grammar.pest
+@@ -53,16 +53,22 @@ add_node = {
+ 
+ node = @{ ident }
+ 
++tuple_index = { "." ~ !WHITESPACE ~ uint }
++node_with_tuple_index = { node ~ tuple_index }
++
++node_reference = _{ node_with_tuple_index | node }
++
+ port_name = { "." ~ !WHITESPACE ~ ident }
+ port_slice = { "[" ~ uint ~ ".." ~ uint ~ "]" }
+ port_index = { "[" ~ uint ~ "]"}
+ 
+-node_with_port = { node ~ !WHITESPACE ~ (port_name | port_slice | port_index) }
++port = _{ (port_name | port_slice | port_index) }
++
++node_with_port = { node_reference ~ tuple_index? ~ !WHITESPACE ~ port }
+ 
+ connection = { (node_with_port | node) ~ (">>" ~ (node_with_port | node))+ }
+ connections = _{ connection+ }
+ 
+-
+ // Sink
+ 
+ sink = { "{" ~ ident ~ "}" }
+diff --git a/crates/src/ast.rs b/crates/src/ast.rs
+index 923a584..89e0bfd 100644
+--- a/crates/src/ast.rs
++++ b/crates/src/ast.rs
+@@ -25,15 +25,17 @@ pub struct NodeDeclaration {
+     pub node_type: String,
+     pub alias: Option<String>,
+     pub params: Option<Object>,
+-    pub pipes: Vec<Pipe>,
++    pub pipes: Vec<ASTPipe>,
+ }
+ 
+ #[derive(Debug, Clone, PartialEq, Default)]
+-pub struct Pipe {
++pub struct ASTPipe {
+     pub name: String,
+     pub params: Option<Value>,
+ }
+ 
++
++
+ #[derive(Debug, Clone, PartialEq)]
+ pub enum Value {
+     F32(f32),
+@@ -154,11 +156,11 @@ fn parse_node<'i>(pair: Pair<'i, Rule>) -> Result<NodeDeclaration, BuildAstError
+     Ok(node)
+ }
+ 
+-fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<Pipe, BuildAstError> {
++fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<ASTPipe, BuildAstError> {
+     let mut inner = pair.into_inner();
+     let name = inner.next().unwrap().as_str().to_string();
+     let params = inner.next().map(|x| parse_value(x).unwrap());
+-    Ok(Pipe { name, params })
++    Ok(ASTPipe { name, params })
+ }
+ 
+ fn parse_connection<'i>(pair: Pair<'i, Rule>) -> Result<Vec<AstNodeConnection>, BuildAstError> {
+diff --git a/crates/src/builder.rs b/crates/src/builder.rs
+index a946bde..f6ad120 100644
+--- a/crates/src/builder.rs
++++ b/crates/src/builder.rs
+@@ -143,6 +143,7 @@ impl LegatoBuilder {
+         key
+     }
+ 
++    /// Add a connection by specifying the node and connection type
+     pub fn add_connection(&mut self, connection: AddConnectionProps){
+         let source_indicies: Vec<usize> = match connection.source_kind  {
+             PortConnectionType::Auto => {
+diff --git a/crates/src/lib.rs b/crates/src/lib.rs
+index 5c9724a..11e3657 100644
+--- a/crates/src/lib.rs
++++ b/crates/src/lib.rs
+@@ -26,6 +26,7 @@ pub mod sample;
+ pub mod builder;
+ pub mod out;
+ pub mod harness;
++pub mod pipes;
+ 
+ pub mod nodes;
+ 
+@@ -42,7 +43,8 @@ pub enum ValidationError {
+     InvalidParameter(String),
+     MissingRequiredParameters(String),
+     MissingRequiredParameter(String),
+-    ResourceNotFound(String)
++    ResourceNotFound(String),
++    PipeNotFound(String)
+ }
+ 
+ #[derive(Debug, Clone, PartialEq)]

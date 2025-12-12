@@ -1,4 +1,3 @@
-# Updated flake.nix with nightly Rust toolchain integration
 {
   description = "A minimal development and testing environment for Legato with Rust nightly";
 
@@ -6,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
 
-    # Python infra
+    # Python config
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -25,7 +24,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Rust nightly machinery
+    # Rust nightly overlay
     naersk.url = "github:nix-community/naersk";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
