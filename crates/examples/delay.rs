@@ -5,6 +5,8 @@ use legato::{
     builder::LegatoBuilder, config::Config, out::start_application_audio_thread, pipes::{Pipe, PipeResult}, ports::PortBuilder
 };
 
+// Example registering a custom pipe, using aliasing, and the spread operator for indexing
+
 struct Logger {}
 
 impl Pipe for Logger {
