@@ -6,7 +6,7 @@ use cpal::{
 };
 use hound::{WavSpec, WavWriter};
 
-use crate::runtime::Runtime;
+use crate::{LegatoApp, runtime::Runtime};
 
 use assert_no_alloc::*;
 
@@ -75,6 +75,47 @@ pub fn start_runtime_audio_thread(
         &config.clone(),
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             assert_no_alloc(|| write_runtime_data_cpal(data, &config, &mut runtime))
+        },
+        |err| eprintln!("An output stream error occurred: {}", err),
+        None,
+    )?;
+
+    stream.play().unwrap();
+
+    std::thread::park();
+
+    Ok(())
+}
+
+
+
+
+#[inline(always)]
+fn write_runtime_data_cpal_app<T>(output: &mut [T], config: &StreamConfig, app: &mut LegatoApp)
+where
+    T: SizedSample + FromSample<f64>,
+{
+    let next_block = app.next_block(None);
+
+    let chans = config.channels as usize;
+
+    for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
+        for (channel, sample) in frame.iter_mut().enumerate() {
+            let pipeline_next_frame = &next_block[channel];
+            *sample = T::from_sample(pipeline_next_frame[frame_index] as f64);
+        }
+    }
+}
+
+pub fn start_application_audio_thread(
+    device: &Device,
+    config: StreamConfig,
+    mut app: LegatoApp,
+) -> Result<(), BuildStreamError> {
+    let stream = device.build_output_stream(
+        &config.clone(),
+        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            assert_no_alloc(|| write_runtime_data_cpal_app(data, &config, &mut app))
         },
         |err| eprintln!("An output stream error occurred: {}", err),
         None,

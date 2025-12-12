@@ -1,5 +1,7 @@
+use std::path::Path;
+
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
-use legato::{builder::LegatoBuilder, config::Config, ports::PortBuilder};
+use legato::{builder::LegatoBuilder, config::Config, out::{start_application_audio_thread, start_runtime_audio_thread}, ports::PortBuilder};
 
 fn main() {
     let graph = String::from(
@@ -37,7 +39,7 @@ fn main() {
             initial_graph_capacity: 4
     };
 
-    let (app, backend) = LegatoBuilder::new(config, 
+    let (app, mut backend) = LegatoBuilder::new(config, 
         PortBuilder::default()
         .audio_out(2)
         .build()
@@ -46,7 +48,7 @@ fn main() {
 
     let _ = backend.load_sample(
         &String::from("amen"),
-        &String::from("../../crates/samples/amen.wav"),
+        Path::new("../../samples/amen.wav"),
         2,
         config.sample_rate as u32,
     );
@@ -67,5 +69,5 @@ fn main() {
         buffer_size: cpal::BufferSize::Fixed(config.audio_block_size as u32),
     };
 
-    start_runtime_audio_thread(&device, stream_config, runtime).expect("Audio thread panic!")
+    start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!")
 }
