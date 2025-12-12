@@ -10,7 +10,7 @@ use crate::{
     },
     params::Params,
     parse::parse_legato_file,
-    pipes::PipeRegistry,
+    pipes::{Pipe, PipeRegistry},
     ports::{PortRate, Ports},
     registry::AudioRegistry,
     resources::{DelayLineKey, Resources, SampleKey},
@@ -305,6 +305,14 @@ impl LegatoBuilder {
             "Could not find namespace {}",
             namespace
         )))
+    }
+
+    pub fn register_pipe(
+        &mut self,
+        name: &String,
+        pipe: Box<dyn Pipe>
+    ){
+        self.pipes.add(name.clone(), pipe);
     }
 
     pub fn build_from_str(mut self, file_contents: &String) -> (LegatoApp, LegatoBackend) {

@@ -2,17 +2,23 @@ use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
-    builder::LegatoBuilder,
-    config::Config,
-    out::{start_application_audio_thread, start_runtime_audio_thread},
-    ports::PortBuilder,
+    builder::LegatoBuilder, config::Config, out::start_application_audio_thread, pipes::{Pipe, PipeResult}, ports::PortBuilder
 };
+
+struct Logger {}
+
+impl Pipe for Logger {
+    fn pipe(&self, inputs: PipeResult, _props: Option<legato::ast::Value>) -> legato::pipes::PipeResult {
+        dbg!(&inputs);
+        inputs
+    }
+}
 
 fn main() {
     let graph = String::from(
         r#"
         audio {
-            sampler { sampler_name: "amen" },
+            sampler { sampler_name: "amen" } | logger(),
             delay_write: dw1 { delay_name: "d_one", chans: 2 },
             delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
             delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 310, 330 ] },
@@ -37,9 +43,11 @@ fn main() {
         initial_graph_capacity: 4,
     };
 
-    let (app, mut backend) =
-        LegatoBuilder::new(config, PortBuilder::default().audio_out(2).build())
-            .build_from_str(&graph);
+    
+    let mut builder = LegatoBuilder::new(config, PortBuilder::default().audio_out(2).build());
+    builder.register_pipe(&"logger".into(), Box::new(Logger {}));
+            
+    let (app, mut backend) = builder.build_from_str(&graph);
 
     let _ = backend.load_sample(
         &String::from("amen"),
@@ -47,8 +55,6 @@ fn main() {
         2,
         config.sample_rate as u32,
     );
-
-    dbg!(&app);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");

@@ -126,7 +126,5 @@ pub fn decode_with_ffmpeg(path: &str, chans: usize, sr: u32) -> std::io::Result<
         }
     }
 
-    println!("{}", per_channel[0].len());
-
     Ok(AudioSample::new(chans, per_channel))
 }

@@ -37,6 +37,7 @@ impl Default for PipeRegistry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum PipeResult {
     Node(NodeDeclaration),
     Vec(Vec<NodeDeclaration>),
