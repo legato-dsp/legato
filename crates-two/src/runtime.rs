@@ -1,16 +1,21 @@
-use crate::ports::{PortRate, Ported, Ports};
+use crate::ports::{PortRate, Ports};
 use crate::node::{Node, Channels};
 use crate::config::Config;
 use crate::context::AudioContext;
-use crate::graph::{AudioGraph, Connection, GraphError, NodeKey};
+use crate::graph::{AudioGraph, Connection, GraphError};
 use crate::sample::{AudioSampleBackend, AudioSampleError};
 use std::fmt::Debug;
 use std::vec;
 
-use slotmap::SecondaryMap;
+use slotmap::{SecondaryMap, new_key_type};
 
 // Arbitrary max init. inputs
 pub const MAX_INITIAL_INPUTS: usize = 32;
+
+new_key_type! { 
+    /// A slotmap key corresponding to a particular node.
+    pub struct NodeKey; 
+}
 
 pub struct Runtime {
     // Audio context containing sample rate, control rate, etc.

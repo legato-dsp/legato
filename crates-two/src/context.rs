@@ -23,6 +23,9 @@ impl AudioContext {
     pub fn get_resources(&self) -> &Resources {
         &self.resources
     }
+    pub fn set_resources(&mut self, resources: Resources) {
+        self.resources = resources;
+    }
     pub fn get_resources_mut(&mut self) -> &mut Resources {
         &mut self.resources
     }

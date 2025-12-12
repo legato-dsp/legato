@@ -1,4 +1,4 @@
-use crate::{NodeKey, ports::PortRate};
+use crate::{ports::PortRate, runtime::NodeKey};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct ConnectionEntry {

@@ -1,8 +1,8 @@
 use indexmap::IndexSet;
-use slotmap::{SecondaryMap, SlotMap, new_key_type};
+use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{node::{Node, NodeWithMeta}, ports::PortRate};
+use crate::{node::{Node, NodeWithMeta}, ports::PortRate, runtime::NodeKey};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -10,8 +10,6 @@ pub enum GraphError {
     CycleDetected,
     NodeDoesNotExist,
 }
-
-new_key_type! { pub struct NodeKey; }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct ConnectionEntry {
