@@ -41,7 +41,7 @@ fn main() {
 
     let _ = backend.load_sample(
         &String::from("amen"),
-        Path::new("../../samples/amen.wav"),
+        Path::new("../samples/amen.wav"),
         2,
         config.sample_rate as u32,
     );

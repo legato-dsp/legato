@@ -167,15 +167,13 @@ fn ast_node_with_pipe_expands_into_multiple_nodes_and_connects() {
 
     let ast = parse_ast(graph);
 
-    // one scope
     assert_eq!(ast.declarations.len(), 1);
     let scope = &ast.declarations[0];
     assert_eq!(scope.namespace, "audio");
 
-    // osc expands, gain stays single
     assert_eq!(scope.declarations.len(), 2);
 
-    // first declaration should be Multiple
+    // First declaration has tuple "indexing"
     match &scope.declarations[0] {
         ExpandedNode::Multiple(nodes) => {
             assert_eq!(nodes.len(), 2);
@@ -189,7 +187,7 @@ fn ast_node_with_pipe_expands_into_multiple_nodes_and_connects() {
         _ => panic!("expected expanded node from pipe"),
     }
 
-    // second declaration should be a normal node
+    // Second declaration is normal node
     match &scope.declarations[1] {
         ExpandedNode::Node(inner) => {
             assert_eq!(inner.node_type, "gain");
@@ -217,6 +215,72 @@ fn ast_node_with_pipe_expands_into_multiple_nodes_and_connects() {
         ast.sink,
         Sink {
             name: "gain".to_string()
+        }
+    );
+}
+
+#[test]
+fn ast_graph_with_replicate_tuple_index_and_port_slices_using_aliases() {
+    let graph = r#"
+        audio {
+            osc: mono_osc { freq: 220.0 } | replicate(4),
+            gain: mc_gain { chans: 4 }
+        }
+
+        // select a specific replicated node, then slice its ports
+        mono_osc.2[0..2] >> mc_gain[1..3]
+
+        { mc_gain }
+    "#;
+
+    let ast = parse_ast(graph);
+
+    assert_eq!(ast.declarations.len(), 1);
+    let scope = &ast.declarations[0];
+    assert_eq!(scope.namespace, "audio");
+
+    assert_eq!(scope.declarations.len(), 2);
+
+    match &scope.declarations[0] {
+        ExpandedNode::Multiple(nodes) => {
+            assert_eq!(nodes.len(), 4);
+
+            for (i, node) in nodes.iter().enumerate() {
+                assert_eq!(node.node_type, "osc");
+                assert_eq!(node.alias, format!("mono_osc.{}", i));
+            }
+        }
+        _ => panic!("expected replicated mono_osc nodes"),
+    }
+
+    match &scope.declarations[1] {
+        ExpandedNode::Node(inner) => {
+            assert_eq!(inner.node_type, "gain");
+            assert_eq!(inner.alias, "mc_gain");
+        }
+        _ => panic!("expected single mc_gain node"),
+    }
+
+    assert_eq!(ast.connections.len(), 1);
+    let conn = &ast.connections[0];
+
+    assert_eq!(conn.source_name, "mono_osc.2");
+    assert_eq!(conn.sink_name, "mc_gain");
+
+    assert_eq!(
+        conn.source_port,
+        PortConnectionType::Slice { start: 0, end: 2 }
+    );
+
+    assert_eq!(
+        conn.sink_port,
+        PortConnectionType::Slice { start: 1, end: 3 }
+    );
+
+    assert_eq!(
+        ast.sink,
+        Sink {
+            name: "mc_gain".to_string()
         }
     );
 }
