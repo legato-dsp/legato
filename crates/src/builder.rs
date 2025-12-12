@@ -1,7 +1,7 @@
 
 use std::{collections::HashMap, sync::{Arc, atomic::AtomicU64}};
 use arc_swap::ArcSwapOption;
-use crate::{LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::Node, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{self, NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec };
+use crate::{LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{ExpandedNode, PortConnectionType, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::Node, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::PipeRegistry, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{self, NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec };
 
 
 
@@ -76,6 +76,8 @@ impl<'a> ResourceBuilderView<'a> {
 pub struct LegatoBuilder {
     // Namespaces are collections of registries, e.g a namespace "reverb" might contain a custom reverb alg.
     namespaces: HashMap<String, AudioRegistry>,
+    // A registry of pipe functions
+    pipes: PipeRegistry,
     // Nodes can have a default/working name or alias. This map keeps track of that and maps to the actual node key.
     working_name_to_key: HashMap<String, NodeKey>,
     // The actual runtime being built
@@ -100,6 +102,7 @@ impl LegatoBuilder {
         Self {
             namespaces,
             working_name_to_key: HashMap::new(),
+            pipes: PipeRegistry::default(),
             runtime,
             resources: Resources::default(),
             sample_name_to_key: HashMap::new(),
@@ -110,7 +113,7 @@ impl LegatoBuilder {
     }
 
     // Add a node using the params object
-    pub fn add_node(&mut self, namespace: &String, name: &String, alias: Option<&String>, params: Option<&Params>) -> Result<NodeKey, ValidationError> {
+    pub fn add_node(&mut self, namespace: &String, name: &String, alias: &String, params: &Params) -> Result<NodeKey, ValidationError> {
         let ns = self.namespaces.get(namespace).ok_or_else(|| ValidationError::NamespaceNotFound(format!("Could not find namespace {}", namespace)))?;
         
         let mut resource_builder_view = ResourceBuilderView {
@@ -123,11 +126,9 @@ impl LegatoBuilder {
 
         let node = ns.get_node(&mut resource_builder_view, name, params).map_err(|_| ValidationError::NodeNotFound(format!("Could not find node {}", name)))?;
 
-        let working_name = alias.map_or(name.clone(), |inner| inner.clone());
+        let key = self.runtime.add_node(node, alias.clone(), name.clone());
 
-        let key = self.runtime.add_node(node, working_name.clone(), name.clone());
-
-        self.working_name_to_key.insert(working_name, key.clone());
+        self.working_name_to_key.insert(alias.to_string(), key.clone());
 
         Ok(key)
     }
@@ -143,6 +144,7 @@ impl LegatoBuilder {
         key
     }
 
+    /// Add a connection by specifying the node and connection type
     pub fn add_connection(&mut self, connection: AddConnectionProps){
         let source_indicies: Vec<usize> = match connection.source_kind  {
             PortConnectionType::Auto => {
@@ -226,12 +228,20 @@ impl LegatoBuilder {
 
     pub fn build_from_str(mut self, file_contents: &String) -> (LegatoApp, LegatoBackend) {
         let pairs = parse_legato_file(file_contents).unwrap();
-        let ast = build_ast(pairs).unwrap();
+        let ast = build_ast(pairs, &self.pipes).unwrap();
 
         for scope in ast.declarations.iter(){
             for node in scope.declarations.iter(){
-                let params_ref = node.params.as_ref().map(|o| Params(o));
-                self.add_node(&scope.namespace, &node.node_type, node.alias.as_ref(), params_ref.as_ref()).unwrap();
+                match node {
+                    ExpandedNode::Node(inner) => {
+                        self.add_node(&scope.namespace, &inner.node_type, &inner.alias, &Params(&inner.params)).unwrap();
+                    },
+                    ExpandedNode::Multiple(inner) => {
+                        for item in inner {
+                            self.add_node(&scope.namespace, &item.node_type, &item.alias, &Params(&item.params)).unwrap();
+                        }
+                    }
+                }
             }
         }
 

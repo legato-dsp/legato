@@ -36,6 +36,9 @@ scope_name = @{ ident }
 scope_block = { scope_name ~ "{" ~ add_nodes? ~ "}" }
 
 node_type = @{ ident }
+
+tuple_index = { "." ~ !WHITESPACE ~ uint }
+
 node_alias = _{ ":" ~ alias_name }
 alias_name = @{ ident }
 
@@ -51,7 +54,7 @@ add_node = {
 
 // Connections
 
-node = @{ ident }
+node = @{ ident ~ ("." ~ !WHITESPACE ~ uint)? }
 
 port_name = { "." ~ !WHITESPACE ~ ident }
 port_slice = { "[" ~ uint ~ ".." ~ uint ~ "]" }

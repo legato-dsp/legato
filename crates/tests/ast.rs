@@ -1,16 +1,22 @@
 use legato::{
-    ast::{Ast, PortConnectionType, Sink, Value, build_ast},
-    parse::{LegatoParser, Rule},
+    ast::{Ast, ExpandedNode, PortConnectionType, Sink, Value, build_ast},
+    parse::{LegatoParser, Rule, print_pair}, pipes::PipeRegistry,
 };
 use pest::Parser;
 
 fn parse_ast(input: &str) -> Ast {
     let pairs = LegatoParser::parse(Rule::graph, input).expect("PEST failed");
-    build_ast(pairs).expect("AST lowering failed")
+
+    print_pair(&(pairs.clone().next().unwrap()), 4);
+
+    let registry = PipeRegistry::default();
+
+    build_ast(pairs, &registry).expect("AST lowering failed")
 }
 
 #[test]
 fn ast_node_with_alias_and_params() {
+
     let ast = parse_ast(
         r#"
         audio {
@@ -25,14 +31,18 @@ fn ast_node_with_alias_and_params() {
     assert_eq!(scope.namespace, "audio");
 
     assert_eq!(scope.declarations.len(), 1);
-    let node = &scope.declarations[0];
+    let node_one = &scope.declarations[0];
 
-    assert_eq!(node.node_type, "osc");
-    assert_eq!(node.alias.as_deref(), Some("square_wave_one"));
+    match node_one {
+        ExpandedNode::Node(inner) => {
+            assert_eq!(inner.node_type, "osc");
+            assert_eq!(inner.alias, "square_wave_one");
 
-    let params = node.params.as_ref().unwrap();
-    assert_eq!(params["freq"], Value::U32(440));
-    assert_eq!(params["gain"], Value::F32(0.2));
+            assert_eq!(inner.params["freq"], Value::U32(440));
+            assert_eq!(inner.params["gain"], Value::F32(0.2));
+        },
+        _ => panic!()
+    };
 
     let sink = ast.sink;
     assert_eq!(
@@ -45,8 +55,7 @@ fn ast_node_with_alias_and_params() {
 
 #[test]
 fn ast_graph_with_connections() {
-    let graph = String::from(
-        r#"
+    let graph = r#"
         audio {
             sine_mono: mod { freq: 891.0 },
             sine_stereo: carrier { freq: 440.0 },
@@ -56,19 +65,33 @@ fn ast_graph_with_connections() {
         mod[0] >> fm_gain[0] >> carrier[0]
 
         { carrier }
-    "#,
-    );
+    "#;
 
-    let ast = parse_ast(&graph);
+    let ast = parse_ast(graph);
 
+    assert_eq!(ast.declarations.len(), 1);
     assert_eq!(ast.connections.len(), 2);
 
-    let audio_scope = &ast.declarations[0];
+    let c0 = &ast.connections[0];
+    let c1 = &ast.connections[1];
 
-    assert_eq!(audio_scope.namespace, "audio");
+    assert!(matches!(
+        (&c0.source_port, &c0.sink_port),
+        (
+            PortConnectionType::Indexed { port: 0 },
+            PortConnectionType::Indexed { port: 0 }
+        )
+    ));
 
-    assert_eq!(ast.connections.len(), 2);
+    assert!(matches!(
+        (&c1.source_port, &c1.sink_port),
+        (
+            PortConnectionType::Indexed { port: 0 },
+            PortConnectionType::Indexed { port: 0 }
+        )
+    ));
 }
+
 
 #[test]
 fn ast_graph_with_port_slices() {
@@ -86,7 +109,6 @@ fn ast_graph_with_port_slices() {
 
     let ast = parse_ast(graph);
 
-    // ----- scopes -----
     assert_eq!(ast.declarations.len(), 1);
     let scope = &ast.declarations[0];
     assert_eq!(scope.namespace, "audio");
@@ -95,11 +117,23 @@ fn ast_graph_with_port_slices() {
     let osc = &scope.declarations[0];
     let gain = &scope.declarations[1];
 
-    assert_eq!(osc.node_type, "osc");
-    assert_eq!(osc.alias.as_deref(), Some("stereo_osc"));
+    match osc {
+        ExpandedNode::Node(inner) => {
+             assert_eq!(inner.node_type, "osc");
+            assert_eq!(inner.alias, "stereo_osc");
 
-    assert_eq!(gain.node_type, "gain");
-    assert_eq!(gain.alias.as_deref(), Some("stereo_gain"));
+        },
+        _ => panic!()
+    };
+
+    match gain {
+        ExpandedNode::Node(inner) => {
+             assert_eq!(inner.node_type, "gain");
+            assert_eq!(inner.alias, "stereo_gain");
+
+        },
+        _ => panic!()
+    };
 
     assert_eq!(ast.connections.len(), 1);
     let conn = &ast.connections[0];
@@ -113,5 +147,76 @@ fn ast_graph_with_port_slices() {
     assert_eq!(
         ast.sink,
         Sink { name: "gain_stage".to_string() }
+    );
+}
+
+#[test]
+fn ast_node_with_pipe_expands_into_multiple_nodes_and_connects() {
+    let graph = r#"
+        audio {
+            osc: stereo_osc { freq: 440.0 } | replicate(2),
+            gain: stereo_gain { val: 0.5 }
+        }
+
+        // connect both expanded osc nodes into gain
+        stereo_osc.0 >> stereo_gain[0]
+        stereo_osc.1 >> stereo_gain[1]
+
+        { gain }
+    "#;
+
+    let ast = parse_ast(graph);
+
+    // one scope
+    assert_eq!(ast.declarations.len(), 1);
+    let scope = &ast.declarations[0];
+    assert_eq!(scope.namespace, "audio");
+
+    // osc expands, gain stays single
+    assert_eq!(scope.declarations.len(), 2);
+
+    // first declaration should be Multiple
+    match &scope.declarations[0] {
+        ExpandedNode::Multiple(nodes) => {
+            assert_eq!(nodes.len(), 2);
+
+            assert_eq!(nodes[0].node_type, "osc");
+            assert_eq!(nodes[0].alias, "stereo_osc.0");
+
+            assert_eq!(nodes[1].node_type, "osc");
+            assert_eq!(nodes[1].alias, "stereo_osc.1");
+        }
+        _ => panic!("expected expanded node from pipe"),
+    }
+
+    // second declaration should be a normal node
+    match &scope.declarations[1] {
+        ExpandedNode::Node(inner) => {
+            assert_eq!(inner.node_type, "gain");
+            assert_eq!(inner.alias, "stereo_gain");
+        }
+        _ => panic!("expected single gain node"),
+    }
+
+    // two explicit connections
+    assert_eq!(ast.connections.len(), 2);
+
+    let c0 = &ast.connections[0];
+    let c1 = &ast.connections[1];
+
+    assert_eq!(c0.source_name, "stereo_osc.0");
+    assert_eq!(c0.sink_name, "stereo_gain");
+    assert_eq!(c0.sink_port, PortConnectionType::Indexed { port: 0 });
+
+    assert_eq!(c1.source_name, "stereo_osc.1");
+    assert_eq!(c1.sink_name, "stereo_gain");
+    assert_eq!(c1.sink_port, PortConnectionType::Indexed { port: 1 });
+
+    // sink
+    assert_eq!(
+        ast.sink,
+        Sink {
+            name: "gain".to_string()
+        }
     );
 }

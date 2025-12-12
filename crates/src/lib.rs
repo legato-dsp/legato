@@ -26,6 +26,7 @@ pub mod sample;
 pub mod builder;
 pub mod out;
 pub mod harness;
+pub mod pipes;
 
 pub mod nodes;
 
@@ -42,7 +43,8 @@ pub enum ValidationError {
     InvalidParameter(String),
     MissingRequiredParameters(String),
     MissingRequiredParameter(String),
-    ResourceNotFound(String)
+    ResourceNotFound(String),
+    PipeNotFound(String)
 }
 
 #[derive(Debug, Clone, PartialEq)]

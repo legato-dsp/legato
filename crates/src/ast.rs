@@ -3,7 +3,7 @@ use std::vec::Vec;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::parse::{Rule};
+use crate::{parse::Rule, pipes::{PipeRegistry, PipeResult}};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
@@ -17,7 +17,7 @@ pub struct Ast {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeclarationScope {
     pub namespace: String,
-    pub declarations: Vec<NodeDeclaration>,
+    pub declarations: Vec<ExpandedNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -25,11 +25,24 @@ pub struct NodeDeclaration {
     pub node_type: String,
     pub alias: Option<String>,
     pub params: Option<Object>,
-    pub pipes: Vec<Pipe>,
+    pub pipes: Vec<ASTPipe>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExpandedNode {
+    Node(ExpandedNodeItem),
+    Multiple(Vec<ExpandedNodeItem>)
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Pipe {
+pub struct ExpandedNodeItem {
+    pub node_type: String,
+    pub alias: String,
+    pub params: Object,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ASTPipe {
     pub name: String,
     pub params: Option<Value>,
 }
@@ -88,12 +101,12 @@ pub enum BuildAstError {
     ConstructionError(String),
 }
 
-pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
+pub fn build_ast(pairs: Pairs<Rule>, pipe_registry: &PipeRegistry) -> Result<Ast, BuildAstError> {
     let mut ast = Ast::default();
 
     for declaration in pairs.into_iter() {
         match declaration.as_rule() {
-            Rule::scope_block => ast.declarations.push(parse_scope_block(declaration)?),
+            Rule::scope_block => ast.declarations.push(parse_scope_block(declaration, pipe_registry)?),
             Rule::connection => ast.connections.append(&mut parse_connection(declaration)?),
             Rule::sink => {
                 let mut inner = declaration.into_inner();
@@ -110,7 +123,7 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
     Ok(ast)
 }
 
-fn parse_scope_block<'i>(pair: Pair<'i, Rule>) -> Result<DeclarationScope, BuildAstError> {
+fn parse_scope_block<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> Result<DeclarationScope, BuildAstError> {
     let mut inner = pair.into_inner();
     let scope_name = inner.next().unwrap().as_str().to_string();
     let mut declarations = vec![];
@@ -119,7 +132,7 @@ fn parse_scope_block<'i>(pair: Pair<'i, Rule>) -> Result<DeclarationScope, Build
         match pair.as_rule() {
             Rule::add_nodes => {
                 for node in pair.into_inner() {
-                    declarations.push(parse_node(node)?);
+                    declarations.push(parse_node(node, pipe_registry)?);
                 }
             }
             _ => (),
@@ -132,8 +145,9 @@ fn parse_scope_block<'i>(pair: Pair<'i, Rule>) -> Result<DeclarationScope, Build
     })
 }
 
-fn parse_node<'i>(pair: Pair<'i, Rule>) -> Result<NodeDeclaration, BuildAstError> {
+fn parse_node<'i>(pair: Pair<'i, Rule>, pipe_registry: &PipeRegistry) -> Result<ExpandedNode, BuildAstError> {
     let mut node = NodeDeclaration::default();
+
     node.alias = None;
 
     for p in pair.into_inner() {
@@ -151,14 +165,34 @@ fn parse_node<'i>(pair: Pair<'i, Rule>) -> Result<NodeDeclaration, BuildAstError
         }
     }
 
-    Ok(node)
+    let mut result = PipeResult::Node(node.clone());
+
+    for pipe in node.pipes {
+        let boxed_pipe = pipe_registry.get(&pipe.name).map_err(|_| BuildAstError::ConstructionError(format!("Cannot find pipe {}", pipe.name)))?;
+        result = boxed_pipe.as_ref().pipe(result, pipe.params);
+    }
+
+    match result {
+        PipeResult::Node(n) => {
+            Ok(ExpandedNode::Node(ExpandedNodeItem { node_type: n.node_type.clone(), alias: n.alias.unwrap_or(n.node_type), params: n.params.unwrap_or(BTreeMap::new()) }))
+        },
+        PipeResult::Vec(nodes) => {
+            Ok(ExpandedNode::Multiple(
+                nodes.iter().cloned().enumerate().map(|(i, x)| {
+                    let alias_name = x.alias.unwrap_or(x.node_type.clone());
+                    let alias_with_index = format!("{}.{}", alias_name, i);
+
+                    ExpandedNodeItem { node_type: x.node_type, alias: alias_with_index, params: x.params.unwrap_or(BTreeMap::new()) }
+            }).collect()))
+        }
+    }
 }
 
-fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<Pipe, BuildAstError> {
+fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<ASTPipe, BuildAstError> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let params = inner.next().map(|x| parse_value(x).unwrap());
-    Ok(Pipe { name, params })
+    Ok(ASTPipe { name, params })
 }
 
 fn parse_connection<'i>(pair: Pair<'i, Rule>) -> Result<Vec<AstNodeConnection>, BuildAstError> {

@@ -1,6 +1,4 @@
-use std::{collections::{BTreeMap, HashMap}, time::Duration};
-
-use rand::rand_core::le;
+use std::{collections::{HashMap}, time::Duration};
 
 use crate::{ValidationError, builder::ResourceBuilderView, node::Node, node_spec, nodes::audio::{delay::{DelayLine, DelayRead, DelayWrite}, mixer::TrackMixer, ops::{ApplyOpKind, mult_node_factory}, sampler::Sampler, sine::Sine}, params::Params, spec::{NodeFactory, NodeSpec}};
 
@@ -22,26 +20,15 @@ impl AudioRegistry {
         &self,
         resource_builder: &mut ResourceBuilderView,
         name: &String,
-        params: Option<&Params>,
+        params: &Params,
     ) -> Result<Box<dyn Node + Send>, ValidationError> {
-        if let Some(p) = params {
-            return match self.data.get(name) {
-                Some(spec) => (spec.build)(resource_builder, p),
-                None => Err(ValidationError::NodeNotFound(format!(
-                    "Could not find node {}",
-                    name
-                ))),
-            };
-        }
-        let temp = BTreeMap::new();
-        let p = Params(&temp);
-        match self.data.get(name) {
-            Some(spec) => (spec.build)(resource_builder, &p),
+        return match self.data.get(name) {
+            Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
                 name
             ))),
-        }
+        };
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
         self.data
