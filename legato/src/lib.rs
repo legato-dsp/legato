@@ -49,6 +49,7 @@ pub enum LegatoMsg {
 }
 
 
+#[derive(Debug)]
 pub struct LegatoApp {
     runtime: Runtime,
     receiver: Consumer<'static, LegatoMsg>

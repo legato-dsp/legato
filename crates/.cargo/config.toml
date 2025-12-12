@@ -1,9 +1,0 @@
-[build]
-rustflags = [
-  "-C", "target-cpu=native",
-]
-
-[bench]
-rustflags = [
-  "-C", "target-cpu=native",
-]

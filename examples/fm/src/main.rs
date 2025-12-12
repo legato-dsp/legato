@@ -1,7 +1,5 @@
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
-use legato::{
-    core::runtime::{context::Config, out::start_runtime_audio_thread}, dsl::build_application
-};
+use legato::{builder::LegatoBuilder, config::Config, ports::PortBuilder};
 
 fn main() {
     let graph = String::from(
@@ -39,16 +37,21 @@ fn main() {
             initial_graph_capacity: 4
     };
 
-    let (runtime, mut backend) = build_application(&graph, config).expect("Could not build application");
+    let (app, backend) = LegatoBuilder::new(config, 
+        PortBuilder::default()
+        .audio_out(2)
+        .build()
+    ).build_from_str(&graph);
+
 
     let _ = backend.load_sample(
         &String::from("amen"),
-        "../../crates/samples/amen.wav",
+        &String::from("../../crates/samples/amen.wav"),
         2,
         config.sample_rate as u32,
     );
 
-    dbg!(&runtime);
+    dbg!(&app);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
