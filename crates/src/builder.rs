@@ -50,9 +50,9 @@ pub struct ResourceBuilderView<'a> {
 }
 
 impl<'a> ResourceBuilderView<'a> {
-    pub fn add_delay_line(&mut self, name: &String, delay_line: DelayLine) -> DelayLineKey {
+    pub fn add_delay_line(&mut self, name: &str, delay_line: DelayLine) -> DelayLineKey {
         let key = self.resources.add_delay_line(delay_line);
-        self.delay_keys.insert(name.clone(), key);
+        self.delay_keys.insert(name.to_string(), key);
 
         key
     }

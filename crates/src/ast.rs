@@ -157,9 +157,10 @@ fn parse_node<'i>(
     pair: Pair<'i, Rule>,
     pipe_registry: &PipeRegistry,
 ) -> Result<ExpandedNode, BuildAstError> {
-    let mut node = NodeDeclaration::default();
-
-    node.alias = None;
+    let mut node = NodeDeclaration {
+        alias: None,
+        ..Default::default()
+    };
 
     for p in pair.into_inner() {
         match p.as_rule() {
