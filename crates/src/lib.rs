@@ -110,7 +110,7 @@ impl LegatoBackend {
     ) -> Result<(), sample::AudioSampleError> {
         self.runtime_backend.load_sample(
             sampler,
-            path.to_str().expect("Path not found!").into(),
+            path.to_str().expect("Path not found!"),
             chans,
             sr,
         )

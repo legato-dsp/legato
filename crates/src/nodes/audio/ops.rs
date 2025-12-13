@@ -28,7 +28,7 @@ impl ApplyOp {
 impl Node for ApplyOp {
     fn process(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
         _: &Channels,

@@ -88,6 +88,10 @@ impl<'a> Params<'a> {
             _ => None,
         };
 
+        if arr.is_none() {
+            return None;
+        }
+
         Some(
             arr.unwrap()
                 .into_iter()

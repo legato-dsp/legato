@@ -3,19 +3,19 @@ use std::time::Duration;
 use crate::{
     context::AudioContext,
     node::{Channels, Node},
-    ports::{PortBuilder, Ported, Ports},
+    ports::{PortBuilder, Ports},
 };
 
 pub struct Sweep {
     phase: f32,
-    range: (f32, f32),
+    range: [f32; 2],
     duration: Duration,
     elapsed: usize,
     ports: Ports,
 }
 
 impl Sweep {
-    pub fn new(range: (f32, f32), duration: Duration, chans: usize) -> Self {
+    pub fn new(range: [f32; 2], duration: Duration, chans: usize) -> Self {
         Self {
             phase: 0.0,
             range,
@@ -43,7 +43,8 @@ impl Node for Sweep {
 
         let chans = ao.len();
 
-        let (mut min, max) = self.range;
+        let mut min = self.range[0];
+        let max = self.range[1];
 
         min = min.clamp(1.0, max);
 
@@ -57,8 +58,8 @@ impl Node for Sweep {
 
             let sample = (self.phase * std::f32::consts::TAU).sin();
 
-            for c in 0..chans {
-                ao[c][n] = sample;
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
             }
         }
     }

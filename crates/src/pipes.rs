@@ -60,19 +60,17 @@ impl Pipe for Replicate {
                 let val = props.unwrap_or(Value::U32(2));
 
                 match val {
-                    Value::U32(i) => {
-                        return PipeResult::Vec(
-                            (0..i)
-                                .collect::<Vec<_>>()
-                                .iter()
-                                .map(|_| n.clone())
-                                .collect(),
-                        );
-                    }
+                    Value::U32(i) => PipeResult::Vec(
+                        (0..i)
+                            .collect::<Vec<_>>()
+                            .iter()
+                            .map(|_| n.clone())
+                            .collect(),
+                    ),
                     _ => panic!("Must provide U32 to replicate"),
                 }
             }
             PipeResult::Vec(_) => panic!("Must provide single node for replicate pipe."),
-        };
+        }
     }
 }

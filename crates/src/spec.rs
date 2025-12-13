@@ -17,16 +17,6 @@ pub struct NodeSpec {
     pub build: NodeFactory,
 }
 
-macro_rules! param_list {
-    ($($param:expr),* $(,)?) => {
-        {
-            let mut set = BTreeSet::new();
-            $(set.insert(String::from($param));)*
-            set
-        }
-    };
-}
-
 #[macro_export]
 macro_rules! node_spec {
     (
@@ -36,9 +26,11 @@ macro_rules! node_spec {
         build = $build:expr
     ) => {
         {
+            #[allow(clippy::all)]
             let mut req_params = std::collections::BTreeSet::new();
             $(req_params.insert(String::from($req));)*
 
+            #[allow(clippy::all)]
             let mut opt_params = std::collections::BTreeSet::new();
             $(opt_params.insert(String::from($opt));)*
 

@@ -153,10 +153,10 @@ impl Runtime {
                 let (ai, ci) = external_inputs.unwrap();
 
                 for (c, ai_chan) in ai.iter().enumerate() {
-                    self.audio_inputs_scratch_buffers[c].copy_from_slice(&ai_chan);
+                    self.audio_inputs_scratch_buffers[c].copy_from_slice(ai_chan);
                 }
                 for (c, ci_chan) in ci.iter().enumerate() {
-                    self.control_inputs_scratch_buffers[c].copy_from_slice(&ci_chan);
+                    self.control_inputs_scratch_buffers[c].copy_from_slice(ci_chan);
                 }
             } else {
                 let incoming = incoming.get(*node_key).expect("Invalid connection!");
@@ -222,7 +222,7 @@ impl Runtime {
 impl Node for Runtime {
     fn process<'a>(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
         ci: &Channels,

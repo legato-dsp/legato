@@ -14,7 +14,7 @@ use crate::{
     ports::{PortRate, Ports},
     registry::AudioRegistry,
     resources::{DelayLineKey, Resources, SampleKey},
-    runtime::{self, NodeKey, Runtime, RuntimeBackend, build_runtime},
+    runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime},
     sample::{AudioSampleBackend, AudioSampleHandle},
     spec::NodeSpec,
 };
@@ -307,11 +307,7 @@ impl LegatoBuilder {
         )))
     }
 
-    pub fn register_pipe(
-        &mut self,
-        name: &String,
-        pipe: Box<dyn Pipe>
-    ){
+    pub fn register_pipe(&mut self, name: &String, pipe: Box<dyn Pipe>) {
         self.pipes.add(name.clone(), pipe);
     }
 

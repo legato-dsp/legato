@@ -297,11 +297,11 @@ mod test {
     impl Node for MonoExample {
         fn process(
             &mut self,
-            ctx: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            ci: &Channels,
-            co: &mut Channels,
+            _: &mut AudioContext,
+            _: &Channels,
+            _: &mut Channels,
+            _: &Channels,
+            _: &mut Channels,
         ) {
         }
         fn ports(&self) -> &Ports {

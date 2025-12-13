@@ -179,10 +179,6 @@ impl RingBuffer {
 }
 
 mod test {
-    use std::array;
-
-    use rand::random_range;
-
     use crate::math::{one_usize_simd, two_usize_simd};
 
     use super::*;
@@ -254,7 +250,7 @@ mod test {
     fn test_push_chunk_no_wrap() {
         let mut rb = RingBuffer::new(32);
 
-        let v = Vf32::from_array(array::from_fn(|x| x as f32));
+        let v = Vf32::from_array(std::array::from_fn(|x| x as f32));
         rb.push_simd(&v);
 
         let out = rb.get_chunk_by_offset(0);
@@ -266,7 +262,7 @@ mod test {
         let mut rb = RingBuffer::new(LANES * 2);
 
         for n in 1..4 {
-            rb.push_simd(&Vf32::from_array(array::from_fn(|_| n as f32)));
+            rb.push_simd(&Vf32::from_array(std::array::from_fn(|_| n as f32)));
         }
 
         // v

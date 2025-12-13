@@ -1,11 +1,8 @@
-use std::simd::{StdFloat, num::SimdFloat};
-
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
     node::{Channels, Node},
     ports::{PortBuilder, Ports},
-    ring::RingBuffer,
     simd::{LANES, Vf32},
 };
 
@@ -38,7 +35,7 @@ impl TrackMixer {
 impl Node for TrackMixer {
     fn process<'a>(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
         _: &Channels,

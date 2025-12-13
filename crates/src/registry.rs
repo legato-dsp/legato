@@ -11,6 +11,7 @@ use crate::{
         ops::{ApplyOpKind, mult_node_factory},
         sampler::Sampler,
         sine::Sine,
+        sweep::Sweep,
     },
     params::Params,
     spec::{NodeFactory, NodeSpec},
@@ -36,13 +37,13 @@ impl AudioRegistry {
         name: &String,
         params: &Params,
     ) -> Result<Box<dyn Node + Send>, ValidationError> {
-        return match self.data.get(name) {
+        match self.data.get(name) {
             Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
                 name
             ))),
-        };
+        }
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
         self.data
@@ -184,6 +185,21 @@ impl Default for AudioRegistry {
 
                     let node = mult_node_factory(val, chans, ApplyOpKind::Gain);
 
+                    Ok(Box::new(node))
+                }
+            ),
+            node_spec!(
+                "sweep".into(),
+                required = [],
+                optional = ["duration", "range", "chans"],
+                build = |_, p| {
+                    let chans = p.get_usize("chans").unwrap_or(2);
+                    let duration = p
+                        .get_duration("duration")
+                        .unwrap_or(Duration::from_secs_f32(5.0));
+                    let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
+
+                    let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
                     Ok(Box::new(node))
                 }
             ),

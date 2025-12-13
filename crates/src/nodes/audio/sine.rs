@@ -35,7 +35,7 @@ use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 use crate::{
     context::AudioContext,
     node::{Channels, Node},
-    ports::{PortBuilder, Ported, Ports},
+    ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
 

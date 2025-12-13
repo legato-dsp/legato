@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{
     context::AudioContext,
     node::{Channels, Node},
-    ports::{PortBuilder, Ported, Ports},
+    ports::{PortBuilder, Ports},
     resources::DelayLineKey,
     ring::RingBuffer,
     simd::{LANES, Vf32},
@@ -12,9 +12,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct DelayLine {
     buffers: Vec<RingBuffer>,
-    capacity: usize,
     write_pos: Vec<usize>,
-    chans: usize,
 }
 
 impl DelayLine {
@@ -22,9 +20,7 @@ impl DelayLine {
         let buffers = vec![RingBuffer::new(capacity); chans];
         Self {
             buffers,
-            capacity,
             write_pos: vec![0; chans],
-            chans,
         }
     }
     #[inline(always)]
@@ -95,11 +91,10 @@ impl Node for DelayWrite {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
-        let chans = self.ports.audio_in.len();
 
         // For graph semantics when adding connections between delays
-        for c in 0..chans {
-            ao[c].fill(0.0);
+        for chan in ao.iter_mut() {
+            chan.fill(0.0);
         }
     }
     fn ports(&self) -> &Ports {
