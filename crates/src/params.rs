@@ -86,15 +86,10 @@ impl<'a> Params<'a> {
             Some(Value::Array(v)) => Some(v.clone()),
             Some(x) => panic!("Expected array param, found {:?}", x),
             _ => None,
-        };
-
-        if arr.is_none() {
-            return None;
-        }
+        }?;
 
         Some(
-            arr.unwrap()
-                .into_iter()
+            arr.into_iter()
                 .map(|x| match x {
                     Value::F32(x) => x,
                     Value::I32(x) => x as f32,

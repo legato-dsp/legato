@@ -144,8 +144,9 @@ impl Node for DelayRead {
 
                 // Apply additional offset for each step, maybe this could also be a rotation or so.
                 // This is needed, because otherwise we would just grab offsets from chunk_start for each item
-                for lane in 0..LANES {
-                    offset[lane] = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
+
+                for (lane, sample) in offset.iter_mut().enumerate().take(LANES) {
+                    *sample = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
                 }
 
                 // Note, about 75% slower than the linear interpolation alg.

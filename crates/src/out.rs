@@ -37,8 +37,8 @@ pub fn render(
         let block = runtime.next_block(None);
 
         for n in 0..block_size {
-            for c in 0..channels {
-                writer.write_sample(block[c][n]).unwrap();
+            for block_chan in block {
+                writer.write_sample(block_chan[n]).unwrap();
             }
         }
         count += block_size;
