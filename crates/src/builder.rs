@@ -1,149 +1,156 @@
-use crate::{
-    LegatoApp, LegatoBackend, LegatoMsg, ValidationError,
-    ast::{ExpandedNode, PortConnectionType, build_ast},
-    config::Config,
-    graph::{Connection, ConnectionEntry},
-    node::Node,
-    nodes::audio::{
-        delay::DelayLine,
-        mixer::{MonoFanOut, TrackMixer},
-    },
-    params::Params,
-    parse::parse_legato_file,
-    pipes::{Pipe, PipeRegistry},
-    ports::{PortRate, Ports},
-    registry::AudioRegistry,
-    resources::{DelayLineKey, Resources, SampleKey},
-    runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime},
-    sample::{AudioSampleBackend, AudioSampleHandle},
-    spec::NodeSpec,
-};
+use std::{collections::{BTreeMap, HashMap}, marker::PhantomData, sync::{Arc, atomic::AtomicU64}};
+
 use arc_swap::ArcSwapOption;
-use std::{
-    collections::HashMap,
-    sync::{Arc, atomic::AtomicU64},
+
+use crate::{
+    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{DynNode, LegatoNode}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
 };
 
-pub struct AddConnectionProps {
-    source: NodeKey,
-    source_kind: PortConnectionType,
-    sink: NodeKey,
-    sink_kind: PortConnectionType,
-    rate: PortRate, // Determines whether or not we look for control or audio matches
-}
+// Typestates for the builder
+pub struct Unconfigured;
+pub struct Configured;
+pub struct ContainsNodes;
+pub struct Connected;
+pub struct ReadyToBuild;
 
-pub enum AddConnectionKind {
-    Index(usize),
-    Named(&'static str),
-    Auto,
-}
 
-/// A small slice of the runtime exposed for nodes in their node factories.
-///
-/// This is useful to say reserve delay lines, or other shared logic.
-pub struct ResourceBuilderView<'a> {
-    pub config: &'a Config,
-    pub resources: &'a mut Resources,
-    pub sample_keys: &'a mut HashMap<String, SampleKey>,
-    pub delay_keys: &'a mut HashMap<String, DelayLineKey>,
-    pub sample_backends: &'a mut HashMap<String, AudioSampleBackend>,
-}
 
-impl<'a> ResourceBuilderView<'a> {
-    pub fn add_delay_line(&mut self, name: &str, delay_line: DelayLine) -> DelayLineKey {
-        let key = self.resources.add_delay_line(delay_line);
-        self.delay_keys.insert(name.to_string(), key);
+// Different traits for varying levels
+pub trait CanRegister {}
+pub trait CanAddNode {}
+pub trait CanConnect {}
+pub trait CanApplyPipe {}
+pub trait CanSetSink {}
+pub trait CanBuild {}
+pub trait CanBuildFromDSL {}
 
-        key
-    }
+// Setting up "permissions" for different structs. May be too complicated but also easy to add more states with overlapping permissiosn
 
-    pub fn get_delay_line_key(&self, name: &String) -> Result<DelayLineKey, ValidationError> {
-        self.delay_keys.get(name).cloned().ok_or_else(|| {
-            ValidationError::ResourceNotFound(format!("Could not find delay key {}", name))
-        })
-    }
+impl CanRegister for Unconfigured {}
+impl CanRegister for Configured {}
+impl CanRegister for ContainsNodes {}
 
-    pub fn add_sampler(&mut self, name: &String) -> SampleKey {
-        let sample_key = if let Some(&key) = self.sample_keys.get(name) {
-            key
-        } else {
-            let data = ArcSwapOption::new(None);
+impl CanAddNode for Configured {}
+impl CanAddNode for ContainsNodes {}
 
-            let handle = Arc::new(AudioSampleHandle {
-                sample: data,
-                sample_version: AtomicU64::new(0),
-            });
+impl CanApplyPipe for ContainsNodes {}
 
-            let backend = AudioSampleBackend::new(handle.clone());
+impl CanConnect for ContainsNodes {}
+impl CanConnect for Connected {}
 
-            self.sample_backends.insert(name.clone(), backend);
+impl CanSetSink for ContainsNodes {}
+impl CanSetSink for Connected {}
 
-            self.resources.add_sample_resource(handle)
-        };
-        sample_key
-    }
+impl CanBuild for ReadyToBuild {}
 
-    pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {
-        self.sample_keys.get(name).cloned().ok_or_else(|| {
-            ValidationError::ResourceNotFound(format!("Could not find sample key {}", name))
-        })
-    }
+impl CanBuildFromDSL for Configured {}
 
-    pub fn get_config(&self) -> &Config {
-        &self.config
+pub struct DslBuilding;
+
+impl CanRegister for DslBuilding {}
+impl CanAddNode for DslBuilding {}
+impl CanConnect for DslBuilding {}
+impl CanApplyPipe for DslBuilding {}
+impl CanSetSink for DslBuilding {}
+
+// Convenience struct for moving from one state to another
+impl<S> LegatoBuilder<S> {
+    #[inline]
+    fn into_state<T>(self) -> LegatoBuilder<T> {
+        LegatoBuilder {
+            runtime: self.runtime,
+            namespaces: self.namespaces,
+            working_name_lookup: self.working_name_lookup,
+            delay_name_to_key: self.delay_name_to_key,
+            resources: self.resources,
+            sample_backends: self.sample_backends,
+            sample_name_to_key: self.sample_name_to_key,
+            pipe_lookup: self.pipe_lookup,
+            last_node_ref_added: self.last_node_ref_added,
+            _state: PhantomData,
+        }
     }
 }
 
-/// The legato application builder.
-pub struct LegatoBuilder {
-    // Namespaces are collections of registries, e.g a namespace "reverb" might contain a custom reverb alg.
-    namespaces: HashMap<String, AudioRegistry>,
-    // A registry of pipe functions
-    pipes: PipeRegistry,
-    // Nodes can have a default/working name or alias. This map keeps track of that and maps to the actual node key.
-    working_name_to_key: HashMap<String, NodeKey>,
-    // The actual runtime being built
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum NodeKeyStorage {
+    Single(NodeKey),
+    Multiple(Vec<NodeKey>),
+}
+
+pub struct LegatoBuilder<State> {
     runtime: Runtime,
+    // String to registries of node spec (including factory fn) lookup
+    namespaces: HashMap<String, AudioRegistry>,
+    // Lookup from string to NodeKey
+    working_name_lookup: HashMap<String, NodeKey>,
+    // Lookup from string to Pipe Fn
+    pipe_lookup: HashMap<String, Box<dyn Pipe>>,
     // Resources being built. These can be pased to node factories
     resources: Resources,
     // Name to key maps
     sample_name_to_key: HashMap<String, SampleKey>,
     delay_name_to_key: HashMap<String, DelayLineKey>,
     sample_backends: HashMap<String, AudioSampleBackend>,
+    // When adding a node, this tracks and sets the node key for pipes
+    last_node_ref_added: Option<NodeKeyStorage>,
+    _state: PhantomData<State>,
 }
 
-impl LegatoBuilder {
-    pub fn new(config: Config, ports: Ports) -> Self {
+impl<Unconfigured> LegatoBuilder<Unconfigured> {
+    pub fn new(config: Config, ports: Ports) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
         let audio_registry = AudioRegistry::default();
         namespaces.insert("audio".into(), audio_registry);
         namespaces.insert("user".into(), AudioRegistry::new());
-
+        
         let runtime = build_runtime(config, ports);
 
-        Self {
-            namespaces,
-            working_name_to_key: HashMap::new(),
-            pipes: PipeRegistry::default(),
-            runtime,
+        LegatoBuilder::<Configured> {
+            runtime: runtime,
             resources: Resources::default(),
             sample_name_to_key: HashMap::new(),
             delay_name_to_key: HashMap::new(),
             sample_backends: HashMap::new(),
+            namespaces: namespaces,
+            working_name_lookup: HashMap::new(),
+            pipe_lookup: HashMap::new(),
+            last_node_ref_added: None,
+            _state: std::marker::PhantomData,
         }
     }
+}
 
-    // Add a node using the params object
-    pub fn add_node(
+impl<S> LegatoBuilder<S> where S: CanRegister {
+    /// Add a new registry. Think of registries like "DLC" or packs of nodes that users or developers can extend
+    pub fn add_node_registry(&mut self, name: &'static str, registry: AudioRegistry) {
+        self.namespaces.insert(name.into(), registry);
+    }
+    /// Register a node to the "user" namespace
+    pub fn register_node(mut self, namespace: &'static str, spec: NodeSpec) {
+        match self.namespaces.get_mut(namespace) {
+            Some(ns) => ns.declare_node(spec),
+            None => panic!("Cannot find namespace {}", namespace)
+        }    
+    }
+    /// Register a custom pipe for transforming nodes
+    pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) {
+        self.pipe_lookup.insert(name.into(), pipe);  
+    }
+}
+
+
+impl<S> LegatoBuilder<S> where S: CanAddNode,
+{
+    /// This pattern is used because we sometimes execute this in a non-owned context
+    fn add_node_ref_self(
         &mut self,
         namespace: &String,
-        name: &String,
+        node_kind: &String,
         alias: &String,
         params: &Params,
-    ) -> Result<NodeKey, ValidationError> {
-        let ns = self.namespaces.get(namespace).ok_or_else(|| {
-            ValidationError::NamespaceNotFound(format!("Could not find namespace {}", namespace))
-        })?;
+    ) {
+        let ns = self.namespaces.get(namespace).expect(&format!("Could not find namespace {}", namespace));
 
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
@@ -154,38 +161,46 @@ impl LegatoBuilder {
         };
 
         let node = ns
-            .get_node(&mut resource_builder_view, name, params)
-            .map_err(|_| ValidationError::NodeNotFound(format!("Could not find node {}", name)))?;
+            .get_node(&mut resource_builder_view, node_kind, params)
+            .expect(&format!("Could not find node {}", node_kind));
 
-        let key = self.runtime.add_node(node, alias.clone(), name.clone());
+        let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
 
-        self.working_name_to_key
-            .insert(alias.to_string(), key.clone());
+        let key = self.runtime.add_node(legato_node);
 
-        Ok(key)
+        self.working_name_lookup
+            .insert(alias.clone(), key.clone());
+
+        // Set the last node_ref_added
+        self.last_node_ref_added = Some(NodeKeyStorage::Single(key));
+    }
+    pub fn add_node(
+        mut self,
+        namespace: &String,
+        node_kind: &String,
+        alias: &String,
+        params: &Params,
+    ) -> LegatoBuilder<ContainsNodes> {
+        self.add_node_ref_self(namespace, node_kind, alias, params);
+        self.into_state()
     }
 
-    /// Ignore the params and DSL ceremony and insert a node directly
-    pub fn add_node_raw(
-        &mut self,
-        node: Box<dyn Node + Send>,
-        name: &String,
-        alias: Option<&String>,
-        kind: &String,
-    ) -> NodeKey {
-        let working_name = alias.map_or(name.clone(), |inner| inner.clone());
+    /// Skip the ceremony with namespaces, specs, etc. and just add a LegatoNode. This still requires an alias for connections and debugging
+    pub fn add_node_raw(mut self, node: LegatoNode, alias: &String) -> LegatoBuilder<ContainsNodes> {
+        let key = self.runtime.add_node(node);
+        self.last_node_ref_added = Some(NodeKeyStorage::Single(key));
 
-        let key = self
-            .runtime
-            .add_node(node, working_name.clone(), kind.clone());
+        self.working_name_lookup
+            .insert(alias.clone(), key.clone());
 
-        self.working_name_to_key.insert(working_name, key.clone());
-
-        key
+        self.into_state()
     }
+}
 
-    /// Add a connection by specifying the node and connection type
-    pub fn add_connection(&mut self, connection: AddConnectionProps) {
+impl<S> LegatoBuilder<S> where S: CanConnect
+{
+    /// This pattern is used because we sometimes execute this in a non-owned context
+    fn connect_ref_self(&mut self, connection: AddConnectionProps) {
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
@@ -287,79 +302,87 @@ impl LegatoBuilder {
             (n, m) => unimplemented!("Cannot match request arity {}:{}", n, m),
         }
     }
-
-    pub fn add_registry(&mut self, name: &String, registry: AudioRegistry) {
-        self.namespaces.insert(name.clone(), registry);
+    pub fn connect(mut self, connection: AddConnectionProps) -> LegatoBuilder<Connected> {
+        self.connect_ref_self(connection);
+        self.into_state()
     }
+}
 
-    pub fn register_node(
-        &mut self,
-        namespace: &String,
-        spec: NodeSpec,
-    ) -> Result<(), ValidationError> {
-        if let Some(ns) = self.namespaces.get_mut(namespace) {
-            ns.declare_node(spec);
-            return Ok(());
+impl<S> LegatoBuilder<S> where S: CanSetSink
+{
+    pub fn set_sink(mut self, key: NodeKey) -> LegatoBuilder<ReadyToBuild> {
+        self.runtime.set_sink_key(key).expect("Sink key not found");
+        self.into_state()
+    }
+}
+
+impl<S> LegatoBuilder<S> where S: CanApplyPipe
+{
+    pub fn pipe(&mut self, pipe_name: &'static str) {
+        match self.last_node_ref_added {
+            Some(_) => (),
+            None => panic!("Cannot apply pipe to non-existent node!")
         }
-        Err(ValidationError::NamespaceNotFound(format!(
-            "Could not find namespace {}",
-            namespace
-        )))
     }
+}
 
-    pub fn register_pipe(&mut self, name: &String, pipe: Box<dyn Pipe>) {
-        self.pipes.add(name.clone(), pipe);
+impl LegatoBuilder<ReadyToBuild> {
+    pub fn build(self) -> (LegatoApp, LegatoBackend) {
+        let mut runtime = self.runtime;
+        runtime.set_resources(self.resources);
+
+        // TODO: Perhaps a different crate here instead of leaking
+        let queue = Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 512>::new()));
+
+        let (producer, consumer) = queue.split();
+
+        let app = LegatoApp::new(runtime, consumer);
+
+        let rt_backend = RuntimeBackend::new(self.sample_backends);
+
+        let backend = LegatoBackend::new(rt_backend, producer);
+
+        (app, backend)
     }
+}
 
-    pub fn build_from_str(mut self, file_contents: &String) -> (LegatoApp, LegatoBackend) {
-        let pairs = parse_legato_file(file_contents).unwrap();
-        let ast = build_ast(pairs, &self.pipes).unwrap();
+impl<S> LegatoBuilder<S> where S: CanBuildFromDSL {
+    pub fn build_dsl(self, content: &String) -> (LegatoApp, LegatoBackend) {
+        let pairs = parse_legato_file(content).unwrap();
+
+        let ast = build_ast(pairs).unwrap();
+
+        let mut builder = self.into_state::<DslBuilding>();
 
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
-                match node {
-                    ExpandedNode::Node(inner) => {
-                        self.add_node(
-                            &scope.namespace,
-                            &inner.node_type,
-                            &inner.alias,
-                            &Params(&inner.params),
-                        )
-                        .unwrap();
-                    }
-                    ExpandedNode::Multiple(inner) => {
-                        for item in inner {
-                            self.add_node(
-                                &scope.namespace,
-                                &item.node_type,
-                                &item.alias,
-                                &Params(&item.params),
-                            )
-                            .unwrap();
-                        }
-                    }
-                }
+                builder.add_node_ref_self(
+                    &scope.namespace,
+                    &node.node_type,
+                    &node.alias.clone().unwrap_or(node.node_type.clone()),
+                    &Params(&node.params.clone().unwrap_or_else(|| BTreeMap::new()))
+                );
             }
         }
 
         for connection in ast.connections.iter() {
-            let source_key = self
-                .working_name_to_key
+            let source_key = builder
+                .working_name_lookup
                 .get(&connection.source_name)
                 .expect(&format!(
                     "Could not find source key in connection {}",
                     &connection.source_name
                 ));
 
-            let sink_key = self
-                .working_name_to_key
+            let sink_key = builder
+                .working_name_lookup
                 .get(&connection.sink_name)
                 .expect(&format!(
                     "Could not find sink key in connection {}",
                     &connection.sink_name
                 ));
 
-            self.add_connection(AddConnectionProps {
+            builder.connect_ref_self(AddConnectionProps {
                 source: *source_key,
                 sink: *sink_key,
                 source_kind: connection.source_port.clone(),
@@ -368,39 +391,95 @@ impl LegatoBuilder {
             });
         }
 
-        let sink_key = self
-            .working_name_to_key
+        let sink_key = builder
+            .working_name_lookup
             .get(&ast.sink.name)
             .expect("Could not find sink!");
 
-        self.runtime
+        builder.runtime
             .set_sink_key(*sink_key)
             .expect("Could not set sink!");
 
-        self.build()
-    }
+        let ready_to_build = builder.into_state::<ReadyToBuild>();
 
-    pub fn build(mut self) -> (LegatoApp, LegatoBackend) {
-        // I am okay with leaking this onto the heap here, maybe some Rustaceans can give a second opinion
-        // I am using heapless::spsc for it's better realtime performance, not because I explicitly want to keep it on the stack
-        let queue: &'static mut heapless::spsc::Queue<LegatoMsg, 128> =
-            Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 128>::new()));
-
-        let (tx, rx) = queue.split();
-
-        let runtime_backend = RuntimeBackend::new(self.sample_backends);
-
-        // important because we only pass a small window of resources, instead of the whole runtime, to node's factory functions
-        self.runtime.set_resources(self.resources);
-
-        let app = LegatoApp::new(self.runtime, rx);
-        let backend = LegatoBackend::new(runtime_backend, tx);
-
-        (app, backend)
+        ready_to_build.build()
     }
 }
 
-// A number of utility functions to handle explicit port arity
+
+/// A small slice of the runtime exposed for nodes in their node factories.
+///
+/// This is useful to say reserve delay lines, or other shared logic.
+pub struct ResourceBuilderView<'a> {
+    pub config: &'a Config,
+    pub resources: &'a mut Resources,
+    pub sample_keys: &'a mut HashMap<String, SampleKey>,
+    pub delay_keys: &'a mut HashMap<String, DelayLineKey>,
+    pub sample_backends: &'a mut HashMap<String, AudioSampleBackend>,
+}
+
+impl<'a> ResourceBuilderView<'a> {
+    pub fn add_delay_line(&mut self, name: &str, delay_line: DelayLine) -> DelayLineKey {
+        let key = self.resources.add_delay_line(delay_line);
+        self.delay_keys.insert(name.to_string(), key);
+
+        key
+    }
+
+    pub fn get_delay_line_key(&self, name: &String) -> Result<DelayLineKey, ValidationError> {
+        self.delay_keys.get(name).cloned().ok_or_else(|| {
+            ValidationError::ResourceNotFound(format!("Could not find delay key {}", name))
+        })
+    }
+
+    pub fn add_sampler(&mut self, name: &String) -> SampleKey {
+        let sample_key = if let Some(&key) = self.sample_keys.get(name) {
+            key
+        } else {
+            let data = ArcSwapOption::new(None);
+
+            let handle = Arc::new(AudioSampleHandle {
+                sample: data,
+                sample_version: AtomicU64::new(0),
+            });
+
+            let backend = AudioSampleBackend::new(handle.clone());
+
+            self.sample_backends.insert(name.clone(), backend);
+
+            self.resources.add_sample_resource(handle)
+        };
+        sample_key
+    }
+
+    pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {
+        self.sample_keys.get(name).cloned().ok_or_else(|| {
+            ValidationError::ResourceNotFound(format!("Could not find sample key {}", name))
+        })
+    }
+
+    pub fn get_config(&self) -> &Config {
+        &self.config
+    }
+}
+
+
+pub struct AddConnectionProps {
+    pub source: NodeKey,
+    pub source_kind: PortConnectionType,
+    pub sink: NodeKey,
+    pub sink_kind: PortConnectionType,
+    pub rate: PortRate, // Determines whether or not we look for control or audio matches
+}
+
+pub enum AddConnectionKind {
+    Index(usize),
+    Named(&'static str),
+    Auto,
+}
+
+
+// Utility functions for handling connections 
 
 fn one_to_one(
     runtime: &mut Runtime,
@@ -434,9 +513,11 @@ fn one_to_n(
 
     // Fanout mixer going from 1 -> n
     let mixer = runtime.add_node(
-        Box::new(MonoFanOut::new(n)),
-        format!("MonoFanOut{:?}{:?}", props.source, props.sink),
-        "MonoFanOut".into(),
+        LegatoNode::new(
+            format!("MonoFanOut{:?}{:?}", props.source, props.sink), 
+            "MonoFanOut".into(),
+            Box::new(MonoFanOut::new(n))
+        )
     );
 
     // Wire mono to mixer
@@ -484,9 +565,11 @@ fn n_to_one(
 
     // Make mixer with n mono tracks
     let mixer = runtime.add_node(
-        Box::new(TrackMixer::new(1, n, vec![1.0 / f32::sqrt(n as f32); n])),
-        format!("TrackMixer{:?}{:?}", props.source, props.sink),
-        "TrackMixer".into(),
+        LegatoNode::new(
+            format!("TrackMixer{:?}{:?}", props.source, props.sink),
+            "TrackMixer".into(),
+            Box::new(TrackMixer::new(1, n, vec![1.0 / f32::sqrt(n as f32); n])),
+        )
     );
 
     // Build connections into track mixer

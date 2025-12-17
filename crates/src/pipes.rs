@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ValidationError,
     ast::{NodeDeclaration, Value},
-    node::Node,
+    node::{DynNode, LegatoNode, Node},
 };
 
 pub struct PipeRegistry {
@@ -38,10 +38,10 @@ impl Default for PipeRegistry {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum TransformedNode {
-    Single(Box<dyn Node + Send>),
-    Multiple(Vec<Box<dyn Node + Send>>),
+    Single(LegatoNode),
+    Multiple(Vec<LegatoNode>),
 }
 
 pub trait Pipe {
@@ -52,16 +52,21 @@ pub trait Pipe {
 
 // A collection of a few default pipes
 
+
+
+
+
+
 struct Replicate;
 
 impl Pipe for Replicate {
-    fn pipe(&self, inputs: PipeResult, props: Option<Value>) -> PipeResult {
+    fn pipe(&self, inputs: TransformedNode, props: Option<Value>) -> TransformedNode {
         match inputs {
-            PipeResult::Node(n) => {
+            TransformedNode::Single(n) => {
                 let val = props.unwrap_or(Value::U32(2));
 
                 match val {
-                    Value::U32(i) => PipeResult::Vec(
+                    Value::U32(i) => TransformedNode::Multiple(
                         (0..i)
                             .collect::<Vec<_>>()
                             .iter()
@@ -71,7 +76,7 @@ impl Pipe for Replicate {
                     _ => panic!("Must provide U32 to replicate"),
                 }
             }
-            PipeResult::Vec(_) => panic!("Must provide single node for replicate pipe."),
+            TransformedNode::Multiple(_) => panic!("Must provide single node for replicate pipe."),
         }
     }
 }

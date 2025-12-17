@@ -5,7 +5,6 @@ use pest::iterators::{Pair, Pairs};
 
 use crate::{
     parse::Rule,
-    pipes::{PipeRegistry, PipeResult},
 };
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -20,7 +19,7 @@ pub struct Ast {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeclarationScope {
     pub namespace: String,
-    pub declarations: Vec<ExpandedNode>,
+    pub declarations: Vec<NodeDeclaration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -29,19 +28,6 @@ pub struct NodeDeclaration {
     pub alias: Option<String>,
     pub params: Option<Object>,
     pub pipes: Vec<ASTPipe>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExpandedNode {
-    Node(ExpandedNodeItem),
-    Multiple(Vec<ExpandedNodeItem>),
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ExpandedNodeItem {
-    pub node_type: String,
-    pub alias: String,
-    pub params: Object,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -104,14 +90,14 @@ pub enum BuildAstError {
     ConstructionError(String),
 }
 
-pub fn build_ast(pairs: Pairs<Rule>, pipe_registry: &PipeRegistry) -> Result<Ast, BuildAstError> {
+pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
     let mut ast = Ast::default();
 
     for declaration in pairs.into_iter() {
         match declaration.as_rule() {
             Rule::scope_block => ast
                 .declarations
-                .push(parse_scope_block(declaration, pipe_registry)?),
+                .push(parse_scope_block(declaration)?),
             Rule::connection => ast.connections.append(&mut parse_connection(declaration)?),
             Rule::sink => {
                 let mut inner = declaration.into_inner();
@@ -130,7 +116,6 @@ pub fn build_ast(pairs: Pairs<Rule>, pipe_registry: &PipeRegistry) -> Result<Ast
 
 fn parse_scope_block<'i>(
     pair: Pair<'i, Rule>,
-    pipe_registry: &PipeRegistry,
 ) -> Result<DeclarationScope, BuildAstError> {
     let mut inner = pair.into_inner();
     let scope_name = inner.next().unwrap().as_str().to_string();
@@ -140,7 +125,7 @@ fn parse_scope_block<'i>(
         match pair.as_rule() {
             Rule::add_nodes => {
                 for node in pair.into_inner() {
-                    declarations.push(parse_node(node, pipe_registry)?);
+                    declarations.push(parse_node(node)?);
                 }
             }
             _ => (),
@@ -155,8 +140,7 @@ fn parse_scope_block<'i>(
 
 fn parse_node<'i>(
     pair: Pair<'i, Rule>,
-    pipe_registry: &PipeRegistry,
-) -> Result<ExpandedNode, BuildAstError> {
+) -> Result<NodeDeclaration, BuildAstError> {
     let mut node = NodeDeclaration {
         alias: None,
         ..Default::default()
@@ -177,39 +161,7 @@ fn parse_node<'i>(
         }
     }
 
-    let mut result = PipeResult::Node(node.clone());
-
-    for pipe in node.pipes {
-        let boxed_pipe = pipe_registry.get(&pipe.name).map_err(|_| {
-            BuildAstError::ConstructionError(format!("Cannot find pipe {}", pipe.name))
-        })?;
-        result = boxed_pipe.as_ref().pipe(result, pipe.params);
-    }
-
-    match result {
-        PipeResult::Node(n) => Ok(ExpandedNode::Node(ExpandedNodeItem {
-            node_type: n.node_type.clone(),
-            alias: n.alias.unwrap_or(n.node_type),
-            params: n.params.unwrap_or(BTreeMap::new()),
-        })),
-        PipeResult::Vec(nodes) => Ok(ExpandedNode::Multiple(
-            nodes
-                .iter()
-                .cloned()
-                .enumerate()
-                .map(|(i, x)| {
-                    let alias_name = x.alias.unwrap_or(x.node_type.clone());
-                    let alias_with_index = format!("{}.{}", alias_name, i);
-
-                    ExpandedNodeItem {
-                        node_type: x.node_type,
-                        alias: alias_with_index,
-                        params: x.params.unwrap_or(BTreeMap::new()),
-                    }
-                })
-                .collect(),
-        )),
-    }
+    Ok(node)
 }
 
 fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<ASTPipe, BuildAstError> {

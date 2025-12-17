@@ -12,7 +12,6 @@ use crate::{
 
 pub mod ast;
 pub mod builder;
-pub mod builder2;
 pub mod config;
 pub mod connection;
 pub mod context;
@@ -62,12 +61,12 @@ pub enum LegatoMsg {
 
 pub struct LegatoApp {
     runtime: Runtime,
-    receiver: Consumer<'static, LegatoMsg>,
+    consumer: Consumer<'static, LegatoMsg>,
 }
 
 impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
-        Self { runtime, receiver }
+        Self { runtime, consumer: receiver }
     }
     /// Pull the next block from the runtime, if you choose to manage the
     /// runtime yourself.
@@ -76,7 +75,7 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R],etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
-        while let Some(msg) = self.receiver.dequeue() {
+        while let Some(msg) = self.consumer.dequeue() {
             dbg!(&msg);
         }
         self.runtime.next_block(external_inputs)

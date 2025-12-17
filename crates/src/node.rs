@@ -44,13 +44,13 @@ where
 }
 
 /// A small wrapper type for debugging nodes at runtime.
-pub struct NodeWithMeta {
+pub struct LegatoNode {
     name: String,
     node_kind: String,
     node: Box<dyn DynNode>,
 }
 
-impl NodeWithMeta {
+impl LegatoNode {
     pub fn new(name: String, node_kind: String, node: Box<dyn DynNode>) -> Self {
         Self {
             name,
@@ -66,7 +66,7 @@ impl NodeWithMeta {
     }
 }
 
-impl Clone for NodeWithMeta {
+impl Clone for LegatoNode {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -76,7 +76,7 @@ impl Clone for NodeWithMeta {
     }
 }
 
-impl Debug for NodeWithMeta {
+impl Debug for LegatoNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(&self.name)
             .field("node_kind", &self.node_kind)

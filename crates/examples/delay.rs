@@ -2,27 +2,27 @@ use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
-    builder::LegatoBuilder,
+    builder::{LegatoBuilder, Unconfigured},
     config::Config,
     out::start_application_audio_thread,
-    pipes::{Pipe, PipeResult},
+    // pipes::{Pipe, PipeResult},
     ports::PortBuilder,
 };
 
 // Example registering a custom pipe, using aliasing, and the spread operator for indexing
 
-struct Logger {}
+// struct Logger {}
 
-impl Pipe for Logger {
-    fn pipe(
-        &self,
-        inputs: PipeResult,
-        _props: Option<legato::ast::Value>,
-    ) -> legato::pipes::PipeResult {
-        dbg!(&inputs);
-        inputs
-    }
-}
+// impl Pipe for Logger {
+//     fn pipe(
+//         &self,
+//         inputs: PipeResult,
+//         _props: Option<legato::ast::Value>,
+//     ) -> legato::pipes::PipeResult {
+//         dbg!(&inputs);
+//         inputs
+//     }
+// }
 
 fn main() {
     let graph = String::from(
@@ -47,16 +47,16 @@ fn main() {
     let config = Config {
         sample_rate: 48_000,
         control_rate: 48_000 / 32,
-        audio_block_size: 2048,
-        control_block_size: 2048 / 32,
+        audio_block_size: 1024,
+        control_block_size: 1024 / 32,
         channels: 2,
         initial_graph_capacity: 4,
     };
 
-    let mut builder = LegatoBuilder::new(config, PortBuilder::default().audio_out(2).build());
-    builder.register_pipe(&"logger".into(), Box::new(Logger {}));
+    let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut backend) = builder.build_from_str(&graph);
+    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        .build_dsl(&graph);
 
     let _ = backend.load_sample(
         &String::from("amen"),

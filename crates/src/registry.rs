@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::Duration};
 use crate::{
     ValidationError,
     builder::ResourceBuilderView,
-    node::Node,
+    node::{DynNode, Node},
     node_spec,
     nodes::audio::{
         delay::{DelayLine, DelayRead, DelayWrite},
@@ -34,14 +34,14 @@ impl AudioRegistry {
     pub fn get_node(
         &self,
         resource_builder: &mut ResourceBuilderView,
-        name: &String,
+        node_kind: &String,
         params: &Params,
-    ) -> Result<Box<dyn Node + Send>, ValidationError> {
-        match self.data.get(name) {
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        match self.data.get(node_kind) {
             Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
-                name
+                node_kind
             ))),
         }
     }

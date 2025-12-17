@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
-use crate::node::{Channels, Node};
+use crate::node::{Channels, LegatoNode, Node};
 use crate::ports::{PortRate, Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleBackend, AudioSampleError};
@@ -61,16 +61,14 @@ impl Runtime {
     }
     pub fn add_node(
         &mut self,
-        node: Box<dyn Node + Send>,
-        name: String,
-        node_kind: String,
+        node: LegatoNode
     ) -> NodeKey {
-        let ports = node.ports();
+        let ports = node.get_node().ports();
 
         let audio_chan_size = ports.audio_out.iter().len();
         let control_chan_size = ports.control_out.iter().len();
 
-        let node_key = self.graph.add_node(node, name, node_kind);
+        let node_key = self.graph.add_node(node);
 
         let config = self.context.get_config();
 
@@ -122,9 +120,9 @@ impl Runtime {
     }
     pub fn get_node_ports(&self, key: &NodeKey) -> &Ports {
         // Unwrapping becuase for now this is only used during application creation
-        self.graph.get_node(*key).unwrap().ports()
+        self.graph.get_node(*key).unwrap().get_node().ports()
     }
-    pub fn get_node(&self, key: &NodeKey) -> Option<&Box<dyn Node + Send>> {
+    pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
         self.graph.get_node(*key)
     }
     // TODO: Graphs as nodes again

@@ -39,6 +39,7 @@ use crate::{
     simd::{LANES, Vf32},
 };
 
+#[derive(Clone)]
 pub struct Sine {
     freq: f32,
     phase: f32,

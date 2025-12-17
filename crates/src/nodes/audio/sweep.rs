@@ -6,6 +6,7 @@ use crate::{
     ports::{PortBuilder, Ports},
 };
 
+#[derive(Clone)]
 pub struct Sweep {
     phase: f32,
     range: [f32; 2],

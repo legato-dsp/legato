@@ -63,6 +63,7 @@ impl DelayLine {
     }
 }
 
+#[derive(Clone)]
 pub struct DelayWrite {
     delay_line_key: DelayLineKey,
     ports: Ports,
@@ -102,6 +103,7 @@ impl Node for DelayWrite {
     }
 }
 
+#[derive(Clone)]
 pub struct DelayRead {
     delay_line_key: DelayLineKey,
     delay_times: Vec<Duration>, // Different times for each channel if desired

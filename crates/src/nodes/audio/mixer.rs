@@ -73,6 +73,7 @@ impl Node for TrackMixer {
 }
 
 /// A mono -> N mixer with unity gain
+#[derive(Clone)]
 pub struct MonoFanOut {
     ports: Ports,
 }
