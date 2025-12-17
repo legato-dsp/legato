@@ -13,6 +13,7 @@ use crate::{
 /// A "track", in this context, is an arbitrary amount of channels.
 ///
 /// So, this TrackMixer can take say two tracks of stereo -> one track stereo
+#[derive(Clone)]
 pub struct TrackMixer {
     chans_per_track: usize,
     ports: Ports,

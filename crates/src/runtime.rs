@@ -18,6 +18,7 @@ new_key_type! {
     pub struct NodeKey;
 }
 
+#[derive(Clone)]
 pub struct Runtime {
     // Audio context containing sample rate, control rate, etc.
     context: AudioContext,

@@ -24,26 +24,55 @@ pub trait Node {
     fn ports(&self) -> &Ports;
 }
 
+// This ceremony with NodeClone and DynNode is needed so that we can "clone" nodes by cloning the interior and boxing the result,
+// otherwise, we cannot create a v-table
+
+pub trait NodeClone {
+    fn clone_box(&self) -> Box<dyn DynNode>;
+}
+
+pub trait DynNode: Node + NodeClone + Send {}
+impl<T> DynNode for T where T: Node + NodeClone + Send {}
+
+impl<T> NodeClone for T
+where
+    T: Node + Clone + Send + 'static,
+{
+    fn clone_box(&self) -> Box<dyn DynNode> {
+        Box::new(self.clone())
+    }
+}
+
 /// A small wrapper type for debugging nodes at runtime.
 pub struct NodeWithMeta {
     name: String,
     node_kind: String,
-    node: Box<dyn Node + Send>,
+    node: Box<dyn DynNode>,
 }
 
 impl NodeWithMeta {
-    pub fn new(name: String, node_kind: String, node: Box<dyn Node + Send>) -> Self {
+    pub fn new(name: String, node_kind: String, node: Box<dyn DynNode>) -> Self {
         Self {
             name,
             node_kind,
             node,
         }
     }
-    pub fn get_node(&self) -> &Box<dyn Node + Send> {
+    pub fn get_node(&self) -> &Box<dyn DynNode> {
         &self.node
     }
-    pub fn get_node_mut(&mut self) -> &mut Box<dyn Node + Send> {
+    pub fn get_node_mut(&mut self) -> &mut Box<dyn DynNode> {
         &mut self.node
+    }
+}
+
+impl Clone for NodeWithMeta {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            node_kind: self.node_kind.clone(),
+            node: self.node.clone_box(),
+        }
     }
 }
 

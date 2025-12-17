@@ -8,6 +8,7 @@ use crate::{
     runtime::Runtime,
 };
 
+#[derive(Clone)]
 pub struct Upsample<const N: usize> {
     filter: FirFilter,
     zero_stuffed: Vec<Box<[f32]>>,
@@ -61,7 +62,7 @@ impl<const N: usize> Node for Upsample<N> {
         &self.ports
     }
 }
-
+#[derive(Clone)]
 pub struct Downsample<const N: usize> {
     filter: FirFilter,
     filtered: Vec<Box<[f32]>>,
@@ -111,6 +112,7 @@ impl<const N: usize> Node for Downsample<N> {
     }
 }
 
+#[derive(Clone)]
 pub struct Oversampler<const N: usize> {
     runtime: Box<Runtime>,
     upsampler: Upsample<N>,

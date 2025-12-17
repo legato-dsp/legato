@@ -12,6 +12,7 @@ use crate::{
 
 pub mod ast;
 pub mod builder;
+pub mod builder2;
 pub mod config;
 pub mod connection;
 pub mod context;

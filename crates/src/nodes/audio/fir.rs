@@ -13,6 +13,7 @@ use crate::{
 //
 // It's also worth noting that keeping the chunks and state
 // in an interleaved format could potentially be faster?
+#[derive(Clone)]
 pub struct FirFilter {
     coeffs: Vec<f32>,
     state: Vec<RingBuffer>,

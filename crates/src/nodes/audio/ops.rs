@@ -6,6 +6,7 @@ use crate::{
     simd::{LANES, Vf32},
 };
 
+#[derive(Clone)]
 pub struct ApplyOp {
     val: f32,
     apply_op: fn(Vf32, Vf32) -> Vf32,

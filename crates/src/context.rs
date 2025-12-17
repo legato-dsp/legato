@@ -5,6 +5,7 @@ use crate::{config::Config, resources::Resources};
 ///
 /// This prevents complex state sharing or unsafe ptr logic when using things like shared buffers
 /// for delay lines or samples.
+#[derive(Clone)]
 pub struct AudioContext {
     config: Config,
     resources: Resources,

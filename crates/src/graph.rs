@@ -3,7 +3,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
 use crate::{
-    node::{Node, NodeWithMeta},
+    node::{DynNode, Node, NodeWithMeta},
     ports::PortRate,
     runtime::NodeKey,
 };
@@ -30,6 +30,7 @@ pub struct Connection {
 
 const INITIAL_INPUTS: usize = 8;
 /// A DAG for grabbing nodes and their dependencies via topological sort.
+#[derive(Clone)]
 pub struct AudioGraph {
     nodes: SlotMap<NodeKey, NodeWithMeta>,
     incoming_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
@@ -53,12 +54,7 @@ impl AudioGraph {
         }
     }
 
-    pub fn add_node(
-        &mut self,
-        node: Box<dyn Node + Send>,
-        name: String,
-        node_kind: String,
-    ) -> NodeKey {
+    pub fn add_node(&mut self, node: Box<dyn DynNode>, name: String, node_kind: String) -> NodeKey {
         // Insert the node
         let key = self.nodes.insert(NodeWithMeta::new(name, node_kind, node));
 
@@ -79,7 +75,7 @@ impl AudioGraph {
     }
 
     #[inline(always)]
-    pub fn get_node(&self, key: NodeKey) -> Option<&Box<dyn Node + Send>> {
+    pub fn get_node(&self, key: NodeKey) -> Option<&Box<dyn DynNode>> {
         match self.nodes.get(key) {
             Some(inner) => Some(inner.get_node()),
             None => None,
@@ -87,7 +83,7 @@ impl AudioGraph {
     }
 
     #[inline(always)]
-    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut Box<dyn Node + Send>> {
+    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut Box<dyn DynNode>> {
         match self.nodes.get_mut(key) {
             Some(inner) => Some(inner.get_node_mut()),
             None => None,
@@ -271,6 +267,7 @@ mod test {
         ports::{PortMeta, PortRate, Ports},
     };
 
+    #[derive(Clone)]
     struct MonoExample {
         ports: Ports,
     }

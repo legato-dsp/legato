@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ValidationError,
     ast::{NodeDeclaration, Value},
+    node::Node,
 };
 
 pub struct PipeRegistry {
@@ -37,14 +38,14 @@ impl Default for PipeRegistry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum PipeResult {
-    Node(NodeDeclaration),
-    Vec(Vec<NodeDeclaration>),
+#[derive(Clone, PartialEq)]
+pub enum TransformedNode {
+    Single(Box<dyn Node + Send>),
+    Multiple(Vec<Box<dyn Node + Send>>),
 }
 
 pub trait Pipe {
-    fn pipe(&self, inputs: PipeResult, _props: Option<Value>) -> PipeResult {
+    fn pipe(&self, inputs: TransformedNode, _props: Option<Value>) -> TransformedNode {
         inputs
     }
 }
