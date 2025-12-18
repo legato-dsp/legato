@@ -24,13 +24,15 @@ pub struct Connection {
     pub sink: ConnectionEntry,
 }
 
+pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
+
 const INITIAL_INPUTS: usize = 8;
 /// A DAG for grabbing nodes and their dependencies via topological sort.
 #[derive(Clone)]
 pub struct AudioGraph {
     nodes: SlotMap<NodeKey, LegatoNode>,
-    incoming_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
-    outgoing_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
+    incoming_edges: EdgeMap ,
+    outgoing_edges: EdgeMap,
     // Pre-allocated work buffers for topo sort
     indegree: SecondaryMap<NodeKey, usize>,
     no_incoming_edges_queue: VecDeque<NodeKey>,
@@ -93,7 +95,7 @@ impl AudioGraph {
     ) -> (
         &Vec<NodeKey>,
         &mut SlotMap<NodeKey, LegatoNode>,
-        &SecondaryMap<NodeKey, IndexSet<Connection>>,
+        &EdgeMap,
     ) {
         (&self.topo_sorted, &mut self.nodes, &self.incoming_edges)
     }
