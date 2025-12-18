@@ -1,9 +1,10 @@
 use std::{path::Path, time::Duration};
 
-use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
-    builder::{LegatoBuilder, Unconfigured}, config::Config, out::{render, start_application_audio_thread}, ports::PortBuilder
+    builder::{LegatoBuilder, Unconfigured}, config::Config, out::{render}, ports::PortBuilder
 };
+
+// Example with a poc oversample pipe
 
 fn main() {
     let graph = String::from(

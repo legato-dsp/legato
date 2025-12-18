@@ -54,7 +54,6 @@ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.
 
 ### Planned Features For 0.1.0
 
-- Delay compensation for ports
 - More nodes (pitch shifter, convolution, iir filters)
 - Matrix mixers
 - More control and UI abstractions.
