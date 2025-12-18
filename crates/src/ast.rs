@@ -3,9 +3,7 @@ use std::vec::Vec;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::{
-    parse::Rule,
-};
+use crate::parse::Rule;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
@@ -95,9 +93,7 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
 
     for declaration in pairs.into_iter() {
         match declaration.as_rule() {
-            Rule::scope_block => ast
-                .declarations
-                .push(parse_scope_block(declaration)?),
+            Rule::scope_block => ast.declarations.push(parse_scope_block(declaration)?),
             Rule::connection => ast.connections.append(&mut parse_connection(declaration)?),
             Rule::sink => {
                 let mut inner = declaration.into_inner();
@@ -114,9 +110,7 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
     Ok(ast)
 }
 
-fn parse_scope_block<'i>(
-    pair: Pair<'i, Rule>,
-) -> Result<DeclarationScope, BuildAstError> {
+fn parse_scope_block<'i>(pair: Pair<'i, Rule>) -> Result<DeclarationScope, BuildAstError> {
     let mut inner = pair.into_inner();
     let scope_name = inner.next().unwrap().as_str().to_string();
     let mut declarations = vec![];
@@ -138,9 +132,7 @@ fn parse_scope_block<'i>(
     })
 }
 
-fn parse_node<'i>(
-    pair: Pair<'i, Rule>,
-) -> Result<NodeDeclaration, BuildAstError> {
+fn parse_node<'i>(pair: Pair<'i, Rule>) -> Result<NodeDeclaration, BuildAstError> {
     let mut node = NodeDeclaration {
         alias: None,
         ..Default::default()

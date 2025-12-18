@@ -59,10 +59,7 @@ impl Runtime {
             ports,
         }
     }
-    pub fn add_node(
-        &mut self,
-        node: LegatoNode
-    ) -> NodeKey {
+    pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
         let ports = node.get_node().ports();
 
         let audio_chan_size = ports.audio_out.iter().len();

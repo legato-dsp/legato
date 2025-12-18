@@ -5,7 +5,10 @@ use std::{fmt::Debug, path::Path};
 use heapless::spsc::{Consumer, Producer};
 
 use crate::{
-    ast::Value, config::Config, node::Channels, runtime::{NodeKey, Runtime, RuntimeBackend}
+    ast::Value,
+    config::Config,
+    node::Channels,
+    runtime::{NodeKey, Runtime, RuntimeBackend},
 };
 
 pub mod ast;
@@ -64,7 +67,10 @@ pub struct LegatoApp {
 
 impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
-        Self { runtime, consumer: receiver }
+        Self {
+            runtime,
+            consumer: receiver,
+        }
     }
     /// Pull the next block from the runtime, if you choose to manage the
     /// runtime yourself.

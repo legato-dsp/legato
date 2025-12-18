@@ -95,8 +95,12 @@ impl<const N: usize> Node for Downsample<N> {
         debug_assert_eq!(ai[0].len(), ao[0].len() * N);
 
         for c in 0..self.chans {
-            debug_assert_eq!(self.filtered[c].len(), ai[c].len(),
-                "Internal filtered buffer length mismatch for channel {}", c);
+            debug_assert_eq!(
+                self.filtered[c].len(),
+                ai[c].len(),
+                "Internal filtered buffer length mismatch for channel {}",
+                c
+            );
         }
 
         // Filter the audio before decimating to prevent aliasing
@@ -180,7 +184,6 @@ impl<const N: usize> Node for Oversampler<N> {
 
         ctx.set_sample_rate(sr);
         ctx.set_block_size(block_size);
-        
 
         self.downsampler
             .process(ctx, &self.downsampled_inputs, ao, ci, co);

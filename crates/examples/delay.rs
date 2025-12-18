@@ -2,7 +2,11 @@ use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
-    builder::{LegatoBuilder, Unconfigured}, config::Config, out::start_application_audio_thread, pipes::Pipe, ports::PortBuilder
+    builder::{LegatoBuilder, Unconfigured},
+    config::Config,
+    out::start_application_audio_thread,
+    pipes::Pipe,
+    ports::PortBuilder,
 };
 
 // Example registering a custom pipe, using aliasing, and the spread operator for indexing

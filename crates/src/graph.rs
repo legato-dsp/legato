@@ -2,11 +2,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{
-    node::{LegatoNode},
-    ports::PortRate,
-    runtime::NodeKey,
-};
+use crate::{node::LegatoNode, ports::PortRate, runtime::NodeKey};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -326,27 +322,21 @@ mod test {
     fn test_topo_sort_simple_chain() {
         let mut graph: AudioGraph = AudioGraph::with_capacity(3);
 
-        let a = graph.add_node(
-                LegatoNode::new(
-                "a".into(),
-                "MonoExample".into(),
-                Box::new(MonoExample::default()),
-            )
-        );
-        let b = graph.add_node(
-                LegatoNode::new(
-                "b".into(),
-                "MonoExample".into(),
-                Box::new(MonoExample::default()),
-            )
-        );
-        let c = graph.add_node(
-                LegatoNode::new(
-                "c".into(),
-                "MonoExample".into(),
-                Box::new(MonoExample::default()),
-            )
-        );
+        let a = graph.add_node(LegatoNode::new(
+            "a".into(),
+            "MonoExample".into(),
+            Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
+            "b".into(),
+            "MonoExample".into(),
+            Box::new(MonoExample::default()),
+        ));
+        let c = graph.add_node(LegatoNode::new(
+            "c".into(),
+            "MonoExample".into(),
+            Box::new(MonoExample::default()),
+        ));
 
         graph
             .add_edge(Connection {
@@ -429,26 +419,34 @@ mod test {
             })
             .expect("Could not add e2");
 
-        assert!(graph
-            .incoming_connections(b)
-            .expect("Node should exist!")
-            .contains(&e1));
-        assert!(graph
-            .incoming_connections(c)
-            .expect("Node should exist!")
-            .contains(&e2));
+        assert!(
+            graph
+                .incoming_connections(b)
+                .expect("Node should exist!")
+                .contains(&e1)
+        );
+        assert!(
+            graph
+                .incoming_connections(c)
+                .expect("Node should exist!")
+                .contains(&e2)
+        );
 
         graph.remove_edge(e1).unwrap();
         graph.remove_edge(e2).unwrap();
 
-        assert!(!graph
-            .incoming_connections(b)
-            .expect("Node should exist!")
-            .contains(&e1));
-        assert!(!graph
-            .incoming_connections(c)
-            .expect("Node should exist!")
-            .contains(&e2));
+        assert!(
+            !graph
+                .incoming_connections(b)
+                .expect("Node should exist!")
+                .contains(&e1)
+        );
+        assert!(
+            !graph
+                .incoming_connections(c)
+                .expect("Node should exist!")
+                .contains(&e2)
+        );
     }
 
     #[test]
@@ -481,57 +479,65 @@ mod test {
             Box::new(MonoExample::default()),
         ));
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: a,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: b,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: b,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: c,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: d,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: c,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: d,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: c,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: e,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: e,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
         assert_is_valid_topo(&mut graph);
     }
@@ -551,18 +557,20 @@ mod test {
             Box::new(MonoExample::default()),
         ));
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: a,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: b,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
         let _ = graph.add_edge(Connection {
             source: ConnectionEntry {
@@ -640,31 +648,35 @@ mod test {
             Box::new(MonoExample::default()),
         ));
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: a,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: b,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: a,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
-        graph.add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: b,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-            sink: ConnectionEntry {
-                node_key: c,
-                port_index: 0,
-                port_rate: PortRate::Audio,
-            },
-        }).unwrap();
+        graph
+            .add_edge(Connection {
+                source: ConnectionEntry {
+                    node_key: b,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+                sink: ConnectionEntry {
+                    node_key: c,
+                    port_index: 0,
+                    port_rate: PortRate::Audio,
+                },
+            })
+            .unwrap();
 
         graph.remove_node(b).expect("node existed");
 
@@ -708,5 +720,4 @@ mod test {
 
         assert_eq!(res.unwrap_err(), GraphError::BadConnection);
     }
-
 }

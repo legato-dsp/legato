@@ -136,6 +136,3 @@ fn ast_graph_with_port_slices() {
         }
     );
 }
-
-
-

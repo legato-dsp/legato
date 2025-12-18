@@ -1,7 +1,10 @@
 use std::{path::Path, time::Duration};
 
 use legato::{
-    builder::{LegatoBuilder, Unconfigured}, config::Config, out::{render}, ports::PortBuilder
+    builder::{LegatoBuilder, Unconfigured},
+    config::Config,
+    out::render,
+    ports::PortBuilder,
 };
 
 // Example with a poc oversample pipe
@@ -28,8 +31,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports)
-        .build_dsl(&graph);
+    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
     dbg!(&app);
 

@@ -1,6 +1,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use legato::{
-    builder::{LegatoBuilder},
+    builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness,
     nodes::audio::{fir::FirFilter, sine::Sine},
@@ -118,11 +118,11 @@ fn bench_stereo_delay(c: &mut Criterion) {
         control_rate: 44_100 / 32,
         initial_graph_capacity: 4,
     };
-    
+
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
 
-    let (mut app, _) =  LegatoBuilder::new(config, ports)
-        .build_dsl(&String::from(r#"
+    let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
+        r#"
             audio {
                 delay_write { delay_name: "a", chans: 2, delay_length: 1000 },
                 delay_read { delay_name: "a", chans: 2, delay_length: [120, 240] }
@@ -131,8 +131,8 @@ fn bench_stereo_delay(c: &mut Criterion) {
             delay_write >> delay_read
 
             { delay_read }
-        "#)
-    );
+        "#,
+    ));
 
     c.bench_function("Basic stereo delay", |b| {
         let ai: &[Box<[f32]>] = &[

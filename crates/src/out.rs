@@ -10,11 +10,7 @@ use crate::{LegatoApp, runtime::Runtime};
 
 use assert_no_alloc::*;
 
-pub fn render(
-    mut app: LegatoApp,
-    path: &Path,
-    time: Duration,
-) -> Result<(), hound::Error> {
+pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hound::Error> {
     let config = app.get_config();
 
     let dur_in_samples = (time.as_secs_f32() * config.sample_rate as f32) as usize;
