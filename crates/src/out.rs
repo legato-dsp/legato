@@ -11,20 +11,19 @@ use crate::{LegatoApp, runtime::Runtime};
 use assert_no_alloc::*;
 
 pub fn render(
-    mut runtime: Runtime,
+    mut app: LegatoApp,
     path: &Path,
-    sr: u32,
     time: Duration,
 ) -> Result<(), hound::Error> {
-    let dur_in_samples = (time.as_secs_f32() * sr as f32) as usize;
-    let mut count = 0_usize;
+    let config = app.get_config();
 
-    let config = runtime.get_config();
+    let dur_in_samples = (time.as_secs_f32() * config.sample_rate as f32) as usize;
+
     let channels = config.channels;
 
     let spec = WavSpec {
         channels: channels as u16,
-        sample_rate: sr,
+        sample_rate: config.sample_rate as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
@@ -33,8 +32,10 @@ pub fn render(
 
     let block_size = config.audio_block_size;
 
+    let mut count = 0_usize;
+
     while count < dur_in_samples {
-        let block = runtime.next_block(None);
+        let block = app.next_block(None);
 
         for n in 0..block_size {
             for block_chan in block {

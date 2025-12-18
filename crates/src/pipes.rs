@@ -11,11 +11,11 @@ impl PipeRegistry {
         Self { data }
     }
 
-    pub fn add(&mut self, name: String, pipe: Box<dyn Pipe>) {
+    pub fn insert(&mut self, name: String, pipe: Box<dyn Pipe>) {
         self.data.insert(name, pipe);
     }
 
-    pub fn get(&self, name: &String) -> Result<&Box<dyn Pipe>, ValidationError> {
+    pub fn get(&self, name: &str) -> Result<&Box<dyn Pipe>, ValidationError> {
         self.data
             .get(name)
             .ok_or(ValidationError::PipeNotFound(format!(
@@ -29,7 +29,7 @@ impl Default for PipeRegistry {
     fn default() -> Self {
         let mut data: HashMap<String, Box<dyn Pipe>> = HashMap::new();
         data.insert(String::from("replicate"), Box::new(Replicate {}));
-        data.insert(String::from("oversample2x"), Box::new(Oversample2X {}));
+        data.insert(String::from("oversample2X"), Box::new(Oversample2X {}));
 
         Self { data }
     }
@@ -115,10 +115,9 @@ impl Pipe for Oversample2X {
                 let ports = node.get_node().ports();
                 let oversampler = oversample_by_two_factory(node.clone(), ports.audio_out.len(), config.audio_block_size);
 
-                let new_name = format!("Oversample2X{}", node.name);
                 let new_kind = format!("Oversample2X{}", node.node_kind);
 
-                let new_node = LegatoNode::new(new_name, new_kind, Box::new(oversampler));
+                let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
 
                 view.replace(key, new_node);
             },
@@ -128,10 +127,9 @@ impl Pipe for Oversample2X {
                     let ports = node.get_node().ports();
                     let oversampler = oversample_by_two_factory(node.clone(), ports.audio_out.len(), config.audio_block_size);
 
-                    let new_name = format!("Oversample2X{}", node.name);
                     let new_kind = format!("Oversample2X{}", node.node_kind);
 
-                    let new_node = LegatoNode::new(new_name, new_kind, Box::new(oversampler));
+                    let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
 
                     view.replace(*key, new_node);
                 }

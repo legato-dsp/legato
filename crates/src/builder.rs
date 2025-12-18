@@ -3,7 +3,7 @@ use std::{collections::{BTreeMap, HashMap}, marker::PhantomData, sync::{Arc, ato
 use arc_swap::ArcSwapOption;
 
 use crate::{
-    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, Value, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{LegatoNode}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
+    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, Value, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::LegatoNode, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::{Pipe, PipeRegistry}, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
 };
 
 // Typestates for the builder
@@ -77,7 +77,7 @@ pub struct LegatoBuilder<State> {
     // Lookup from string to NodeKey
     working_name_lookup: HashMap<String, NodeKey>,
     // Lookup from string to Pipe Fn
-    pipe_lookup: HashMap<String, Box<dyn Pipe>>,
+    pipe_lookup: PipeRegistry,
     // Resources being built. These can be pased to node factories
     resources: Resources,
     // Name to key maps
@@ -106,7 +106,7 @@ impl LegatoBuilder<Unconfigured> {
             sample_backends: HashMap::new(),
             namespaces: namespaces,
             working_name_lookup: HashMap::new(),
-            pipe_lookup: HashMap::new(),
+            pipe_lookup: PipeRegistry::default(),
             last_selection: None,
             _state: std::marker::PhantomData,
         }
@@ -324,7 +324,7 @@ impl<S> LegatoBuilder<S> where S: CanApplyPipe
     pub fn pipe(&mut self, pipe_name: &str, props: Option<Value>) {
         match self.last_selection {
             Some(_) => {
-                if let Some(pipe) = self.pipe_lookup.get(pipe_name){
+                if let Ok(pipe) = self.pipe_lookup.get(pipe_name){
                     if let Some(last_selection) = &self.last_selection {
                         let mut view = SelectionView { runtime: &mut self.runtime, working_name_lookup: &mut self.working_name_lookup, selection: last_selection.clone()};
                         pipe.pipe(&mut view, props);
@@ -334,6 +334,9 @@ impl<S> LegatoBuilder<S> where S: CanApplyPipe
                     else {
                         panic!("Cannot apply pipe when there is no last_selection! Please add a node first and apply a pipe directly after.")
                     }
+                }
+                else {
+                    panic!("Pipe not found {}", pipe_name);
                 }
             },
             None => panic!("Cannot apply pipe to non-existent node!")
@@ -409,10 +412,15 @@ impl LegatoBuilder<DslBuilding> {
             });
         }
 
+        dbg!(&ast.sink.name);
+
+        dbg!(&self.working_name_lookup);
+
         let sink_key = self
             .working_name_lookup
             .get(&ast.sink.name)
             .expect("Could not find sink!");
+
 
         self.runtime
             .set_sink_key(*sink_key)

@@ -5,9 +5,7 @@ use std::{fmt::Debug, path::Path};
 use heapless::spsc::{Consumer, Producer};
 
 use crate::{
-    ast::Value,
-    node::Channels,
-    runtime::{NodeKey, Runtime, RuntimeBackend},
+    ast::Value, config::Config, node::Channels, runtime::{NodeKey, Runtime, RuntimeBackend}
 };
 
 pub mod ast;
@@ -79,6 +77,9 @@ impl LegatoApp {
             dbg!(&msg);
         }
         self.runtime.next_block(external_inputs)
+    }
+    pub fn get_config(&self) -> Config {
+        self.runtime.get_config()
     }
 }
 
