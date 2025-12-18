@@ -42,8 +42,6 @@ impl Node for Sweep {
 
         let block_size = ctx.get_config().audio_block_size;
 
-        let chans = ao.len();
-
         let mut min = self.range[0];
         let max = self.range[1];
 

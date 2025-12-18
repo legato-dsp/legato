@@ -3,7 +3,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
 use crate::{
-    node::{DynNode, Node, LegatoNode},
+    node::{LegatoNode},
     ports::PortRate,
     runtime::NodeKey,
 };

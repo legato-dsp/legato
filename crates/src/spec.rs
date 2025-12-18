@@ -26,11 +26,9 @@ macro_rules! node_spec {
         build = $build:expr
     ) => {
         {
-            #[allow(clippy::all)]
             let mut req_params = std::collections::BTreeSet::new();
             $(req_params.insert(String::from($req));)*
 
-            #[allow(clippy::all)]
             let mut opt_params = std::collections::BTreeSet::new();
             $(opt_params.insert(String::from($opt));)*
 

@@ -1,10 +1,9 @@
 use std::{collections::{BTreeMap, HashMap}, marker::PhantomData, sync::{Arc, atomic::AtomicU64}};
 
 use arc_swap::ArcSwapOption;
-use pest::pratt_parser::Op;
 
 use crate::{
-    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, Value, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{DynNode, LegatoNode, Node}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
+    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, Value, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{LegatoNode}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
 };
 
 // Typestates for the builder
@@ -472,6 +471,10 @@ impl<'a> SelectionView<'a> {
 
     pub fn selection(&self) -> &SelectionKind {
         &self.selection
+    }
+
+    pub fn config(&self) -> Config {
+        self.runtime.get_config()
     }
 
     pub fn replace(&mut self, key: NodeKey, node: LegatoNode) {

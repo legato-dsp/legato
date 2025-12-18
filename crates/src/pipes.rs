@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ValidationError, ast::Value, builder::{SelectionKind, SelectionView}};
+use crate::{ValidationError, ast::Value, builder::{SelectionKind, SelectionView}, node::LegatoNode, nodes::audio::oversample::{Oversampler, oversample_by_two_factory}};
 
 pub struct PipeRegistry {
     data: HashMap<String, Box<dyn Pipe>>,
@@ -25,14 +25,15 @@ impl PipeRegistry {
     }
 }
 
-// impl Default for PipeRegistry {
-//     fn default() -> Self {
-//         let mut data: HashMap<String, Box<dyn PipeSingle>> = HashMap::new();
-//         data.insert(String::from("replicate"), Box::new(Replicate {}));
+impl Default for PipeRegistry {
+    fn default() -> Self {
+        let mut data: HashMap<String, Box<dyn Pipe>> = HashMap::new();
+        data.insert(String::from("replicate"), Box::new(Replicate {}));
+        data.insert(String::from("oversample2x"), Box::new(Oversample2X {}));
 
-//         Self { data }
-//     }
-// }
+        Self { data }
+    }
+}
 
 /// Pipes are functions that can transform a node or multiple nodes.
 /// 
@@ -61,8 +62,10 @@ pub trait Pipe {
     fn pipe(&self, view: &mut SelectionView, props: Option<Value>);
 }
 
-/// Basic pipe to clone a node N times.
 
+// A collection of a few default pipes
+
+/// Basic pipe to clone a node N times.
 struct Replicate;
 
 impl Pipe for Replicate {
@@ -91,28 +94,48 @@ impl Pipe for Replicate {
 }
 
 
-// A collection of a few default pipes
+/// A simple node that wraps a node in a 2x oversampler.
+/// 
+/// In the future, there will be more rates and an FIR builder.
+/// 
+/// For the time being, if you need higher rates, you can design an FIR
+/// filter and pass create a node, and create your own pipe, or simply use
+/// it as a node. You can also create a subgraph with a different rate as well.
+struct Oversample2X;
 
-// struct Replicate;
+impl Pipe for Oversample2X {
+    fn pipe(&self, view: &mut SelectionView, _: Option<Value>) {
+        let selection = view.selection().clone();
+        
+        let config = view.config();
 
-// impl PipeSingle for Replicate {
-//     fn pipe(&self, inputs: TransformedNode, props: Option<Value>) -> TransformedNode {
-//         match inputs {
-//             TransformedNode::Single(n) => {
-//                 let val = props.unwrap_or(Value::U32(2));
+        match selection {
+            SelectionKind::Single(key) => {
+                let node = view.get_node(&key).expect("Could not find key in Pipe!");
+                let ports = node.get_node().ports();
+                let oversampler = oversample_by_two_factory(node.clone(), ports.audio_out.len(), config.audio_block_size);
 
-//                 match val {
-//                     Value::U32(i) => TransformedNode::Multiple(
-//                         (0..i)
-//                             .collect::<Vec<_>>()
-//                             .iter()
-//                             .map(|_| n.clone())
-//                             .collect(),
-//                     ),
-//                     _ => panic!("Must provide U32 to replicate"),
-//                 }
-//             }
-//             TransformedNode::Multiple(_) => panic!("Must provide single node for replicate pipe."),
-//         }
-//     }
-// }
+                let new_name = format!("Oversample2X{}", node.name);
+                let new_kind = format!("Oversample2X{}", node.node_kind);
+
+                let new_node = LegatoNode::new(new_name, new_kind, Box::new(oversampler));
+
+                view.replace(key, new_node);
+            },
+            SelectionKind::Multiple(keys) => {
+                for key in keys.iter() {
+                    let node = view.get_node(key).expect("Could not find key in Pipe!");
+                    let ports = node.get_node().ports();
+                    let oversampler = oversample_by_two_factory(node.clone(), ports.audio_out.len(), config.audio_block_size);
+
+                    let new_name = format!("Oversample2X{}", node.name);
+                    let new_kind = format!("Oversample2X{}", node.node_kind);
+
+                    let new_node = LegatoNode::new(new_name, new_kind, Box::new(oversampler));
+
+                    view.replace(*key, new_node);
+                }
+            }
+        }
+    }
+}

@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::Duration};
 use crate::{
     ValidationError,
     builder::ResourceBuilderView,
-    node::{DynNode, Node},
+    node::{DynNode},
     node_spec,
     nodes::audio::{
         delay::{DelayLine, DelayRead, DelayWrite},
