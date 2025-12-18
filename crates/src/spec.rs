@@ -1,9 +1,11 @@
+#![allow(unknown_lints)]
+
 use std::collections::BTreeSet;
 
 use crate::{
     ValidationError,
     builder::ResourceBuilderView,
-    node::{DynNode, Node},
+    node::{DynNode},
     params::Params,
 };
 
@@ -21,6 +23,7 @@ pub struct NodeSpec {
     pub optional_params: BTreeSet<String>,
     pub build: NodeFactory,
 }
+
 
 #[macro_export]
 macro_rules! node_spec {
