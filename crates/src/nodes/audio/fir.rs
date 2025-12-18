@@ -54,7 +54,7 @@ impl Node for FirFilter {
                 let mut y = Vf32::splat(0.0);
 
                 for (k, h) in self.coeffs.chunks_exact(LANES).enumerate() {
-                    let a = Vf32::from_slice(&h);
+                    let a = Vf32::from_slice(h);
                     let b = state.get_chunk_by_offset(k * LANES);
                     y = a.mul_add(b, y)
                 }

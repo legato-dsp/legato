@@ -92,7 +92,7 @@ pub fn mult_node_factory(val: f32, chans: usize, op_kind: ApplyOpKind) -> ApplyO
         ApplyOpKind::Div => div,
     };
     ApplyOp {
-        val: val,
+        val,
         apply_op: op,
         ports: PortBuilder::default()
             .audio_in(chans)

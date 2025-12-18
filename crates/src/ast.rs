@@ -116,13 +116,10 @@ fn parse_scope_block<'i>(pair: Pair<'i, Rule>) -> Result<DeclarationScope, Build
     let mut declarations = vec![];
 
     for pair in inner {
-        match pair.as_rule() {
-            Rule::add_nodes => {
-                for node in pair.into_inner() {
-                    declarations.push(parse_node(node)?);
-                }
+        if pair.as_rule() == Rule::add_nodes {
+            for node in pair.into_inner() {
+                declarations.push(parse_node(node)?);
             }
-            _ => (),
         }
     }
 

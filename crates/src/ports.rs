@@ -107,7 +107,7 @@ impl PortBuilder {
         let index = self.port_audio_in.len();
         for (i, name) in names.iter().enumerate() {
             self.port_audio_in.push(PortMeta {
-                name: name,
+                name,
                 index: index + i,
             });
         }
@@ -118,7 +118,7 @@ impl PortBuilder {
         let index = self.port_audio_out.len();
         for (i, name) in names.iter().enumerate() {
             self.port_audio_out.push(PortMeta {
-                name: name,
+                name,
                 index: index + i,
             });
         }

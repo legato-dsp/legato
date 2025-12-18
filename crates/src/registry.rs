@@ -1,3 +1,5 @@
+#![allow(unused_mut)]
+
 use std::{collections::HashMap, time::Duration};
 
 use crate::{
@@ -135,7 +137,7 @@ impl Default for AudioRegistry {
 
                     let key = rb
                         .get_delay_line_key(&name)
-                        .expect(&format!("Could not find delay line key {}", name));
+                        .unwrap_or_else(|_| panic!("Could not find delay line key {}", name));
 
                     let node = DelayRead::new(chans, key, len);
 

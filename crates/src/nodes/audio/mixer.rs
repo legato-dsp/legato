@@ -24,7 +24,7 @@ impl TrackMixer {
     pub fn new(chans_per_track: usize, tracks: usize, gain: Vec<f32>) -> Self {
         Self {
             chans_per_track,
-            gain: gain.into_iter().map(|x| Vf32::splat(x)).collect(),
+            gain: gain.into_iter().map(Vf32::splat).collect(),
             ports: PortBuilder::default()
                 .audio_in(chans_per_track * tracks)
                 .audio_out(chans_per_track)
@@ -49,7 +49,7 @@ impl Node for TrackMixer {
 
         for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
             let gain = self.gain[i];
-            for (chan_idx, chan) in track.into_iter().enumerate() {
+            for (chan_idx, chan) in track.iter().enumerate() {
                 for (chunk_in, chunk_out) in chan
                     .chunks_exact(LANES)
                     .zip(ao[chan_idx].chunks_exact_mut(LANES))

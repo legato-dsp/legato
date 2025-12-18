@@ -203,11 +203,10 @@ impl AudioGraph {
 
         // Build indegrees
         for (key, targets) in &self.incoming_edges {
-            if self.nodes.contains_key(key) {
-                if let Some(count) = self.indegree.get_mut(key) {
+            if self.nodes.contains_key(key)
+                && let Some(count) = self.indegree.get_mut(key) {
                     *count = targets.len();
                 }
-            }
         }
 
         self.no_incoming_edges_queue.clear();

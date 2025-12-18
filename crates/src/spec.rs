@@ -1,4 +1,4 @@
-#![allow(unknown_lints)]
+#![allow(unused_mut)]
 
 use std::collections::BTreeSet;
 

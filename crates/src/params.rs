@@ -42,10 +42,7 @@ impl<'a> Params<'a> {
     }
 
     pub fn get_usize(&self, key: &str) -> Option<usize> {
-        match self.get_u32(key) {
-            Some(i) => Some(i as usize),
-            None => None,
-        }
+        self.get_u32(key).map(|i| i as usize)
     }
 
     pub fn get_str(&self, key: &str) -> Option<String> {

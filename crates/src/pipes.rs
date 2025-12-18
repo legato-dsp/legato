@@ -5,7 +5,7 @@ use crate::{
     ast::Value,
     builder::{SelectionKind, SelectionView},
     node::LegatoNode,
-    nodes::audio::oversample::{Oversampler, oversample_by_two_factory},
+    nodes::audio::oversample::oversample_by_two_factory,
 };
 
 pub struct PipeRegistry {

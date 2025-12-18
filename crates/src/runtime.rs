@@ -238,7 +238,7 @@ impl Node for Runtime {
         debug_assert_eq!(outputs.len(), ao.len());
 
         for (c, out_channel) in outputs.iter().enumerate() {
-            ao[c].copy_from_slice(&out_channel);
+            ao[c].copy_from_slice(out_channel);
         }
     }
     fn ports(&self) -> &Ports {

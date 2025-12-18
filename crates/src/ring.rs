@@ -276,7 +276,7 @@ mod test {
         // 3333  2222
 
         assert_eq!(rb.get_chunk_by_offset(0), Vf32::splat(3.0));
-        assert_eq!(rb.get_chunk_by_offset(1 * LANES), Vf32::splat(2.0));
+        assert_eq!(rb.get_chunk_by_offset(LANES), Vf32::splat(2.0));
     }
 
     #[test]
@@ -413,15 +413,14 @@ mod test {
         samples.iter().for_each(|x| rb_a.push(*x));
         samples
             .chunks_exact(LANES)
-            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
+            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(x)));
 
         // Assert that data is right
         assert_eq!(rb_a.data, rb_b.data);
 
         let c1: Vec<f32> = (0..16).map(|x| rb_a.get_offset(x)).collect();
         let c2: Vec<f32> = (0..4)
-            .map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
-            .flat_map(|x| x)
+            .flat_map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
             .collect();
 
         for i in 0..16 {
@@ -447,15 +446,14 @@ mod test {
         samples.iter().for_each(|x| rb_a.push(*x));
         samples
             .chunks_exact(LANES)
-            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(&x)));
+            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(x)));
 
         // Assert that data is right
         assert_eq!(rb_a.data, rb_b.data);
 
         let c1: Vec<f32> = (0..256).map(|x| rb_a.get_offset(x)).collect();
         let c2: Vec<f32> = (0..256)
-            .map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
-            .flat_map(|x| x)
+            .flat_map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
             .collect();
 
         dbg!(&c1[..16]);

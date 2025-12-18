@@ -121,10 +121,10 @@ where
     let x_sq = x * x;
     let x_q = x_sq * x_sq;
 
-    let c1 = Simd::splat(-25.1323666662f32);
-    let c3 = Simd::splat(64.7874540567f32);
-    let c5 = Simd::splat(-66.0947787168f32);
-    let c7 = Simd::splat(32.0267973181f32);
+    let c1 = Simd::splat(-25.132_366_f32);
+    let c3 = Simd::splat(64.787_45_f32);
+    let c5 = Simd::splat(-66.094_78_f32);
+    let c7 = Simd::splat(32.026_8_f32);
 
     let x_5_7 = c5 + c7 * x_sq;
     let x_1_3 = c1 + c3 * x_sq;

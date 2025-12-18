@@ -141,7 +141,7 @@ impl<const N: usize> Oversampler<N> {
         buff_size: usize,
     ) -> Self {
         Self {
-            node: node,
+            node,
             upsampler,
             downsampler,
             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],

@@ -118,12 +118,12 @@ impl LegatoBuilder<Unconfigured> {
         let runtime = build_runtime(config, ports);
 
         LegatoBuilder::<Configured> {
-            runtime: runtime,
+            runtime,
             resources: Resources::default(),
             sample_name_to_key: HashMap::new(),
             delay_name_to_key: HashMap::new(),
             sample_backends: HashMap::new(),
-            namespaces: namespaces,
+            namespaces,
             working_name_lookup: HashMap::new(),
             pipe_lookup: PipeRegistry::default(),
             last_selection: None,
@@ -178,7 +178,7 @@ where
         let ns = self
             .namespaces
             .get(namespace)
-            .expect(&format!("Could not find namespace {}", namespace));
+            .unwrap_or_else(|| panic!("Could not find namespace {}", namespace));
 
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
@@ -190,13 +190,13 @@ where
 
         let node = ns
             .get_node(&mut resource_builder_view, node_kind, params)
-            .expect(&format!("Could not find node {}", node_kind));
+            .unwrap_or_else(|_| panic!("Could not find node {}", node_kind));
 
         let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
 
         let key = self.runtime.add_node(legato_node);
 
-        self.working_name_lookup.insert(alias.clone(), key.clone());
+        self.working_name_lookup.insert(alias.clone(), key);
 
         // Set the last node_ref_added
         self.last_selection = Some(SelectionKind::Single(key));
@@ -222,7 +222,7 @@ where
 
         self.last_selection = Some(SelectionKind::Single(key));
 
-        self.working_name_lookup.insert(alias.clone(), key.clone());
+        self.working_name_lookup.insert(alias.clone(), key);
 
         self.into_state()
     }
@@ -237,7 +237,8 @@ where
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                let indicies = match connection.rate {
+                
+                match connection.rate {
                     PortRate::Audio => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
                     PortRate::Control => ports
                         .control_out
@@ -245,8 +246,7 @@ where
                         .enumerate()
                         .map(|(i, _)| i)
                         .collect(),
-                };
-                indicies
+                }
             }
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
@@ -255,7 +255,7 @@ where
                     PortRate::Audio => ports.audio_out.iter().find(|x| x.name == port),
                     PortRate::Control => ports.control_out.iter().find(|x| x.name == port),
                 }
-                .expect(&format!("Could not find index for named port {}", port))
+                .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
                 .index;
 
                 vec![index]
@@ -272,7 +272,8 @@ where
         let sink_indicies: Vec<usize> = match connection.sink_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                let indicies = match connection.rate {
+                
+                match connection.rate {
                     PortRate::Audio => ports.audio_in.iter().enumerate().map(|(i, _)| i).collect(),
                     PortRate::Control => ports
                         .control_in
@@ -280,8 +281,7 @@ where
                         .enumerate()
                         .map(|(i, _)| i)
                         .collect(),
-                };
-                indicies
+                }
             }
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
@@ -290,7 +290,7 @@ where
                     PortRate::Audio => ports.audio_in.iter().find(|x| x.name == port),
                     PortRate::Control => ports.control_in.iter().find(|x| x.name == port),
                 }
-                .expect(&format!("Could not find index for named port {}", port))
+                .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
                 .index;
 
                 vec![index]
@@ -417,7 +417,7 @@ impl LegatoBuilder<DslBuilding> {
                     &scope.namespace,
                     &node.node_type,
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
-                    &Params(&node.params.clone().unwrap_or_else(|| BTreeMap::new())),
+                    &Params(&node.params.clone().unwrap_or_else(BTreeMap::new)),
                 );
 
                 for pipe in node.pipes.iter() {
@@ -430,18 +430,14 @@ impl LegatoBuilder<DslBuilding> {
             let source_key = self
                 .working_name_lookup
                 .get(&connection.source_name)
-                .expect(&format!(
-                    "Could not find source key in connection {}",
-                    &connection.source_name
-                ));
+                .unwrap_or_else(|| panic!("Could not find source key in connection {}",
+                    &connection.source_name));
 
             let sink_key = self
                 .working_name_lookup
                 .get(&connection.sink_name)
-                .expect(&format!(
-                    "Could not find sink key in connection {}",
-                    &connection.sink_name
-                ));
+                .unwrap_or_else(|| panic!("Could not find sink key in connection {}",
+                    &connection.sink_name));
 
             self.connect_ref_self(AddConnectionProps {
                 source: *source_key,
@@ -511,7 +507,7 @@ impl<'a> SelectionView<'a> {
         let key = self.runtime.add_node(node);
 
         // Update the lookup map
-        self.working_name_lookup.insert(working_name, key.clone());
+        self.working_name_lookup.insert(working_name, key);
 
         // After inserting a node, we add push to the selection. If we only had a single node, we now have two
         match &mut self.selection {
@@ -540,7 +536,7 @@ impl<'a> SelectionView<'a> {
             .working_name_lookup
             .iter()
             .find(|(_, nk)| **nk == key)
-            .map(|x| x.clone())
+            .map(|x| x)
         {
             self.working_name_lookup.remove(&old_key.clone());
             self.working_name_lookup.insert(working_name, key);
@@ -556,7 +552,7 @@ impl<'a> SelectionView<'a> {
     }
 
     pub fn get_key(&mut self, name: &'static str) -> Option<NodeKey> {
-        self.working_name_lookup.get(name.into()).copied()
+        self.working_name_lookup.get(name).copied()
     }
 
     pub fn delete(&mut self, key: NodeKey) {
@@ -567,7 +563,7 @@ impl<'a> SelectionView<'a> {
             .working_name_lookup
             .iter()
             .find(|(_, nk)| **nk == key)
-            .map(|x| x.clone())
+            .map(|x| x)
         {
             self.working_name_lookup.remove(&old_key.clone());
         }
@@ -608,7 +604,8 @@ impl<'a> ResourceBuilderView<'a> {
     }
 
     pub fn add_sampler(&mut self, name: &String) -> SampleKey {
-        let sample_key = if let Some(&key) = self.sample_keys.get(name) {
+        
+        if let Some(&key) = self.sample_keys.get(name) {
             key
         } else {
             let data = ArcSwapOption::new(None);
@@ -623,8 +620,7 @@ impl<'a> ResourceBuilderView<'a> {
             self.sample_backends.insert(name.clone(), backend);
 
             self.resources.add_sample_resource(handle)
-        };
-        sample_key
+        }
     }
 
     pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {
@@ -634,7 +630,7 @@ impl<'a> ResourceBuilderView<'a> {
     }
 
     pub fn get_config(&self) -> &Config {
-        &self.config
+        self.config
     }
 }
 
@@ -700,7 +696,7 @@ fn one_to_n(
                 port_rate: props.rate,
             },
             sink: ConnectionEntry {
-                node_key: mixer.clone(),
+                node_key: mixer,
                 port_index: 0,
                 port_rate: props.rate,
             },
@@ -712,7 +708,7 @@ fn one_to_n(
         runtime
             .add_edge(Connection {
                 source: ConnectionEntry {
-                    node_key: mixer.clone(),
+                    node_key: mixer,
                     port_index: 0,
                     port_rate: props.rate,
                 },
@@ -751,7 +747,7 @@ fn n_to_one(
                     port_rate: props.rate,
                 },
                 sink: ConnectionEntry {
-                    node_key: mixer.clone(),
+                    node_key: mixer,
                     port_index: i,
                     port_rate: props.rate,
                 },
@@ -763,7 +759,7 @@ fn n_to_one(
     runtime
         .add_edge(Connection {
             source: ConnectionEntry {
-                node_key: mixer.clone(),
+                node_key: mixer,
                 port_index: 0,
                 port_rate: props.rate,
             },

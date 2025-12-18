@@ -189,7 +189,7 @@ mod test_delay_simd_equivalence {
             *s = rng.random::<f32>();
         }
 
-        dl.write_block(&input);
+        dl.write_block(input);
 
         for _ in 0..10_000 {
             let off = rng.random::<f32>() * (CAP as f32 - 4.0);

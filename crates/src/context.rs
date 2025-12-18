@@ -27,7 +27,7 @@ impl AudioContext {
         self.config.audio_block_size = block_size;
     }
     pub fn get_config(&self) -> Config {
-        self.config.clone()
+        self.config
     }
     pub fn get_resources(&self) -> &Resources {
         &self.resources
