@@ -1,7 +1,6 @@
 use legato::{
-    ast::{Ast, ExpandedNode, PortConnectionType, Sink, Value, build_ast},
+    ast::{Ast, PortConnectionType, Sink, Value, build_ast},
     parse::{LegatoParser, Rule, print_pair},
-    pipes::PipeRegistry,
 };
 use pest::Parser;
 
@@ -10,9 +9,7 @@ fn parse_ast(input: &str) -> Ast {
 
     print_pair(&(pairs.clone().next().unwrap()), 4);
 
-    let registry = PipeRegistry::default();
-
-    build_ast(pairs, &registry).expect("AST lowering failed")
+    build_ast(pairs).expect("AST lowering failed")
 }
 
 #[test]
@@ -33,16 +30,11 @@ fn ast_node_with_alias_and_params() {
     assert_eq!(scope.declarations.len(), 1);
     let node_one = &scope.declarations[0];
 
-    match node_one {
-        ExpandedNode::Node(inner) => {
-            assert_eq!(inner.node_type, "osc");
-            assert_eq!(inner.alias, "square_wave_one");
+    assert_eq!(node_one.node_type, "osc");
+    assert_eq!(node_one.alias.as_ref().unwrap(), "square_wave_one");
 
-            assert_eq!(inner.params["freq"], Value::U32(440));
-            assert_eq!(inner.params["gain"], Value::F32(0.2));
-        }
-        _ => panic!(),
-    };
+    assert_eq!(node_one.params.as_ref().unwrap()["freq"], Value::U32(440));
+    assert_eq!(node_one.params.as_ref().unwrap()["gain"], Value::F32(0.2));
 
     let sink = ast.sink;
     assert_eq!(

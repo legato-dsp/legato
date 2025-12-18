@@ -87,6 +87,11 @@ impl Runtime {
         self.graph.remove_node(key);
         self.port_sources_audio.remove(key);
     }
+
+    pub fn replace_node(&mut self, key: NodeKey, node: LegatoNode) {
+        self.graph.replace(key, node);
+    }
+
     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
         self.graph.add_edge(connection)
     }
@@ -124,6 +129,9 @@ impl Runtime {
     }
     pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
         self.graph.get_node(*key)
+    }
+    pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
+        self.graph.get_node_mut(*key)
     }
     // TODO: Graphs as nodes again
     pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {

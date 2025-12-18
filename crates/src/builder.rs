@@ -1,9 +1,10 @@
 use std::{collections::{BTreeMap, HashMap}, marker::PhantomData, sync::{Arc, atomic::AtomicU64}};
 
 use arc_swap::ArcSwapOption;
+use pest::pratt_parser::Op;
 
 use crate::{
-    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{DynNode, LegatoNode}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
+    LegatoApp, LegatoBackend, LegatoMsg, ValidationError, ast::{PortConnectionType, Value, build_ast}, config::Config, graph::{Connection, ConnectionEntry}, node::{DynNode, LegatoNode, Node}, nodes::audio::{delay::DelayLine, mixer::{MonoFanOut, TrackMixer}}, params::Params, parse::parse_legato_file, pipes::Pipe, ports::{PortRate, Ports}, registry::AudioRegistry, resources::{DelayLineKey, Resources, SampleKey}, runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime}, sample::{AudioSampleBackend, AudioSampleHandle}, spec::NodeSpec
 };
 
 // Typestates for the builder
@@ -13,8 +14,6 @@ pub struct ContainsNodes;
 pub struct Connected;
 pub struct ReadyToBuild;
 
-
-
 // Different traits for varying levels
 pub trait CanRegister {}
 pub trait CanAddNode {}
@@ -22,13 +21,14 @@ pub trait CanConnect {}
 pub trait CanApplyPipe {}
 pub trait CanSetSink {}
 pub trait CanBuild {}
-pub trait CanBuildFromDSL {}
 
 // Setting up "permissions" for different structs. May be too complicated but also easy to add more states with overlapping permissiosn
 
 impl CanRegister for Unconfigured {}
 impl CanRegister for Configured {}
 impl CanRegister for ContainsNodes {}
+
+
 
 impl CanAddNode for Configured {}
 impl CanAddNode for ContainsNodes {}
@@ -43,8 +43,6 @@ impl CanSetSink for Connected {}
 
 impl CanBuild for ReadyToBuild {}
 
-impl CanBuildFromDSL for Configured {}
-
 pub struct DslBuilding;
 
 impl CanRegister for DslBuilding {}
@@ -52,6 +50,7 @@ impl CanAddNode for DslBuilding {}
 impl CanConnect for DslBuilding {}
 impl CanApplyPipe for DslBuilding {}
 impl CanSetSink for DslBuilding {}
+impl CanBuild for DslBuilding {}
 
 // Convenience struct for moving from one state to another
 impl<S> LegatoBuilder<S> {
@@ -66,16 +65,10 @@ impl<S> LegatoBuilder<S> {
             sample_backends: self.sample_backends,
             sample_name_to_key: self.sample_name_to_key,
             pipe_lookup: self.pipe_lookup,
-            last_node_ref_added: self.last_node_ref_added,
+            last_selection: self.last_selection,
             _state: PhantomData,
         }
     }
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum NodeKeyStorage {
-    Single(NodeKey),
-    Multiple(Vec<NodeKey>),
 }
 
 pub struct LegatoBuilder<State> {
@@ -92,12 +85,12 @@ pub struct LegatoBuilder<State> {
     sample_name_to_key: HashMap<String, SampleKey>,
     delay_name_to_key: HashMap<String, DelayLineKey>,
     sample_backends: HashMap<String, AudioSampleBackend>,
-    // When adding a node, this tracks and sets the node key for pipes
-    last_node_ref_added: Option<NodeKeyStorage>,
+    // When adding a node or piping, this tracks and sets the node key for pipes
+    last_selection: Option<SelectionKind>,
     _state: PhantomData<State>,
 }
 
-impl<Unconfigured> LegatoBuilder<Unconfigured> {
+impl LegatoBuilder<Unconfigured> {
     pub fn new(config: Config, ports: Ports) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
         let audio_registry = AudioRegistry::default();
@@ -115,27 +108,37 @@ impl<Unconfigured> LegatoBuilder<Unconfigured> {
             namespaces: namespaces,
             working_name_lookup: HashMap::new(),
             pipe_lookup: HashMap::new(),
-            last_node_ref_added: None,
+            last_selection: None,
             _state: std::marker::PhantomData,
         }
     }
 }
 
+impl LegatoBuilder<Configured> {
+    pub fn build_dsl(self, graph: &String) -> (LegatoApp, LegatoBackend) {
+        let can_build = self.into_state::<DslBuilding>();
+        can_build._build_dsl(graph)
+    }
+}
+
 impl<S> LegatoBuilder<S> where S: CanRegister {
     /// Add a new registry. Think of registries like "DLC" or packs of nodes that users or developers can extend
-    pub fn add_node_registry(&mut self, name: &'static str, registry: AudioRegistry) {
+    pub fn add_node_registry(mut self, name: &'static str, registry: AudioRegistry) -> Self {
         self.namespaces.insert(name.into(), registry);
+        self
     }
     /// Register a node to the "user" namespace
-    pub fn register_node(mut self, namespace: &'static str, spec: NodeSpec) {
+    pub fn register_node(mut self, namespace: &'static str, spec: NodeSpec) -> Self {
         match self.namespaces.get_mut(namespace) {
             Some(ns) => ns.declare_node(spec),
             None => panic!("Cannot find namespace {}", namespace)
-        }    
+        }
+        self
     }
     /// Register a custom pipe for transforming nodes
-    pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) {
-        self.pipe_lookup.insert(name.into(), pipe);  
+    pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) -> Self {
+        self.pipe_lookup.insert(name.into(), pipe);
+        self
     }
 }
 
@@ -172,7 +175,7 @@ impl<S> LegatoBuilder<S> where S: CanAddNode,
             .insert(alias.clone(), key.clone());
 
         // Set the last node_ref_added
-        self.last_node_ref_added = Some(NodeKeyStorage::Single(key));
+        self.last_selection = Some(SelectionKind::Single(key));
     }
     pub fn add_node(
         mut self,
@@ -188,7 +191,8 @@ impl<S> LegatoBuilder<S> where S: CanAddNode,
     /// Skip the ceremony with namespaces, specs, etc. and just add a LegatoNode. This still requires an alias for connections and debugging
     pub fn add_node_raw(mut self, node: LegatoNode, alias: &String) -> LegatoBuilder<ContainsNodes> {
         let key = self.runtime.add_node(node);
-        self.last_node_ref_added = Some(NodeKeyStorage::Single(key));
+
+        self.last_selection = Some(SelectionKind::Single(key));
 
         self.working_name_lookup
             .insert(alias.clone(), key.clone());
@@ -318,15 +322,27 @@ impl<S> LegatoBuilder<S> where S: CanSetSink
 
 impl<S> LegatoBuilder<S> where S: CanApplyPipe
 {
-    pub fn pipe(&mut self, pipe_name: &'static str) {
-        match self.last_node_ref_added {
-            Some(_) => (),
+    pub fn pipe(&mut self, pipe_name: &str, props: Option<Value>) {
+        match self.last_selection {
+            Some(_) => {
+                if let Some(pipe) = self.pipe_lookup.get(pipe_name){
+                    if let Some(last_selection) = &self.last_selection {
+                        let mut view = SelectionView { runtime: &mut self.runtime, working_name_lookup: &mut self.working_name_lookup, selection: last_selection.clone()};
+                        pipe.pipe(&mut view, props);
+
+                        self.last_selection = Some(view.get_selection_owned());
+                    }
+                    else {
+                        panic!("Cannot apply pipe when there is no last_selection! Please add a node first and apply a pipe directly after.")
+                    }
+                }
+            },
             None => panic!("Cannot apply pipe to non-existent node!")
         }
     }
 }
 
-impl LegatoBuilder<ReadyToBuild> {
+impl<S> LegatoBuilder<S> where S: CanBuild {
     pub fn build(self) -> (LegatoApp, LegatoBackend) {
         let mut runtime = self.runtime;
         runtime.set_resources(self.resources);
@@ -346,27 +362,30 @@ impl LegatoBuilder<ReadyToBuild> {
     }
 }
 
-impl<S> LegatoBuilder<S> where S: CanBuildFromDSL {
-    pub fn build_dsl(self, content: &String) -> (LegatoApp, LegatoBackend) {
+impl LegatoBuilder<DslBuilding> {
+    fn _build_dsl(mut self, content: &String) -> (LegatoApp, LegatoBackend) {
         let pairs = parse_legato_file(content).unwrap();
 
         let ast = build_ast(pairs).unwrap();
 
-        let mut builder = self.into_state::<DslBuilding>();
-
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
-                builder.add_node_ref_self(
+                self.add_node_ref_self(
                     &scope.namespace,
                     &node.node_type,
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
                     &Params(&node.params.clone().unwrap_or_else(|| BTreeMap::new()))
                 );
+                
+                for pipe in node.pipes.iter() {
+                    self.pipe(&pipe.name, pipe.params.clone());
+                }
+                
             }
         }
 
         for connection in ast.connections.iter() {
-            let source_key = builder
+            let source_key = self
                 .working_name_lookup
                 .get(&connection.source_name)
                 .expect(&format!(
@@ -374,7 +393,7 @@ impl<S> LegatoBuilder<S> where S: CanBuildFromDSL {
                     &connection.source_name
                 ));
 
-            let sink_key = builder
+            let sink_key = self
                 .working_name_lookup
                 .get(&connection.sink_name)
                 .expect(&format!(
@@ -382,7 +401,7 @@ impl<S> LegatoBuilder<S> where S: CanBuildFromDSL {
                     &connection.sink_name
                 ));
 
-            builder.connect_ref_self(AddConnectionProps {
+            self.connect_ref_self(AddConnectionProps {
                 source: *source_key,
                 sink: *sink_key,
                 source_kind: connection.source_port.clone(),
@@ -391,18 +410,109 @@ impl<S> LegatoBuilder<S> where S: CanBuildFromDSL {
             });
         }
 
-        let sink_key = builder
+        let sink_key = self
             .working_name_lookup
             .get(&ast.sink.name)
             .expect("Could not find sink!");
 
-        builder.runtime
+        self.runtime
             .set_sink_key(*sink_key)
             .expect("Could not set sink!");
 
-        let ready_to_build = builder.into_state::<ReadyToBuild>();
+        self.build()
+    }
+}
 
-        ready_to_build.build()
+#[derive(Clone, Debug)]
+pub enum NodeViewKind {
+    Single(LegatoNode),
+    Multiple(Vec<LegatoNode>)
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum SelectionKind {
+    Single(NodeKey),
+    Multiple(Vec<NodeKey>)
+}
+
+/// Selections are passed between pipes, and set after inserting nodes.
+/// 
+/// They expose a small view of operations on the runtime, so that pipes can
+/// transform nodes BEFORE connections are formed. This is enforced via the
+/// type state pattern.
+#[derive(Debug)]
+pub struct SelectionView<'a> {
+    runtime: &'a mut Runtime,
+    working_name_lookup: &'a mut HashMap<String, NodeKey>,
+    selection: SelectionKind
+}
+
+impl<'a> SelectionView<'a> {
+    pub fn new(runtime: &'a mut Runtime, working_name_lookup: &'a mut HashMap<String, NodeKey>, selection: SelectionKind) -> Self {
+        Self {
+            runtime,
+            working_name_lookup,
+            selection
+        }
+    }
+
+    pub fn insert(&mut self, node: LegatoNode) {
+        let working_name = node.name.clone();
+        let key = self.runtime.add_node(node);
+
+        // Update the lookup map
+        self.working_name_lookup.insert(working_name, key.clone());
+
+        // After inserting a node, we add push to the selection. If we only had a single node, we now have two
+        match &mut self.selection {
+            SelectionKind::Single(old_node) => self.selection = SelectionKind::Multiple(vec![*old_node, key]),
+            SelectionKind::Multiple(nodes) => nodes.push(key),
+        }
+    }
+
+    pub fn selection(&self) -> &SelectionKind {
+        &self.selection
+    }
+
+    pub fn replace(&mut self, key: NodeKey, node: LegatoNode) {
+        let working_name = node.name.clone();
+
+        self.runtime.replace_node(key, node);
+
+        // Find the working name and replace the name with the new node name, but point to the same key.
+        if let Some((old_key, _)) = self.working_name_lookup.iter().find(|(_, nk)| **nk == key).map(|x| x.clone()) {
+            self.working_name_lookup.remove(&old_key.clone());
+            self.working_name_lookup.insert(working_name, key);
+        }
+    }
+
+    pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode>{
+        self.runtime.get_node_mut(key)
+    }
+
+    pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
+        self.runtime.get_node(key)
+    }
+
+    pub fn get_key(&mut self, name: &'static str) -> Option<NodeKey> {
+        self.working_name_lookup.get(name.into()).copied()
+    }
+
+    pub fn delete(&mut self, key: NodeKey){
+        self.runtime.remove_node(key);
+
+        // Remove the key from the working name lookup
+        if let Some((old_key, _)) = self.working_name_lookup.iter().find(|(_, nk)| **nk == key).map(|x| x.clone()) {
+            self.working_name_lookup.remove(&old_key.clone());
+        }
+    } 
+
+    pub fn clone_node(&mut self, key: NodeKey) -> Option<LegatoNode> {
+        self.runtime.get_node(&key).cloned()
+    }
+
+    pub fn get_selection_owned(self) -> SelectionKind {
+        self.selection
     }
 }
 

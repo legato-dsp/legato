@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    ValidationError,
-    ast::{NodeDeclaration, Value},
-    node::{DynNode, LegatoNode, Node},
-};
+use crate::{ValidationError, ast::Value, builder::{SelectionKind, SelectionView}};
 
 pub struct PipeRegistry {
     data: HashMap<String, Box<dyn Pipe>>,
@@ -29,54 +25,94 @@ impl PipeRegistry {
     }
 }
 
-impl Default for PipeRegistry {
-    fn default() -> Self {
-        let mut data: HashMap<String, Box<dyn Pipe>> = HashMap::new();
-        data.insert(String::from("replicate"), Box::new(Replicate {}));
+// impl Default for PipeRegistry {
+//     fn default() -> Self {
+//         let mut data: HashMap<String, Box<dyn PipeSingle>> = HashMap::new();
+//         data.insert(String::from("replicate"), Box::new(Replicate {}));
 
-        Self { data }
-    }
-}
+//         Self { data }
+//     }
+// }
 
-#[derive(Clone)]
-pub enum TransformedNode {
-    Single(LegatoNode),
-    Multiple(Vec<LegatoNode>),
-}
-
+/// Pipes are functions that can transform a node or multiple nodes.
+/// 
+/// It's important to know that pipes must be ran before any connections are formed,
+/// as this would blow up the complexity.
+/// 
+/// For example, imagine you want to create a series of allpass filters,
+/// with varying delay times. 
+/// 
+/// Rather than instantiating that node N times, 
+/// you could use a replicate pipe to make N of them, then apply some transformation
+/// on the parameters of all of those allpasses. 
+/// 
+/// You could also say make a visualization node, that pipes any node audio you have to some 
+/// window screen somewhere. Your pipe would use the Selection api to take all of the 
+/// nodes in your selection, and then replace them with some node like so:
+/// 
+/// Visualizer {
+///     node: Box<dyn DynNode>
+/// }
+/// 
+/// Pipes are designed to apply lightweight transformations. If you need something more 
+/// powerful that is only used a few times, you may want to design a node or subgraph
+/// instead.
 pub trait Pipe {
-    fn pipe(&self, inputs: TransformedNode, _props: Option<Value>) -> TransformedNode {
-        inputs
-    }
+    fn pipe(&self, view: &mut SelectionView, props: Option<Value>);
 }
 
-// A collection of a few default pipes
-
-
-
-
-
+/// Basic pipe to clone a node N times.
 
 struct Replicate;
 
 impl Pipe for Replicate {
-    fn pipe(&self, inputs: TransformedNode, props: Option<Value>) -> TransformedNode {
-        match inputs {
-            TransformedNode::Single(n) => {
+    fn pipe(&self, view: &mut SelectionView, props: Option<Value>) {
+        let selection = view.selection();
+        
+        match selection {
+            SelectionKind::Single(key) => {
                 let val = props.unwrap_or(Value::U32(2));
 
                 match val {
-                    Value::U32(i) => TransformedNode::Multiple(
-                        (0..i)
-                            .collect::<Vec<_>>()
-                            .iter()
-                            .map(|_| n.clone())
-                            .collect(),
-                    ),
-                    _ => panic!("Must provide U32 to replicate"),
+                    Value::U32(n) => {
+                        let node = view.get_node(key).expect("Could not find not key in Pipe!").clone();
+
+                        for _ in 0..n {
+                            let cloned = node.clone();
+                            view.insert(cloned);
+                        }
+                    },
+                    _ => panic!("Must provide U32 value for replicate pipe!")
                 }
-            }
-            TransformedNode::Multiple(_) => panic!("Must provide single node for replicate pipe."),
-        }
+            },
+            SelectionKind::Multiple(_) => panic!("Multiple selection kind not supported for replicate")
+        };
     }
 }
+
+
+// A collection of a few default pipes
+
+// struct Replicate;
+
+// impl PipeSingle for Replicate {
+//     fn pipe(&self, inputs: TransformedNode, props: Option<Value>) -> TransformedNode {
+//         match inputs {
+//             TransformedNode::Single(n) => {
+//                 let val = props.unwrap_or(Value::U32(2));
+
+//                 match val {
+//                     Value::U32(i) => TransformedNode::Multiple(
+//                         (0..i)
+//                             .collect::<Vec<_>>()
+//                             .iter()
+//                             .map(|_| n.clone())
+//                             .collect(),
+//                     ),
+//                     _ => panic!("Must provide U32 to replicate"),
+//                 }
+//             }
+//             TransformedNode::Multiple(_) => panic!("Must provide single node for replicate pipe."),
+//         }
+//     }
+// }

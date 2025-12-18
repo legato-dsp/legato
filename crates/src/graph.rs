@@ -80,11 +80,8 @@ impl AudioGraph {
     }
 
     #[inline(always)]
-    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut Box<dyn DynNode>> {
-        match self.nodes.get_mut(key) {
-            Some(inner) => Some(inner.get_node_mut()),
-            None => None,
-        }
+    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut LegatoNode> {
+        self.nodes.get_mut(key)
     }
 
     pub fn len(&self) -> usize {
@@ -154,6 +151,12 @@ impl AudioGraph {
         }
         self.invalidate_topo_sort()?;
         Ok(connection)
+    }
+
+    pub fn replace(&mut self, key: NodeKey, node: LegatoNode) {
+        if let Some(item) = self.nodes.get_mut(key) {
+            *item = node;
+        }
     }
 
     pub fn incoming_connections(&self, key: NodeKey) -> Option<&IndexSet<Connection>> {

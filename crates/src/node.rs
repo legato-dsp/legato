@@ -45,8 +45,8 @@ where
 
 /// A small wrapper type for debugging nodes at runtime.
 pub struct LegatoNode {
-    name: String,
-    node_kind: String,
+    pub name: String,
+    pub node_kind: String,
     node: Box<dyn DynNode>,
 }
 
