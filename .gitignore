@@ -8,3 +8,4 @@ example.wav
 *.png
 *.wav
 crates/legato-core/samples
+.envrc
