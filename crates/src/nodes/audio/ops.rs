@@ -6,6 +6,7 @@ use crate::{
     simd::{LANES, Vf32},
 };
 
+#[derive(Clone)]
 pub struct ApplyOp {
     val: f32,
     apply_op: fn(Vf32, Vf32) -> Vf32,
@@ -28,7 +29,7 @@ impl ApplyOp {
 impl Node for ApplyOp {
     fn process(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
         _: &Channels,
@@ -91,7 +92,7 @@ pub fn mult_node_factory(val: f32, chans: usize, op_kind: ApplyOpKind) -> ApplyO
         ApplyOpKind::Div => div,
     };
     ApplyOp {
-        val: val,
+        val,
         apply_op: op,
         ports: PortBuilder::default()
             .audio_in(chans)

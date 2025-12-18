@@ -11,7 +11,7 @@ pub fn parse_legato_file<'a>(file: &'a str) -> Result<Pairs<'a, Rule>, Box<dyn s
     Ok(pairs.clone())
 }
 
-pub fn print_pair<'i>(pair: &'i pest::iterators::Pair<Rule>, indent: usize) {
+pub fn print_pair(pair: &pest::iterators::Pair<Rule>, indent: usize) {
     println!(
         "{:indent$}{:?}: {:?}",
         "",

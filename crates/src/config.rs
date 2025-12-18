@@ -60,14 +60,14 @@ impl Config {
         Self {
             sample_rate: sr,
             control_rate: cr,
-            audio_block_size: audio_block_size,
+            audio_block_size,
             control_block_size: audio_block_size / 32,
             channels,
             initial_graph_capacity,
         }
     }
     pub fn validate(&self) {
-        assert!(self.audio_block_size % LANES == 0);
-        assert!(self.control_block_size % LANES == 0);
+        assert!(self.audio_block_size.is_multiple_of(LANES));
+        assert!(self.control_block_size.is_multiple_of(LANES));
     }
 }

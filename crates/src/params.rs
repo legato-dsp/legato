@@ -42,10 +42,7 @@ impl<'a> Params<'a> {
     }
 
     pub fn get_usize(&self, key: &str) -> Option<usize> {
-        match self.get_u32(key) {
-            Some(i) => Some(i as usize),
-            None => None,
-        }
+        self.get_u32(key).map(|i| i as usize)
     }
 
     pub fn get_str(&self, key: &str) -> Option<String> {
@@ -86,11 +83,10 @@ impl<'a> Params<'a> {
             Some(Value::Array(v)) => Some(v.clone()),
             Some(x) => panic!("Expected array param, found {:?}", x),
             _ => None,
-        };
+        }?;
 
         Some(
-            arr.unwrap()
-                .into_iter()
+            arr.into_iter()
                 .map(|x| match x {
                     Value::F32(x) => x,
                     Value::I32(x) => x as f32,

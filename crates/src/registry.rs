@@ -1,9 +1,11 @@
+#![allow(unused_mut)]
+
 use std::{collections::HashMap, time::Duration};
 
 use crate::{
     ValidationError,
     builder::ResourceBuilderView,
-    node::Node,
+    node::DynNode,
     node_spec,
     nodes::audio::{
         delay::{DelayLine, DelayRead, DelayWrite},
@@ -11,6 +13,7 @@ use crate::{
         ops::{ApplyOpKind, mult_node_factory},
         sampler::Sampler,
         sine::Sine,
+        sweep::Sweep,
     },
     params::Params,
     spec::{NodeFactory, NodeSpec},
@@ -20,7 +23,6 @@ use crate::{
 /// corresponding NodeSpec.
 ///
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
-
 pub struct AudioRegistry {
     data: HashMap<String, NodeSpec>,
 }
@@ -33,16 +35,16 @@ impl AudioRegistry {
     pub fn get_node(
         &self,
         resource_builder: &mut ResourceBuilderView,
-        name: &String,
+        node_kind: &String,
         params: &Params,
-    ) -> Result<Box<dyn Node + Send>, ValidationError> {
-        return match self.data.get(name) {
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        match self.data.get(node_kind) {
             Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
-                name
+                node_kind
             ))),
-        };
+        }
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
         self.data
@@ -134,7 +136,7 @@ impl Default for AudioRegistry {
 
                     let key = rb
                         .get_delay_line_key(&name)
-                        .expect(&format!("Could not find delay line key {}", name));
+                        .unwrap_or_else(|_| panic!("Could not find delay line key {}", name));
 
                     let node = DelayRead::new(chans, key, len);
 
@@ -184,6 +186,21 @@ impl Default for AudioRegistry {
 
                     let node = mult_node_factory(val, chans, ApplyOpKind::Gain);
 
+                    Ok(Box::new(node))
+                }
+            ),
+            node_spec!(
+                "sweep".into(),
+                required = [],
+                optional = ["duration", "range", "chans"],
+                build = |_, p| {
+                    let chans = p.get_usize("chans").unwrap_or(2);
+                    let duration = p
+                        .get_duration("duration")
+                        .unwrap_or(Duration::from_secs_f32(5.0));
+                    let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
+
+                    let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
                     Ok(Box::new(node))
                 }
             ),

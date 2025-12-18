@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
-use crate::node::{Channels, Node};
+use crate::node::{Channels, LegatoNode, Node};
 use crate::ports::{PortRate, Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleBackend, AudioSampleError};
@@ -18,6 +18,7 @@ new_key_type! {
     pub struct NodeKey;
 }
 
+#[derive(Clone)]
 pub struct Runtime {
     // Audio context containing sample rate, control rate, etc.
     context: AudioContext,
@@ -58,18 +59,13 @@ impl Runtime {
             ports,
         }
     }
-    pub fn add_node(
-        &mut self,
-        node: Box<dyn Node + Send>,
-        name: String,
-        node_kind: String,
-    ) -> NodeKey {
-        let ports = node.ports();
+    pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
+        let ports = node.get_node().ports();
 
         let audio_chan_size = ports.audio_out.iter().len();
         let control_chan_size = ports.control_out.iter().len();
 
-        let node_key = self.graph.add_node(node, name, node_kind);
+        let node_key = self.graph.add_node(node);
 
         let config = self.context.get_config();
 
@@ -88,6 +84,11 @@ impl Runtime {
         self.graph.remove_node(key);
         self.port_sources_audio.remove(key);
     }
+
+    pub fn replace_node(&mut self, key: NodeKey, node: LegatoNode) {
+        self.graph.replace(key, node);
+    }
+
     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
         self.graph.add_edge(connection)
     }
@@ -121,10 +122,13 @@ impl Runtime {
     }
     pub fn get_node_ports(&self, key: &NodeKey) -> &Ports {
         // Unwrapping becuase for now this is only used during application creation
-        self.graph.get_node(*key).unwrap().ports()
+        self.graph.get_node(*key).unwrap().get_node().ports()
     }
-    pub fn get_node(&self, key: &NodeKey) -> Option<&Box<dyn Node + Send>> {
+    pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
         self.graph.get_node(*key)
+    }
+    pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
+        self.graph.get_node_mut(*key)
     }
     // TODO: Graphs as nodes again
     pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
@@ -153,10 +157,10 @@ impl Runtime {
                 let (ai, ci) = external_inputs.unwrap();
 
                 for (c, ai_chan) in ai.iter().enumerate() {
-                    self.audio_inputs_scratch_buffers[c].copy_from_slice(&ai_chan);
+                    self.audio_inputs_scratch_buffers[c].copy_from_slice(ai_chan);
                 }
                 for (c, ci_chan) in ci.iter().enumerate() {
-                    self.control_inputs_scratch_buffers[c].copy_from_slice(&ci_chan);
+                    self.control_inputs_scratch_buffers[c].copy_from_slice(ci_chan);
                 }
             } else {
                 let incoming = incoming.get(*node_key).expect("Invalid connection!");
@@ -222,7 +226,7 @@ impl Runtime {
 impl Node for Runtime {
     fn process<'a>(
         &mut self,
-        ctx: &mut AudioContext,
+        _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
         ci: &Channels,
@@ -234,7 +238,7 @@ impl Node for Runtime {
         debug_assert_eq!(outputs.len(), ao.len());
 
         for (c, out_channel) in outputs.iter().enumerate() {
-            ao[c].copy_from_slice(&out_channel);
+            ao[c].copy_from_slice(out_channel);
         }
     }
     fn ports(&self) -> &Ports {

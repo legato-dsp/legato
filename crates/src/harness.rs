@@ -1,11 +1,11 @@
 use crate::{
     config::Config,
-    node::Node,
+    node::{DynNode, LegatoNode},
     ports::PortBuilder,
     runtime::{Runtime, build_runtime},
 };
 
-pub fn get_node_test_harness(node: Box<dyn Node + Send + 'static>) -> Runtime {
+pub fn get_node_test_harness(node: Box<dyn DynNode>) -> Runtime {
     let config = Config {
         sample_rate: 48_000,
         audio_block_size: 4096,
@@ -19,7 +19,7 @@ pub fn get_node_test_harness(node: Box<dyn Node + Send + 'static>) -> Runtime {
 
     let mut graph = build_runtime(config, ports);
 
-    let id = graph.add_node(node, "test node".into(), "test".into());
+    let id = graph.add_node(LegatoNode::new("test node".into(), "test".into(), node));
 
     let _ = graph.set_sink_key(id);
 

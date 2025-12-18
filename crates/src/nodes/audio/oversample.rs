@@ -2,12 +2,12 @@
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, LegatoNode, Node},
     nodes::audio::fir::FirFilter,
     ports::{PortBuilder, Ports},
-    runtime::Runtime,
 };
 
+#[derive(Clone)]
 pub struct Upsample<const N: usize> {
     filter: FirFilter,
     zero_stuffed: Vec<Box<[f32]>>,
@@ -47,10 +47,9 @@ impl<const N: usize> Node for Upsample<N> {
 
             // Zero stuff the sample, this makes spectral images that must be filtered
             for (n, sample) in input.iter().enumerate() {
-                let f = N;
-                out[n * f] = *sample;
-                for k in 1..f {
-                    out[n * f + k] = 0.0;
+                out[n * N] = *sample;
+                for k in 1..N {
+                    out[n * N + k] = 0.0;
                 }
             }
         }
@@ -61,7 +60,7 @@ impl<const N: usize> Node for Upsample<N> {
         &self.ports
     }
 }
-
+#[derive(Clone)]
 pub struct Downsample<const N: usize> {
     filter: FirFilter,
     filtered: Vec<Box<[f32]>>,
@@ -94,6 +93,7 @@ impl<const N: usize> Node for Downsample<N> {
     ) {
         // Ensure that ai = ao * N
         debug_assert_eq!(ai[0].len(), ao[0].len() * N);
+
         // Filter the audio before decimating to prevent aliasing
         self.filter.process(ctx, ai, &mut self.filtered, ci, co);
 
@@ -111,8 +111,9 @@ impl<const N: usize> Node for Downsample<N> {
     }
 }
 
+#[derive(Clone)]
 pub struct Oversampler<const N: usize> {
-    runtime: Box<Runtime>,
+    node: LegatoNode,
     upsampler: Upsample<N>,
     // State for the node
     upsampled_outputs: Vec<Box<[f32]>>,
@@ -124,14 +125,14 @@ pub struct Oversampler<const N: usize> {
 
 impl<const N: usize> Oversampler<N> {
     pub fn new(
-        node: Box<Runtime>,
+        node: LegatoNode,
         upsampler: Upsample<N>,
         downsampler: Downsample<N>,
         chans: usize,
         buff_size: usize,
     ) -> Self {
         Self {
-            runtime: node,
+            node,
             upsampler,
             downsampler,
             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
@@ -153,15 +154,28 @@ impl<const N: usize> Node for Oversampler<N> {
         ci: &Channels,
         co: &mut Channels,
     ) {
+        let config = ctx.get_config();
+
+        let sr = config.sample_rate;
+        let block_size = config.audio_block_size;
+
         self.upsampler
             .process(ctx, ai, &mut self.upsampled_outputs, ci, co);
-        self.runtime.process(
+
+        ctx.set_sample_rate(sr * 2);
+        ctx.set_block_size(block_size * 2);
+
+        self.node.get_node_mut().process(
             ctx,
             &self.upsampled_outputs,
             &mut self.downsampled_inputs,
             ci,
             co,
         );
+
+        ctx.set_sample_rate(sr);
+        ctx.set_block_size(block_size);
+
         self.downsampler
             .process(ctx, &self.downsampled_inputs, ao, ci, co);
     }
@@ -188,7 +202,7 @@ pub fn downsample_by_two_factory(buff_size: usize, chans: usize) -> Downsample<2
 }
 
 pub fn oversample_by_two_factory(
-    node: Box<Runtime>,
+    node: LegatoNode,
     chans: usize,
     buff_size: usize,
 ) -> Oversampler<2> {

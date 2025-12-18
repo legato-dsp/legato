@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{
     context::AudioContext,
     node::{Channels, Node},
-    ports::{PortBuilder, Ported, Ports},
+    ports::{PortBuilder, Ports},
     resources::DelayLineKey,
     ring::RingBuffer,
     simd::{LANES, Vf32},
@@ -12,9 +12,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct DelayLine {
     buffers: Vec<RingBuffer>,
-    capacity: usize,
     write_pos: Vec<usize>,
-    chans: usize,
 }
 
 impl DelayLine {
@@ -22,9 +20,7 @@ impl DelayLine {
         let buffers = vec![RingBuffer::new(capacity); chans];
         Self {
             buffers,
-            capacity,
             write_pos: vec![0; chans],
-            chans,
         }
     }
     #[inline(always)]
@@ -67,6 +63,7 @@ impl DelayLine {
     }
 }
 
+#[derive(Clone)]
 pub struct DelayWrite {
     delay_line_key: DelayLineKey,
     ports: Ports,
@@ -95,11 +92,10 @@ impl Node for DelayWrite {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
-        let chans = self.ports.audio_in.len();
 
         // For graph semantics when adding connections between delays
-        for c in 0..chans {
-            ao[c].fill(0.0);
+        for chan in ao.iter_mut() {
+            chan.fill(0.0);
         }
     }
     fn ports(&self) -> &Ports {
@@ -107,6 +103,7 @@ impl Node for DelayWrite {
     }
 }
 
+#[derive(Clone)]
 pub struct DelayRead {
     delay_line_key: DelayLineKey,
     delay_times: Vec<Duration>, // Different times for each channel if desired
@@ -149,8 +146,9 @@ impl Node for DelayRead {
 
                 // Apply additional offset for each step, maybe this could also be a rotation or so.
                 // This is needed, because otherwise we would just grab offsets from chunk_start for each item
-                for lane in 0..LANES {
-                    offset[lane] = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
+
+                for (lane, sample) in offset.iter_mut().enumerate().take(LANES) {
+                    *sample = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
                 }
 
                 // Note, about 75% slower than the linear interpolation alg.
@@ -191,7 +189,7 @@ mod test_delay_simd_equivalence {
             *s = rng.random::<f32>();
         }
 
-        dl.write_block(&input);
+        dl.write_block(input);
 
         for _ in 0..10_000 {
             let off = rng.random::<f32>() * (CAP as f32 - 4.0);

@@ -10,6 +10,7 @@ use crate::{
     sample::AudioSample,
 };
 
+#[derive(Clone)]
 pub struct Sampler {
     sample_key: SampleKey,
     read_pos: usize,

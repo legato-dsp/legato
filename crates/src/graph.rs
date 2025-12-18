@@ -2,11 +2,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{
-    node::{Node, NodeWithMeta},
-    ports::PortRate,
-    runtime::NodeKey,
-};
+use crate::{node::LegatoNode, ports::PortRate, runtime::NodeKey};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -28,12 +24,15 @@ pub struct Connection {
     pub sink: ConnectionEntry,
 }
 
+pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
+
 const INITIAL_INPUTS: usize = 8;
 /// A DAG for grabbing nodes and their dependencies via topological sort.
+#[derive(Clone)]
 pub struct AudioGraph {
-    nodes: SlotMap<NodeKey, NodeWithMeta>,
-    incoming_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
-    outgoing_edges: SecondaryMap<NodeKey, IndexSet<Connection>>,
+    nodes: SlotMap<NodeKey, LegatoNode>,
+    incoming_edges: EdgeMap ,
+    outgoing_edges: EdgeMap,
     // Pre-allocated work buffers for topo sort
     indegree: SecondaryMap<NodeKey, usize>,
     no_incoming_edges_queue: VecDeque<NodeKey>,
@@ -53,14 +52,9 @@ impl AudioGraph {
         }
     }
 
-    pub fn add_node(
-        &mut self,
-        node: Box<dyn Node + Send>,
-        name: String,
-        node_kind: String,
-    ) -> NodeKey {
+    pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
         // Insert the node
-        let key = self.nodes.insert(NodeWithMeta::new(name, node_kind, node));
+        let key = self.nodes.insert(node);
 
         self.indegree.insert(key, 0);
 
@@ -79,37 +73,35 @@ impl AudioGraph {
     }
 
     #[inline(always)]
-    pub fn get_node(&self, key: NodeKey) -> Option<&Box<dyn Node + Send>> {
-        match self.nodes.get(key) {
-            Some(inner) => Some(inner.get_node()),
-            None => None,
-        }
+    pub fn get_node(&self, key: NodeKey) -> Option<&LegatoNode> {
+        self.nodes.get(key)
     }
 
     #[inline(always)]
-    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut Box<dyn Node + Send>> {
-        match self.nodes.get_mut(key) {
-            Some(inner) => Some(inner.get_node_mut()),
-            None => None,
-        }
+    pub fn get_node_mut(&mut self, key: NodeKey) -> Option<&mut LegatoNode> {
+        self.nodes.get_mut(key)
     }
 
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.nodes.len() == 0
+    }
+
     pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
     ) -> (
         &Vec<NodeKey>,
-        &mut SlotMap<NodeKey, NodeWithMeta>,
-        &SecondaryMap<NodeKey, IndexSet<Connection>>,
+        &mut SlotMap<NodeKey, LegatoNode>,
+        &EdgeMap,
     ) {
         (&self.topo_sorted, &mut self.nodes, &self.incoming_edges)
     }
 
     /// Removes a node and all edges incident to it.
-    pub fn remove_node(&mut self, key: NodeKey) -> Option<NodeWithMeta> {
+    pub fn remove_node(&mut self, key: NodeKey) -> Option<LegatoNode> {
         if !self.nodes.contains_key(key) {
             return None;
         }
@@ -163,6 +155,12 @@ impl AudioGraph {
         Ok(connection)
     }
 
+    pub fn replace(&mut self, key: NodeKey, node: LegatoNode) {
+        if let Some(item) = self.nodes.get_mut(key) {
+            *item = node;
+        }
+    }
+
     pub fn incoming_connections(&self, key: NodeKey) -> Option<&IndexSet<Connection>> {
         self.incoming_edges.get(key)
     }
@@ -211,11 +209,10 @@ impl AudioGraph {
 
         // Build indegrees
         for (key, targets) in &self.incoming_edges {
-            if self.nodes.contains_key(key) {
-                if let Some(count) = self.indegree.get_mut(key) {
+            if self.nodes.contains_key(key)
+                && let Some(count) = self.indegree.get_mut(key) {
                     *count = targets.len();
                 }
-            }
         }
 
         self.no_incoming_edges_queue.clear();
@@ -271,6 +268,7 @@ mod test {
         ports::{PortMeta, PortRate, Ports},
     };
 
+    #[derive(Clone)]
     struct MonoExample {
         ports: Ports,
     }
@@ -297,11 +295,11 @@ mod test {
     impl Node for MonoExample {
         fn process(
             &mut self,
-            ctx: &mut AudioContext,
-            ai: &Channels,
-            ao: &mut Channels,
-            ci: &Channels,
-            co: &mut Channels,
+            _: &mut AudioContext,
+            _: &Channels,
+            _: &mut Channels,
+            _: &Channels,
+            _: &mut Channels,
         ) {
         }
         fn ports(&self) -> &Ports {
@@ -329,21 +327,21 @@ mod test {
     fn test_topo_sort_simple_chain() {
         let mut graph: AudioGraph = AudioGraph::with_capacity(3);
 
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        let b = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-        );
-        let c = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
         graph
             .add_edge(Connection {
@@ -376,26 +374,25 @@ mod test {
 
         assert_is_valid_topo(&mut graph);
     }
-
     #[test]
     fn test_remove_edges() {
         let mut graph = AudioGraph::with_capacity(3);
 
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        let b = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-        );
-        let c = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
         let e1 = graph
             .add_edge(Connection {
@@ -411,6 +408,7 @@ mod test {
                 },
             })
             .expect("Could not add e1");
+
         let e2 = graph
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -426,7 +424,6 @@ mod test {
             })
             .expect("Could not add e2");
 
-        // Sanity
         assert!(
             graph
                 .incoming_connections(b)
@@ -461,31 +458,31 @@ mod test {
     fn test_larger_graph_parallel_inputs() {
         let mut graph = AudioGraph::with_capacity(5);
 
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        let b = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-        );
-        let c = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-        );
-        let d = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let d = graph.add_node(LegatoNode::new(
             "d".into(),
             "MonoExample".into(),
-        );
-        let e = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let e = graph.add_node(LegatoNode::new(
             "e".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
         graph
             .add_edge(Connection {
@@ -501,6 +498,7 @@ mod test {
                 },
             })
             .unwrap();
+
         graph
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -515,6 +513,7 @@ mod test {
                 },
             })
             .unwrap();
+
         graph
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -529,6 +528,7 @@ mod test {
                 },
             })
             .unwrap();
+
         graph
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -550,18 +550,19 @@ mod test {
     #[test]
     fn test_cycle_detection_two_node_cycle() {
         let mut graph = AudioGraph::with_capacity(2);
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        let b = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
-        let _ = graph
+        graph
             .add_edge(Connection {
                 source: ConnectionEntry {
                     node_key: a,
@@ -575,7 +576,7 @@ mod test {
                 },
             })
             .unwrap();
-        // Should return error from cycle
+
         let _ = graph.add_edge(Connection {
             source: ConnectionEntry {
                 node_key: b,
@@ -596,11 +597,13 @@ mod test {
     #[test]
     fn test_cycle_detection_self_loop() {
         let mut graph = AudioGraph::with_capacity(1);
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
+
         let res = graph.add_edge(Connection {
             source: ConnectionEntry {
                 node_key: a,
@@ -613,39 +616,42 @@ mod test {
                 port_rate: PortRate::Audio,
             },
         });
+
         assert_eq!(res, Err(GraphError::CycleDetected));
     }
 
     #[test]
     fn single_node_order() {
         let mut graph = AudioGraph::with_capacity(1);
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
-        assert_eq!(graph.topo_sorted, vec![a])
+        assert_eq!(graph.topo_sorted, vec![a]);
     }
 
     #[test]
     fn test_remove_node_cleans_edges_and_topo() {
         let mut graph = AudioGraph::with_capacity(3);
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        let b = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-        );
-        let c = graph.add_node(
             Box::new(MonoExample::default()),
+        ));
+        let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-        );
+            Box::new(MonoExample::default()),
+        ));
 
         graph
             .add_edge(Connection {
@@ -661,6 +667,7 @@ mod test {
                 },
             })
             .unwrap();
+
         graph
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -676,10 +683,9 @@ mod test {
             })
             .unwrap();
 
-        let _ = graph.remove_node(b).expect("node existed");
+        graph.remove_node(b).expect("node existed");
 
         assert_is_valid_topo(&mut graph);
-
         assert!(graph.incoming_connections(b).is_none());
         assert!(graph.outgoing_connections(b).is_none());
     }
@@ -687,21 +693,23 @@ mod test {
     #[test]
     fn test_add_edge_rejects_missing_endpoints() {
         let mut graph = AudioGraph::with_capacity(2);
-        let a = graph.add_node(
-            Box::new(MonoExample::default()),
+
+        let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-        );
-        // Add a bad key, should throw error when we add an edge
+            Box::new(MonoExample::default()),
+        ));
+
         let nonexistent_key = {
-            let temp = graph.add_node(
-                Box::new(MonoExample::default()),
+            let temp = graph.add_node(LegatoNode::new(
                 "temp".into(),
                 "MonoExample".into(),
-            );
+                Box::new(MonoExample::default()),
+            ));
             let _ = graph.remove_node(temp);
             temp
         };
+
         let res = graph.add_edge(Connection {
             source: ConnectionEntry {
                 node_key: a,
@@ -714,6 +722,7 @@ mod test {
                 port_rate: PortRate::Audio,
             },
         });
+
         assert_eq!(res.unwrap_err(), GraphError::BadConnection);
     }
 }

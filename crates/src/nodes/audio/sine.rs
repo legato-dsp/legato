@@ -35,10 +35,11 @@ use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 use crate::{
     context::AudioContext,
     node::{Channels, Node},
-    ports::{PortBuilder, Ported, Ports},
+    ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
 
+#[derive(Clone)]
 pub struct Sine {
     freq: f32,
     phase: f32,
@@ -120,10 +121,10 @@ where
     let x_sq = x * x;
     let x_q = x_sq * x_sq;
 
-    let c1 = Simd::splat(-25.1323666662f32);
-    let c3 = Simd::splat(64.7874540567f32);
-    let c5 = Simd::splat(-66.0947787168f32);
-    let c7 = Simd::splat(32.0267973181f32);
+    let c1 = Simd::splat(-25.132_366_f32);
+    let c3 = Simd::splat(64.787_45_f32);
+    let c5 = Simd::splat(-66.094_78_f32);
+    let c7 = Simd::splat(32.026_8_f32);
 
     let x_5_7 = c5 + c7 * x_sq;
     let x_1_3 = c1 + c3 * x_sq;
@@ -142,17 +143,7 @@ where
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
 
-/// Utility to convert from [1,3,5,9] -> [1,4,9,18]
-/// [1, 3, 5, 9]
-/// +
-/// [0, 1, 3, 5]
-/// +
-/// [0, 0, 1, 3]
-/// +
-/// [0, 0, 0, 1]
-/// =
-/// 1, 4, 9, 18
-
+/// Utility to perform prefix scan
 fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
 where
     LaneCount<LANES>: SupportedLaneCount,

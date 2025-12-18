@@ -1,10 +1,17 @@
+#![allow(unused_mut)]
+
 use std::collections::BTreeSet;
 
-use crate::{ValidationError, builder::ResourceBuilderView, node::Node, params::Params};
+use crate::{
+    ValidationError,
+    builder::ResourceBuilderView,
+    node::{DynNode},
+    params::Params,
+};
 
 /// A NodeFactory type. The resource builder allows your plugin to register shared delay or sample lines, maybe in the future generic buffers as well.
 pub type NodeFactory =
-    fn(&mut ResourceBuilderView, &Params) -> Result<Box<dyn Node + Send>, ValidationError>;
+    fn(&mut ResourceBuilderView, &Params) -> Result<Box<dyn DynNode>, ValidationError>;
 
 /// This struct defines the node display/debug name, required and optional params,
 /// as well as a node factory for a node definition.
@@ -17,15 +24,6 @@ pub struct NodeSpec {
     pub build: NodeFactory,
 }
 
-macro_rules! param_list {
-    ($($param:expr),* $(,)?) => {
-        {
-            let mut set = BTreeSet::new();
-            $(set.insert(String::from($param));)*
-            set
-        }
-    };
-}
 
 #[macro_export]
 macro_rules! node_spec {

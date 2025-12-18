@@ -6,6 +6,7 @@ use heapless::spsc::{Consumer, Producer};
 
 use crate::{
     ast::Value,
+    config::Config,
     node::Channels,
     runtime::{NodeKey, Runtime, RuntimeBackend},
 };
@@ -61,12 +62,15 @@ pub enum LegatoMsg {
 
 pub struct LegatoApp {
     runtime: Runtime,
-    receiver: Consumer<'static, LegatoMsg>,
+    consumer: Consumer<'static, LegatoMsg>,
 }
 
 impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
-        Self { runtime, receiver }
+        Self {
+            runtime,
+            consumer: receiver,
+        }
     }
     /// Pull the next block from the runtime, if you choose to manage the
     /// runtime yourself.
@@ -75,10 +79,13 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R],etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
-        while let Some(msg) = self.receiver.dequeue() {
+        while let Some(msg) = self.consumer.dequeue() {
             dbg!(&msg);
         }
         self.runtime.next_block(external_inputs)
+    }
+    pub fn get_config(&self) -> Config {
+        self.runtime.get_config()
     }
 }
 
@@ -110,7 +117,7 @@ impl LegatoBackend {
     ) -> Result<(), sample::AudioSampleError> {
         self.runtime_backend.load_sample(
             sampler,
-            path.to_str().expect("Path not found!").into(),
+            path.to_str().expect("Path not found!"),
             chans,
             sr,
         )
