@@ -143,17 +143,7 @@ where
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
 
-/// Utility to convert from [1,3,5,9] -> [1,4,9,18]
-/// [1, 3, 5, 9]
-/// +
-/// [0, 1, 3, 5]
-/// +
-/// [0, 0, 1, 3]
-/// +
-/// [0, 0, 0, 1]
-/// =
-/// 1, 4, 9, 18
-
+/// Utility to perform prefix scan
 fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
 where
     LaneCount<LANES>: SupportedLaneCount,

@@ -133,7 +133,7 @@ impl LegatoBuilder<Unconfigured> {
 }
 
 impl LegatoBuilder<Configured> {
-    pub fn build_dsl(self, graph: &String) -> (LegatoApp, LegatoBackend) {
+    pub fn build_dsl(self, graph: &str) -> (LegatoApp, LegatoBackend) {
         let can_build = self.into_state::<DslBuilding>();
         can_build._build_dsl(graph)
     }
@@ -216,13 +216,13 @@ where
     pub fn add_node_raw(
         mut self,
         node: LegatoNode,
-        alias: &String,
+        alias: &str,
     ) -> LegatoBuilder<ContainsNodes> {
         let key = self.runtime.add_node(node);
 
         self.last_selection = Some(SelectionKind::Single(key));
 
-        self.working_name_lookup.insert(alias.clone(), key);
+        self.working_name_lookup.insert(alias.into(), key);
 
         self.into_state()
     }
@@ -406,7 +406,7 @@ where
 }
 
 impl LegatoBuilder<DslBuilding> {
-    fn _build_dsl(mut self, content: &String) -> (LegatoApp, LegatoBackend) {
+    fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoBackend) {
         let pairs = parse_legato_file(content).unwrap();
 
         let ast = build_ast(pairs).unwrap();
@@ -536,7 +536,6 @@ impl<'a> SelectionView<'a> {
             .working_name_lookup
             .iter()
             .find(|(_, nk)| **nk == key)
-            .map(|x| x)
         {
             self.working_name_lookup.remove(&old_key.clone());
             self.working_name_lookup.insert(working_name, key);
@@ -563,7 +562,6 @@ impl<'a> SelectionView<'a> {
             .working_name_lookup
             .iter()
             .find(|(_, nk)| **nk == key)
-            .map(|x| x)
         {
             self.working_name_lookup.remove(&old_key.clone());
         }
@@ -704,7 +702,8 @@ fn one_to_n(
         .expect("Could not add edge");
 
     // Wire fanout connection to each sink. We add this node in order to change the gain when fanning out
-    for i in 0..n {
+    
+    for sink_index in sink_indicies.iter() {
         runtime
             .add_edge(Connection {
                 source: ConnectionEntry {
@@ -714,7 +713,7 @@ fn one_to_n(
                 },
                 sink: ConnectionEntry {
                     node_key: props.sink,
-                    port_index: sink_indicies[i],
+                    port_index: *sink_index,
                     port_rate: props.rate,
                 },
             })
@@ -738,12 +737,12 @@ fn n_to_one(
     ));
 
     // Build connections into track mixer
-    for i in 0..n {
+    for (i, source_index) in source_indicies.iter().enumerate() {
         runtime
             .add_edge(Connection {
                 source: ConnectionEntry {
                     node_key: props.source,
-                    port_index: source_indicies[i],
+                    port_index: *source_index,
                     port_rate: props.rate,
                 },
                 sink: ConnectionEntry {

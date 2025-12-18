@@ -60,7 +60,7 @@ impl RingBuffer {
         self.data[idx]
     }
 
-    pub fn get_data(&self) -> &Box<[f32]> {
+    pub fn get_data(&self) -> &[f32] {
         &self.data
     }
 

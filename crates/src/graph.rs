@@ -84,6 +84,10 @@ impl AudioGraph {
         self.nodes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.nodes.len() == 0
+    }
+
     pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
     ) -> (

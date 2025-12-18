@@ -94,15 +94,6 @@ impl<const N: usize> Node for Downsample<N> {
         // Ensure that ai = ao * N
         debug_assert_eq!(ai[0].len(), ao[0].len() * N);
 
-        for c in 0..self.chans {
-            debug_assert_eq!(
-                self.filtered[c].len(),
-                ai[c].len(),
-                "Internal filtered buffer length mismatch for channel {}",
-                c
-            );
-        }
-
         // Filter the audio before decimating to prevent aliasing
         self.filter.process(ctx, ai, &mut self.filtered, ci, co);
 

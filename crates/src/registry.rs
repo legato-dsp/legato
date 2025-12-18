@@ -23,7 +23,6 @@ use crate::{
 /// corresponding NodeSpec.
 ///
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
-
 pub struct AudioRegistry {
     data: HashMap<String, NodeSpec>,
 }
