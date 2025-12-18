@@ -1,0 +1,22 @@
+ADDITIONAL_PERMISSIONS.txt
+
+Copyright (c) 2025 Legato DSP
+
+You are granted the ADDITIONAL permission to distribute binaries, applications, VST plugins, 
+hardware or modifications derived from this software without releasing the corresponding 
+source code, provided that your use does NOT fall into the following domains:
+
+  - Visual editors for plugins
+  - Paid downloadable content (DLC), extensions or forks of the framework
+  - Digital audio workstations (DAWs)
+  - Starter kits or Legato specific UI frameworks
+
+Any work that falls within the above domains must comply with the existing AGPL license.
+
+This additional permission is granted in addition to the AGPL and does not replace it.
+All other terms of the AGPL remain in effect.
+
+Negotiable Commercial Licenses:
+
+For use beyond the above permissions, including proprietary products in the restricted domains,
+a separate commercial license may be negotiated on a case-by-case basis.
