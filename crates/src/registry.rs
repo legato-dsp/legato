@@ -3,42 +3,45 @@
 use std::{collections::HashMap, time::Duration};
 
 use crate::{
-    ast::DSLParams, builder::{ResourceBuilderView, ValidationError}, node::DynNode, node_spec, nodes::audio::{
+    ast::DSLParams, builder::{ResourceBuilderView, ValidationError}, node::DynNode, node_spec, nodes::{audio::{
         delay::{DelayLine, DelayRead, DelayWrite},
         mixer::TrackMixer,
         ops::{ApplyOpKind, mult_node_factory},
         sampler::Sampler,
         sine::Sine,
         sweep::Sweep,
-    }, spec::{NodeFactory, NodeSpec}
+    }, control::signal::ControlSignal}, params::ParamMeta, ports::{NodeKind, PortMeta}, spec::{NodeFactory, NodeSpec}
 };
 
-/// Audio registries are simply hashmaps of String node names, and their
+/// Node registries are simply hashmaps of String node names, and their
 /// corresponding NodeSpec.
 ///
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
-pub struct AudioRegistry {
+pub struct NodeRegistry {
+    // For now, entries must contain a specific rate as I work out graph semantics
+    kind: NodeKind,
     data: HashMap<String, NodeSpec>,
 }
 
-impl AudioRegistry {
-    pub fn new() -> Self {
+impl NodeRegistry {
+    pub fn new(node_kind: NodeKind) -> Self {
         let data = HashMap::new();
-        Self { data }
+        Self { kind: node_kind, data }
     }
     pub fn get_node(
         &self,
         resource_builder: &mut ResourceBuilderView,
-        node_kind: &String,
+        node_name: &String,
         params: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
-        match self.data.get(node_kind) {
+    ) -> Result<(Box<dyn DynNode>, NodeKind), ValidationError> {
+        let node = match self.data.get(node_name) {
             Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
-                node_kind
+                node_name
             ))),
-        }
+        }?;
+        Ok((node, self.kind.clone()))
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
         self.data
@@ -56,9 +59,8 @@ pub fn get_spec_for_runtime(name: String, runtime_factory: NodeFactory) -> (Stri
     )
 }
 
-impl Default for AudioRegistry {
-    fn default() -> Self {
-        let mut data = HashMap::new();
+pub fn audio_registry_factory() -> NodeRegistry {
+    let mut data = HashMap::new();
         data.extend([
             node_spec!(
                 "sine".into(),
@@ -199,6 +201,31 @@ impl Default for AudioRegistry {
                 }
             ),
         ]);
-        Self { data }
-    }
+        NodeRegistry { kind: NodeKind::Audio, data }
+}
+
+pub fn control_registry_factory() -> NodeRegistry {
+    let mut data = HashMap::new();
+        data.extend([
+            node_spec!(
+                "signal".into(),
+                required = ["name", "min", "max", "default"],
+                optional = ["smoothing"],
+                build = |rb, p| {
+                    let name = p.get_str("name").expect("Must pass name to signal!");
+                    let min = p.get_f32("min").expect("Must provide min to signal!");
+                    let max = p.get_f32("max").expect("Must provide max to signal!");
+                    let default = p.get_f32("default").expect("Must provide default(f32) to signal!");
+
+                    let smoothing = p.get_f32("smoothing").unwrap_or(0.5).clamp(0.0, 1.0);
+
+                    let meta = ParamMeta { name: name.clone(), min, max, default };
+
+                    let key = rb.add_param(name, meta);
+
+                    Ok(Box::new(ControlSignal::new(key, default, smoothing)))
+                }
+            ),
+        ]);
+    NodeRegistry { kind: NodeKind::Control, data }
 }

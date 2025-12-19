@@ -129,7 +129,7 @@ impl Pipe for Oversample2X {
 
                 let new_kind = format!("Oversample2X{}", node.node_kind);
 
-                let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+                let new_node = LegatoNode::new(node.name.clone(), new_kind, node.node_rate.clone(), Box::new(oversampler));
 
                 view.replace(key, new_node);
             }
@@ -146,7 +146,7 @@ impl Pipe for Oversample2X {
                     let new_kind = format!("Oversample2X{}", node.node_kind);
 
                     let new_node =
-                        LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+                        LegatoNode::new(node.name.clone(), new_kind, node.node_rate.clone(), Box::new(oversampler));
 
                     view.replace(*key, new_node);
                 }

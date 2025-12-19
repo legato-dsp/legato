@@ -3,7 +3,7 @@ use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
 use crate::msg::{self, LegatoMsg};
 use crate::node::{Channels, LegatoNode, Node};
-use crate::ports::{PortRate, Ports};
+use crate::ports::{NodeKind, Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleFrontend, AudioSampleError};
 use std::fmt::Debug;
@@ -185,7 +185,7 @@ impl Runtime {
                     // Write all incoming data from the connection and port, to the current node, and the sink port
                     debug_assert!(connection.sink.node_key == *node_key);
                     match (connection.source.port_rate, connection.sink.port_rate) {
-                        (PortRate::Audio, PortRate::Audio) => {
+                        (NodeKind::Audio, NodeKind::Audio) => {
                             for (n, sample) in self.port_sources_audio[connection.source.node_key]
                                 [connection.source.port_index]
                                 .iter()
@@ -195,7 +195,7 @@ impl Runtime {
                                     sample;
                             }
                         }
-                        (PortRate::Control, PortRate::Control) => {
+                        (NodeKind::Control, NodeKind::Control) => {
                             for (n, sample) in self.port_sources_control[connection.source.node_key]
                                 [connection.source.port_index]
                                 .iter()
@@ -205,10 +205,10 @@ impl Runtime {
                                     [n] += sample;
                             }
                         }
-                        (PortRate::Audio, PortRate::Control) => {
+                        (NodeKind::Audio, NodeKind::Control) => {
                             panic!("Audio to control not currently supported")
                         }
-                        (PortRate::Control, PortRate::Audio) => {
+                        (NodeKind::Control, NodeKind::Audio) => {
                             todo!("Control to audio not currently supported")
                         }
                     };

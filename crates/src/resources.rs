@@ -25,8 +25,8 @@ impl ResourceBuilder {
         self.sample_handles.insert(sample)
     }
 
-    pub fn add_param(&mut self, unique_name: &'static str, meta: ParamMeta) {
-        self.param_builder.add_param(unique_name, meta);
+    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+        self.param_builder.add_param(unique_name, meta)
     }
 
     pub fn build(self) -> (Resources, ParamStoreFrontend) {
@@ -110,12 +110,12 @@ impl Resources {
     }
 
     #[inline(always)]
-    pub fn get_param(&self, param_key: ParamKey) -> Result<f32, ParamError> {
+    pub fn get_param(&self, param_key: &ParamKey) -> Result<f32, ParamError> {
         self.param_store.get(param_key)
     }
 
     #[inline(always)]
-    pub unsafe fn get_param_unchecked(&self, param_key: ParamKey) -> f32 {
+    pub unsafe fn get_param_unchecked(&self, param_key: &ParamKey) -> f32 {
         unsafe { self.param_store.get_unchecked(param_key) }
     }
 }

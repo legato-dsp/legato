@@ -1,6 +1,6 @@
 use std::{fmt::Debug};
 
-use crate::{context::AudioContext, msg::{NodeMessage}, ports::Ports};
+use crate::{context::AudioContext, msg::NodeMessage, ports::{NodeKind, Ports}};
 
 pub type Channels = [Box<[f32]>];
 
@@ -55,14 +55,16 @@ where
 pub struct LegatoNode {
     pub name: String,
     pub node_kind: String,
+    pub node_rate: NodeKind, // For now, clamping to either audio or contol out for DSL semantics
     node: Box<dyn DynNode>,
 }
 
 impl LegatoNode {
-    pub fn new(name: String, node_kind: String, node: Box<dyn DynNode>) -> Self {
+    pub fn new(name: String, node_kind: String, node_rate: NodeKind, node: Box<dyn DynNode>) -> Self {
         Self {
             name,
             node_kind,
+            node_rate,
             node,
         }
     }
@@ -88,6 +90,7 @@ impl Clone for LegatoNode {
         Self {
             name: self.name.clone(),
             node_kind: self.node_kind.clone(),
+            node_rate: self.node_rate.clone(),
             node: self.node.clone_box(),
         }
     }

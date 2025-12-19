@@ -28,14 +28,14 @@ impl ParamStore {
     }
 
     #[inline(always)]
-    pub fn get(&self, key: ParamKey) -> Result<f32, ParamError> {
+    pub fn get(&self, key: &ParamKey) -> Result<f32, ParamError> {
         self.data.get(key.0)
             .map(|v| v.load(Ordering::Relaxed))
             .ok_or(ParamError::ParamNotFound)
     }
 
     #[inline(always)]
-    pub unsafe fn get_unchecked(&self, key: ParamKey) -> f32 {
+    pub unsafe fn get_unchecked(&self, key: &ParamKey) -> f32 {
         // ParamKeys should not be changed at runtime, there may be a level of safety here that is acceptible.
         unsafe { self.data.get_unchecked(key.0).load(Ordering::Relaxed) }
     }
@@ -132,12 +132,12 @@ pub struct ParamStoreBuilder {
 
 impl ParamStoreBuilder {
     // Add a param to our builder, with the given meta information.
-    pub fn add_param(&mut self, unique_name: &'static str, meta: ParamMeta) -> ParamKey {
+    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
         let key = ParamKey(self.meta.len());
         self.meta.push(meta);
 
         // Put it in this string to key lookup for later use in the frontend
-        self.param_lookup.insert(unique_name.into(), key.clone());
+        self.param_lookup.insert(unique_name, key.clone());
     
         key
     }

@@ -16,11 +16,11 @@ use crate::{
         delay::DelayLine,
         mixer::{MonoFanOut, TrackMixer},
     },
-    params::ParamMeta,
+    params::{ParamKey, ParamMeta},
     parse::parse_legato_file,
     pipes::{Pipe, PipeRegistry},
-    ports::{PortRate, Ports},
-    registry::AudioRegistry,
+    ports::{NodeKind, Ports},
+    registry::{NodeRegistry, audio_registry_factory},
     resources::{DelayLineKey, ResourceBuilder, SampleKey},
     runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
     sample::{AudioSampleFrontend, AudioSampleHandle},
@@ -108,7 +108,7 @@ impl<S> LegatoBuilder<S> {
 pub struct LegatoBuilder<State> {
     runtime: Runtime,
     // String to registries of node spec (including factory fn) lookup
-    namespaces: HashMap<String, AudioRegistry>,
+    namespaces: HashMap<String, NodeRegistry>,
     // Lookup from string to NodeKey
     working_name_lookup: HashMap<String, NodeKey>,
     // Lookup from string to Pipe Fn
@@ -127,9 +127,13 @@ pub struct LegatoBuilder<State> {
 impl LegatoBuilder<Unconfigured> {
     pub fn new(config: Config, ports: Ports) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
-        let audio_registry = AudioRegistry::default();
+        let audio_registry = audio_registry_factory();
+
         namespaces.insert("audio".into(), audio_registry);
-        namespaces.insert("user".into(), AudioRegistry::new());
+
+
+        namespaces.insert("user_audio".into(), NodeRegistry::new(NodeKind::Audio));
+        namespaces.insert("user_control".into(), NodeRegistry::new(NodeKind::Control));
 
         let runtime = build_runtime(config, ports);
 
@@ -160,7 +164,7 @@ where
     S: CanRegister,
 {
     /// Add a new registry. Think of registries like "DLC" or packs of nodes that users or developers can extend
-    pub fn add_node_registry(mut self, name: &'static str, registry: AudioRegistry) -> Self {
+    pub fn add_node_registry(mut self, name: &'static str, registry: NodeRegistry) -> Self {
         self.namespaces.insert(name.into(), registry);
         self
     }
@@ -184,7 +188,7 @@ where
     S: CanAddNode,
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
-    fn add_node_ref_self(
+    fn _add_node_ref_self(
         &mut self,
         namespace: &String,
         node_kind: &String,
@@ -204,11 +208,12 @@ where
             sample_frontends: &mut self.sample_frontends,
         };
 
-        let node = ns
+        let (node, rate) = ns
             .get_node(&mut resource_builder_view, node_kind, params)
             .unwrap_or_else(|_| panic!("Could not find node {}", node_kind));
+        
 
-        let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
+        let legato_node = LegatoNode::new(alias.into(), node_kind.into(), rate, node);
 
         let key = self.runtime.add_node(legato_node);
 
@@ -224,7 +229,7 @@ where
         alias: &String,
         params: &DSLParams,
     ) -> LegatoBuilder<ContainsNodes> {
-        self.add_node_ref_self(namespace, node_kind, alias, params);
+        self._add_node_ref_self(namespace, node_kind, alias, params);
         self.into_state()
     }
 
@@ -249,30 +254,38 @@ where
     S: CanConnect,
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
-    fn connect_ref_self(&mut self, connection: AddConnectionProps) {
+    fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
+        // Note: for the time being, control rate can only be set via explicit indexing!
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 
                 match connection.rate {
-                    PortRate::Audio => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
-                    PortRate::Control => ports
-                        .control_out
-                        .iter()
-                        .enumerate()
-                        .map(|(i, _)| i)
-                        .collect(),
+                    NodeKind::Audio => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
+                    NodeKind::Control => {
+                        // For now, control must just be one port >> explicit field on control for audio, or control >> control, as I figure out semantics
+                        if ports.control_out.len() > 1 {
+                            panic!("For now, only singular control out is supported, as we work on graph semantics.")
+                        }
+                        vec![0]
+                    } 
                 }
             }
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = match connection.rate {
-                    PortRate::Audio => ports.audio_out.iter().find(|x| x.name == port),
-                    PortRate::Control => ports.control_out.iter().find(|x| x.name == port),
-                }
-                .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
-                .index;
+                    NodeKind::Audio => {
+                        let idx = ports.audio_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port));
+
+                        idx.index
+                    } ,
+                    NodeKind::Control => {
+                        let idx = ports.control_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port));
+
+                        idx.index
+                    },
+                };
 
                 vec![index]
             }
@@ -290,21 +303,38 @@ where
                 let ports = self.runtime.get_node_ports(&connection.source);
                 
                 match connection.rate {
-                    PortRate::Audio => ports.audio_in.iter().enumerate().map(|(i, _)| i).collect(),
-                    PortRate::Control => ports
-                        .control_in
-                        .iter()
-                        .enumerate()
-                        .map(|(i, _)| i)
-                        .collect(),
+                    NodeKind::Audio => {
+                        if connection.rate == NodeKind::Control{
+                            panic!("For the time being, auto connections can only occur with the same rate. Explicitly select the control field you are wiring to.")
+                        }
+                        ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
+                    },
+                    NodeKind::Control => {
+                        if ports.control_out.len() > 1 {
+                            panic!("For now, only singular auto control out mapping is supported, as we work on graph semantics.")
+                        }
+                        else {
+                            vec![0]
+                        }
+                    }
                 }
-            }
+            },
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = match connection.rate {
-                    PortRate::Audio => ports.audio_in.iter().find(|x| x.name == port),
-                    PortRate::Control => ports.control_in.iter().find(|x| x.name == port),
+                    NodeKind::Audio => {
+                        if connection.rate == NodeKind::Control {
+                            panic!("Control to audio rate not currently supported!")
+                        }
+                        ports.audio_in.iter().find(|x| x.name == port)
+                    } ,
+                    NodeKind::Control => {
+                        if connection.rate == NodeKind::Audio {
+                            panic!("Control to audio rate not currently supported!")
+                        }
+                        ports.control_in.iter().find(|x| x.name == port)
+                    },
                 }
                 .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
                 .index;
@@ -312,6 +342,10 @@ where
                 vec![index]
             }
             PortConnectionType::Slice { start, end } => {
+                if connection.rate == NodeKind::Control {
+                    panic!("Slicing only enabled for audio rate currently as we evaluate semantics!");
+                }
+
                 if end < start {
                     panic!("End slice cannot be less than start!");
                 }
@@ -352,7 +386,7 @@ where
         }
     }
     pub fn connect(mut self, connection: AddConnectionProps) -> LegatoBuilder<Connected> {
-        self.connect_ref_self(connection);
+        self._connect_ref_self(connection);
         self.into_state()
     }
 }
@@ -432,7 +466,7 @@ impl LegatoBuilder<DslBuilding> {
 
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
-                self.add_node_ref_self(
+                self._add_node_ref_self(
                     &scope.namespace,
                     &node.node_type,
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
@@ -458,14 +492,16 @@ impl LegatoBuilder<DslBuilding> {
                 .unwrap_or_else(|| panic!("Could not find sink key in connection {}",
                     &connection.sink_name));
 
-            self.connect_ref_self(AddConnectionProps {
+            let port_rate = self.runtime.get_node(source_key).expect("Could not find source node").node_rate;
+
+            self._connect_ref_self(AddConnectionProps {
                 source: *source_key,
                 sink: *sink_key,
                 source_kind: connection.source_port.clone(),
                 sink_kind: connection.sink_port.clone(),
-                rate: PortRate::Audio, // TODO: Control as well
+                rate: port_rate, // TODO: Control as well
             });
-        }
+        };
 
         dbg!(&ast.sink.name);
 
@@ -642,8 +678,8 @@ impl<'a> ResourceBuilderView<'a> {
         }
     }
 
-    pub fn add_param(&mut self, unique_name: &'static str, meta: ParamMeta) {
-        self.resource_builder.add_param(unique_name, meta);
+    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+        self.resource_builder.add_param(unique_name, meta)
     }
 
     pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {
@@ -662,7 +698,7 @@ pub struct AddConnectionProps {
     pub source_kind: PortConnectionType,
     pub sink: NodeKey,
     pub sink_kind: PortConnectionType,
-    pub rate: PortRate, // Determines whether or not we look for control or audio matches
+    pub rate: NodeKind, // Determines whether or not we look for control or audio matches
 }
 
 pub enum AddConnectionKind {
@@ -671,7 +707,7 @@ pub enum AddConnectionKind {
     Auto,
 }
 
-// Utility functions for handling connections
+// Utility functions for handling only audio connections for now
 
 fn one_to_one(
     runtime: &mut Runtime,
@@ -707,6 +743,7 @@ fn one_to_n(
     let mixer = runtime.add_node(LegatoNode::new(
         format!("MonoFanOut{:?}{:?}", props.source, props.sink),
         "MonoFanOut".into(),
+        NodeKind::Audio,
         Box::new(MonoFanOut::new(n)),
     ));
 
@@ -758,6 +795,7 @@ fn n_to_one(
     let mixer = runtime.add_node(LegatoNode::new(
         format!("TrackMixer{:?}{:?}", props.source, props.sink),
         "TrackMixer".into(),
+        props.rate,
         Box::new(TrackMixer::new(1, n, vec![1.0 / f32::sqrt(n as f32); n])),
     ));
 
