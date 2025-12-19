@@ -39,8 +39,6 @@ impl Node for Sampler {
         ctx: &mut AudioContext,
         _: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
     ) {
         let resources = ctx.get_resources();
         // Check for sample update by seeing if the handle and local version match

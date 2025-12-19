@@ -3,7 +3,7 @@ use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
 use crate::msg::{self, LegatoMsg};
 use crate::node::{Channels, LegatoNode, Node};
-use crate::ports::{NodeKind, Ports};
+use crate::ports::{Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleFrontend, AudioSampleError};
 use std::fmt::Debug;
@@ -25,11 +25,9 @@ pub struct Runtime {
     context: AudioContext,
     graph: AudioGraph,
     // Where the nodes write their output to, so node sinks / port sources
-    port_sources_audio: SecondaryMap<NodeKey, Vec<Box<[f32]>>>,
-    port_sources_control: SecondaryMap<NodeKey, Vec<Box<[f32]>>>,
+    port_sources: SecondaryMap<NodeKey, Vec<Box<[f32]>>>,
     // Preallocated buffers for delivering samples
-    audio_inputs_scratch_buffers: Vec<Box<[f32]>>,
-    control_inputs_scratch_buffers: Vec<Box<[f32]>>,
+    scratch_buffers: Vec<Box<[f32]>>,
     // A sink key for pulling the final processed buffer. Optional for graph construction, but required at runtime
     sink_key: Option<NodeKey>,
     ports: Ports,
@@ -37,23 +35,16 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(context: AudioContext, graph: AudioGraph, ports: Ports) -> Self {
         let audio_sources = SecondaryMap::with_capacity(graph.len());
-        let control_sources = SecondaryMap::with_capacity(graph.len());
 
         let config = context.get_config();
         let audio_block_size = config.audio_block_size;
-        let control_block_size = config.control_block_size;
 
         Self {
             context,
             graph,
-            port_sources_audio: audio_sources,
-            port_sources_control: control_sources,
-            audio_inputs_scratch_buffers: vec![
+            port_sources: audio_sources,
+            scratch_buffers: vec![
                 vec![0.0; audio_block_size].into();
-                MAX_INITIAL_INPUTS
-            ],
-            control_inputs_scratch_buffers: vec![
-                vec![0.0; control_block_size].into();
                 MAX_INITIAL_INPUTS
             ],
             sink_key: None,
@@ -64,26 +55,21 @@ impl Runtime {
         let ports = node.get_node().ports();
 
         let audio_chan_size = ports.audio_out.iter().len();
-        let control_chan_size = ports.control_out.iter().len();
 
         let node_key = self.graph.add_node(node);
 
         let config = self.context.get_config();
 
-        self.port_sources_audio.insert(
+        self.port_sources.insert(
             node_key,
             vec![vec![0.0; config.audio_block_size].into(); audio_chan_size],
-        );
-        self.port_sources_control.insert(
-            node_key,
-            vec![vec![0.0; config.control_block_size].into(); control_chan_size],
         );
 
         node_key
     }
     pub fn remove_node(&mut self, key: NodeKey) {
         self.graph.remove_node(key);
-        self.port_sources_audio.remove(key);
+        self.port_sources.remove(key);
     }
 
     pub fn replace_node(&mut self, key: NodeKey, node: LegatoNode) {
@@ -147,93 +133,64 @@ impl Runtime {
         self.graph.get_node_mut(*key)
     }
     // TODO: Graphs as nodes again
-    pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
+    pub fn next_block(&mut self, external_inputs: Option<&Channels>) -> &Channels {
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
         for (i, node_key) in sorted_order.iter().enumerate() {
             // Reset all of the inputs about to be passed into this node
-
             let ports = nodes[*node_key].get_node().ports();
 
             let audio_inputs_size = ports.audio_in.len();
-            let control_inputs_size = ports.control_in.len();
 
             // Zero incoming buffers for all inputs
-            self.audio_inputs_scratch_buffers[..audio_inputs_size]
-                .iter_mut()
-                .for_each(|buf| buf.fill(0.0));
-
-            self.control_inputs_scratch_buffers[..control_inputs_size]
+            self.scratch_buffers[..audio_inputs_size]
                 .iter_mut()
                 .for_each(|buf| buf.fill(0.0));
 
             // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
 
             if i == 0 && external_inputs.as_ref().is_some() {
-                let (ai, ci) = external_inputs.unwrap();
+                let ai = external_inputs.unwrap();
 
                 for (c, ai_chan) in ai.iter().enumerate() {
-                    self.audio_inputs_scratch_buffers[c].copy_from_slice(ai_chan);
+                    self.scratch_buffers[c].copy_from_slice(ai_chan);
                 }
-                for (c, ci_chan) in ci.iter().enumerate() {
-                    self.control_inputs_scratch_buffers[c].copy_from_slice(ci_chan);
-                }
-            } else {
+            } 
+            else {
                 let incoming = incoming.get(*node_key).expect("Invalid connection!");
 
                 for connection in incoming {
                     // Write all incoming data from the connection and port, to the current node, and the sink port
                     debug_assert!(connection.sink.node_key == *node_key);
-                    match (connection.source.port_rate, connection.sink.port_rate) {
-                        (NodeKind::Audio, NodeKind::Audio) => {
-                            for (n, sample) in self.port_sources_audio[connection.source.node_key]
-                                [connection.source.port_index]
-                                .iter()
-                                .enumerate()
-                            {
-                                self.audio_inputs_scratch_buffers[connection.sink.port_index][n] +=
-                                    sample;
-                            }
-                        }
-                        (NodeKind::Control, NodeKind::Control) => {
-                            for (n, sample) in self.port_sources_control[connection.source.node_key]
-                                [connection.source.port_index]
-                                .iter()
-                                .enumerate()
-                            {
-                                self.control_inputs_scratch_buffers[connection.sink.port_index]
-                                    [n] += sample;
-                            }
-                        }
-                        (NodeKind::Audio, NodeKind::Control) => {
-                            panic!("Audio to control not currently supported")
-                        }
-                        (NodeKind::Control, NodeKind::Audio) => {
-                            todo!("Control to audio not currently supported")
-                        }
-                    };
-                }
+                    for (n, sample) in self.port_sources[connection.source.node_key]
+                        [connection.source.port_index]
+                        .iter()
+                        .enumerate()
+                    {
+                        self.scratch_buffers[connection.sink.port_index][n] +=
+                            sample;
+                    }
+                        
+                };
             }
+        
 
-            let audio_output_buffer = &mut self.port_sources_audio[*node_key];
-            let control_output_buffer = &mut self.port_sources_control[*node_key];
+        let audio_output_buffer = &mut self.port_sources[*node_key];
 
-            let node = nodes
-                .get_mut(*node_key)
-                .expect("Could not find node at index {node_index:?}")
-                .get_node_mut();
+        let node = nodes
+            .get_mut(*node_key)
+            .expect("Could not find node at index {node_index:?}")
+            .get_node_mut();
 
-            node.process(
-                &mut self.context,
-                &self.audio_inputs_scratch_buffers[0..audio_inputs_size],
-                audio_output_buffer,
-                &self.control_inputs_scratch_buffers[0..control_inputs_size],
-                control_output_buffer,
-            );
-        }
+        node.process(
+            &mut self.context,
+            &self.scratch_buffers[0..audio_inputs_size],
+            audio_output_buffer,
+        );
+    }
 
         let sink_key = self.sink_key.expect("Sink node must be provided");
-        self.port_sources_audio
+        self.port_sources
             .get(sink_key)
             .expect("Invalid output port!")
     }
@@ -245,10 +202,8 @@ impl Node for Runtime {
         _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        ci: &Channels,
-        _: &mut Channels,
     ) {
-        let outputs = self.next_block(Some(&(ai, ci)));
+        let outputs = self.next_block(Some(&ai));
 
         debug_assert_eq!(ai.len(), ao.len());
         debug_assert_eq!(outputs.len(), ao.len());

@@ -40,8 +40,8 @@ impl Node for FirFilter {
         _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
+        
+        
     ) {
         // These checks are important because we are using this elsewhere for oversampling
         debug_assert_eq!(ai.len(), ao.len());

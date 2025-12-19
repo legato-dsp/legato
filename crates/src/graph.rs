@@ -2,7 +2,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{node::LegatoNode, ports::NodeKind, runtime::NodeKey};
+use crate::{node::LegatoNode, runtime::NodeKey};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -15,7 +15,6 @@ pub enum GraphError {
 pub struct ConnectionEntry {
     pub node_key: NodeKey,
     pub port_index: usize,
-    pub port_rate: NodeKind,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -265,7 +264,7 @@ mod test {
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
         node::{Channels, Node},
-        ports::{PortMeta, NodeKind, Ports},
+        ports::{PortMeta, Ports},
     };
 
     #[derive(Clone)]
@@ -297,9 +296,7 @@ mod test {
             &mut self,
             _: &mut AudioContext,
             _: &Channels,
-            _: &mut Channels,
-            _: &Channels,
-            _: &mut Channels,
+            _: &mut Channels
         ) {
         }
         fn ports(&self) -> &Ports {
@@ -330,19 +327,19 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -351,12 +348,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -365,12 +362,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -384,19 +381,19 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -405,12 +402,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .expect("Could not add e1");
@@ -420,12 +417,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .expect("Could not add e2");
@@ -467,31 +464,31 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let d = graph.add_node(LegatoNode::new(
             "d".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let e = graph.add_node(LegatoNode::new(
             "e".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -500,12 +497,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -515,12 +512,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -530,12 +527,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: d,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -545,12 +542,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: e,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -565,13 +562,13 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -580,12 +577,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -594,12 +591,12 @@ mod test {
             source: ConnectionEntry {
                 node_key: b,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
         });
 
@@ -614,7 +611,7 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -622,12 +619,12 @@ mod test {
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
         });
 
@@ -641,7 +638,7 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -655,19 +652,19 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let b = graph.add_node(LegatoNode::new(
             "b".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
         let c = graph.add_node(LegatoNode::new(
             "c".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -676,12 +673,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -691,12 +688,12 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: NodeKind::Audio,
+                     
                 },
             })
             .unwrap();
@@ -715,7 +712,7 @@ mod test {
         let a = graph.add_node(LegatoNode::new(
             "a".into(),
             "MonoExample".into(),
-            NodeKind::Audio,
+            
             Box::new(MonoExample::default()),
         ));
 
@@ -723,7 +720,7 @@ mod test {
             let temp = graph.add_node(LegatoNode::new(
                 "temp".into(),
                 "MonoExample".into(),
-                NodeKind::Audio,
+                
                 Box::new(MonoExample::default()),
             ));
             let _ = graph.remove_node(temp);
@@ -734,12 +731,12 @@ mod test {
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
             sink: ConnectionEntry {
                 node_key: nonexistent_key,
                 port_index: 0,
-                port_rate: NodeKind::Audio,
+                 
             },
         });
 

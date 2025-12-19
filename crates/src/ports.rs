@@ -4,12 +4,6 @@ pub struct PortMeta {
     pub index: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum NodeKind {
-    Audio,
-    Control,
-}
-
 #[derive(Clone, Debug)]
 pub struct Ports {
     pub audio_in: Vec<PortMeta>,
@@ -19,21 +13,21 @@ pub struct Ports {
 }
 
 impl Ports {
-    pub fn find_port_in(&self, name: &String) -> Option<(PortMeta, NodeKind)> {
+    pub fn find_port_in(&self, name: &String) -> Option<PortMeta> {
         if let Some(port) = self.audio_in.iter().find(|x| x.name == name) {
-            return Some((port.clone(), NodeKind::Audio));
+            return Some(port.clone());
         }
         if let Some(port) = self.control_in.iter().find(|x| x.name == name) {
-            return Some((port.clone(), NodeKind::Control));
+            return Some(port.clone());
         }
         None
     }
-    pub fn find_port_out(&self, name: &String) -> Option<(PortMeta, NodeKind)> {
+    pub fn find_port_out(&self, name: &String) -> Option<PortMeta> {
         if let Some(port) = self.audio_out.iter().find(|x| x.name == name) {
-            return Some((port.clone(), NodeKind::Audio));
+            return Some(port.clone());
         }
         if let Some(port) = self.control_out.iter().find(|x| x.name == name) {
-            return Some((port.clone(), NodeKind::Control));
+            return Some(port.clone());
         }
         None
     }

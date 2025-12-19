@@ -64,8 +64,6 @@ impl Node for Sine {
         ctx: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
     ) {
         let config = ctx.get_config();
 

@@ -32,8 +32,8 @@ impl Node for ApplyOp {
         _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
+        
+        
     ) {
         let chunk_size = LANES;
 

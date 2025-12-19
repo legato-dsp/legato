@@ -86,8 +86,6 @@ impl Node for DelayWrite {
         ctx: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
@@ -124,9 +122,7 @@ impl Node for DelayRead {
         &mut self,
         ctx: &mut AudioContext,
         _: &Channels,
-        ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
+        ao: &mut Channels
     ) {
         let config = ctx.get_config();
 

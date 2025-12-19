@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     node::{DynNode, LegatoNode},
-    ports::{PortBuilder, NodeKind},
+    ports::{PortBuilder},
     runtime::{Runtime, build_runtime},
 };
 
@@ -19,7 +19,7 @@ pub fn get_node_test_harness(node: Box<dyn DynNode>) -> Runtime {
 
     let mut graph = build_runtime(config, ports);
 
-    let id = graph.add_node(LegatoNode::new("test node".into(), "test".into(), NodeKind::Audio, node));
+    let id = graph.add_node(LegatoNode::new("test node".into(), "test".into(), node));
 
     let _ = graph.set_sink_key(id);
 

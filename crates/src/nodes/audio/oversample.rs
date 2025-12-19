@@ -35,8 +35,6 @@ impl<const N: usize> Node for Upsample<N> {
         ctx: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
     ) {
         debug_assert_eq!(ai.len(), ao.len()); // Channels match
         debug_assert_eq!(ai[0].len() * N, ao[0].len()); // Conversion matches
@@ -54,7 +52,7 @@ impl<const N: usize> Node for Upsample<N> {
             }
         }
         // FIR filter the zero stuffed buffer
-        self.filter.process(ctx, &self.zero_stuffed, ao, ci, co);
+        self.filter.process(ctx, &self.zero_stuffed, ao);
     }
     fn ports(&self) -> &Ports {
         &self.ports
@@ -88,14 +86,12 @@ impl<const N: usize> Node for Downsample<N> {
         ctx: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
     ) {
         // Ensure that ai = ao * N
         debug_assert_eq!(ai[0].len(), ao[0].len() * N);
 
         // Filter the audio before decimating to prevent aliasing
-        self.filter.process(ctx, ai, &mut self.filtered, ci, co);
+        self.filter.process(ctx, ai, &mut self.filtered);
 
         // Decimate the filtered audio
         for c in 0..self.chans {
@@ -151,8 +147,6 @@ impl<const N: usize> Node for Oversampler<N> {
         ctx: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
     ) {
         let config = ctx.get_config();
 
@@ -160,7 +154,7 @@ impl<const N: usize> Node for Oversampler<N> {
         let block_size = config.audio_block_size;
 
         self.upsampler
-            .process(ctx, ai, &mut self.upsampled_outputs, ci, co);
+            .process(ctx, ai, &mut self.upsampled_outputs);
 
         ctx.set_sample_rate(sr * 2);
         ctx.set_block_size(block_size * 2);
@@ -169,15 +163,13 @@ impl<const N: usize> Node for Oversampler<N> {
             ctx,
             &self.upsampled_outputs,
             &mut self.downsampled_inputs,
-            ci,
-            co,
         );
 
         ctx.set_sample_rate(sr);
         ctx.set_block_size(block_size);
 
         self.downsampler
-            .process(ctx, &self.downsampled_inputs, ao, ci, co);
+            .process(ctx, &self.downsampled_inputs, ao);
     }
     fn ports(&self) -> &Ports {
         &self.ports

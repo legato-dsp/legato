@@ -33,8 +33,6 @@ impl Node for Sweep {
         ctx: &mut AudioContext,
         _: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
     ) {
         let config = ctx.get_config();
 

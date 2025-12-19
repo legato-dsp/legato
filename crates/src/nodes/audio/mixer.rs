@@ -39,8 +39,8 @@ impl Node for TrackMixer {
         _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
+        
+        
     ) {
         // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
         for buffer in ao.iter_mut() {
@@ -95,8 +95,8 @@ impl Node for MonoFanOut {
         _: &mut AudioContext,
         ai: &Channels,
         ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
+        
+        
     ) {
         // TODO: Chunks + SIMD
         let chans_out = self.ports.audio_out.len();

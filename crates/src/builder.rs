@@ -19,8 +19,8 @@ use crate::{
     params::{ParamKey, ParamMeta},
     parse::parse_legato_file,
     pipes::{Pipe, PipeRegistry},
-    ports::{NodeKind, Ports},
-    registry::{NodeRegistry, audio_registry_factory},
+    ports::{Ports},
+    registry::{NodeRegistry, audio_registry_factory, control_registry_factory},
     resources::{DelayLineKey, ResourceBuilder, SampleKey},
     runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
     sample::{AudioSampleFrontend, AudioSampleHandle},
@@ -128,12 +128,12 @@ impl LegatoBuilder<Unconfigured> {
     pub fn new(config: Config, ports: Ports) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
         let audio_registry = audio_registry_factory();
+        let control_registry = control_registry_factory();
 
         namespaces.insert("audio".into(), audio_registry);
+        namespaces.insert("control".into(), control_registry);
 
-
-        namespaces.insert("user_audio".into(), NodeRegistry::new(NodeKind::Audio));
-        namespaces.insert("user_control".into(), NodeRegistry::new(NodeKind::Control));
+        namespaces.insert("user".into(), NodeRegistry::new());
 
         let runtime = build_runtime(config, ports);
 
@@ -208,12 +208,11 @@ where
             sample_frontends: &mut self.sample_frontends,
         };
 
-        let (node, rate) = ns
+        let node = ns
             .get_node(&mut resource_builder_view, node_kind, params)
             .unwrap_or_else(|_| panic!("Could not find node {}", node_kind));
-        
 
-        let legato_node = LegatoNode::new(alias.into(), node_kind.into(), rate, node);
+        let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
 
         let key = self.runtime.add_node(legato_node);
 
@@ -259,33 +258,12 @@ where
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                
-                match connection.rate {
-                    NodeKind::Audio => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
-                    NodeKind::Control => {
-                        // For now, control must just be one port >> explicit field on control for audio, or control >> control, as I figure out semantics
-                        if ports.control_out.len() > 1 {
-                            panic!("For now, only singular control out is supported, as we work on graph semantics.")
-                        }
-                        vec![0]
-                    } 
-                }
+                ports.audio_out.iter().enumerate().map(|(i, _)| i).collect()
             }
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                let index = match connection.rate {
-                    NodeKind::Audio => {
-                        let idx = ports.audio_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port));
-
-                        idx.index
-                    } ,
-                    NodeKind::Control => {
-                        let idx = ports.control_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port));
-
-                        idx.index
-                    },
-                };
+                let index = ports.audio_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port)).index;
 
                 vec![index]
             }
@@ -301,51 +279,18 @@ where
         let sink_indicies: Vec<usize> = match connection.sink_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                
-                match connection.rate {
-                    NodeKind::Audio => {
-                        if connection.rate == NodeKind::Control{
-                            panic!("For the time being, auto connections can only occur with the same rate. Explicitly select the control field you are wiring to.")
-                        }
-                        ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
-                    },
-                    NodeKind::Control => {
-                        if ports.control_out.len() > 1 {
-                            panic!("For now, only singular auto control out mapping is supported, as we work on graph semantics.")
-                        }
-                        else {
-                            vec![0]
-                        }
-                    }
-                }
+                ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
             },
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                let index = match connection.rate {
-                    NodeKind::Audio => {
-                        if connection.rate == NodeKind::Control {
-                            panic!("Control to audio rate not currently supported!")
-                        }
-                        ports.audio_in.iter().find(|x| x.name == port)
-                    } ,
-                    NodeKind::Control => {
-                        if connection.rate == NodeKind::Audio {
-                            panic!("Control to audio rate not currently supported!")
-                        }
-                        ports.control_in.iter().find(|x| x.name == port)
-                    },
-                }
-                .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
-                .index;
+                let index = ports.audio_in.iter()
+                    .find(|x| x.name == port)
+                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port)).index;
 
                 vec![index]
             }
             PortConnectionType::Slice { start, end } => {
-                if connection.rate == NodeKind::Control {
-                    panic!("Slicing only enabled for audio rate currently as we evaluate semantics!");
-                }
-
                 if end < start {
                     panic!("End slice cannot be less than start!");
                 }
@@ -492,14 +437,11 @@ impl LegatoBuilder<DslBuilding> {
                 .unwrap_or_else(|| panic!("Could not find sink key in connection {}",
                     &connection.sink_name));
 
-            let port_rate = self.runtime.get_node(source_key).expect("Could not find source node").node_rate;
-
             self._connect_ref_self(AddConnectionProps {
                 source: *source_key,
                 sink: *sink_key,
                 source_kind: connection.source_port.clone(),
                 sink_kind: connection.sink_port.clone(),
-                rate: port_rate, // TODO: Control as well
             });
         };
 
@@ -698,7 +640,6 @@ pub struct AddConnectionProps {
     pub source_kind: PortConnectionType,
     pub sink: NodeKey,
     pub sink_kind: PortConnectionType,
-    pub rate: NodeKind, // Determines whether or not we look for control or audio matches
 }
 
 pub enum AddConnectionKind {
@@ -720,12 +661,12 @@ fn one_to_one(
             source: ConnectionEntry {
                 node_key: props.source,
                 port_index: source_index,
-                port_rate: props.rate,
+                
             },
             sink: ConnectionEntry {
                 node_key: props.sink,
                 port_index: sink_index,
-                port_rate: props.rate,
+                
             },
         })
         .expect("Could not add edge");
@@ -743,7 +684,6 @@ fn one_to_n(
     let mixer = runtime.add_node(LegatoNode::new(
         format!("MonoFanOut{:?}{:?}", props.source, props.sink),
         "MonoFanOut".into(),
-        NodeKind::Audio,
         Box::new(MonoFanOut::new(n)),
     ));
 
@@ -753,12 +693,12 @@ fn one_to_n(
             source: ConnectionEntry {
                 node_key: props.source,
                 port_index: source_index,
-                port_rate: props.rate,
+                
             },
             sink: ConnectionEntry {
                 node_key: mixer,
                 port_index: 0,
-                port_rate: props.rate,
+                
             },
         })
         .expect("Could not add edge");
@@ -771,12 +711,12 @@ fn one_to_n(
                 source: ConnectionEntry {
                     node_key: mixer,
                     port_index: 0,
-                    port_rate: props.rate,
+                    
                 },
                 sink: ConnectionEntry {
                     node_key: props.sink,
                     port_index: *sink_index,
-                    port_rate: props.rate,
+                    
                 },
             })
             .expect("Could not add edge");
@@ -795,7 +735,6 @@ fn n_to_one(
     let mixer = runtime.add_node(LegatoNode::new(
         format!("TrackMixer{:?}{:?}", props.source, props.sink),
         "TrackMixer".into(),
-        props.rate,
         Box::new(TrackMixer::new(1, n, vec![1.0 / f32::sqrt(n as f32); n])),
     ));
 
@@ -806,12 +745,12 @@ fn n_to_one(
                 source: ConnectionEntry {
                     node_key: props.source,
                     port_index: *source_index,
-                    port_rate: props.rate,
+                    
                 },
                 sink: ConnectionEntry {
                     node_key: mixer,
                     port_index: i,
-                    port_rate: props.rate,
+                    
                 },
             })
             .expect("Could not add edge");
@@ -823,12 +762,12 @@ fn n_to_one(
             source: ConnectionEntry {
                 node_key: mixer,
                 port_index: 0,
-                port_rate: props.rate,
+                
             },
             sink: ConnectionEntry {
                 node_key: props.sink,
                 port_index: sink_index,
-                port_rate: props.rate,
+                
             },
         })
         .expect("Could not add edge");
@@ -850,12 +789,12 @@ fn n_to_n(
                     source: ConnectionEntry {
                         node_key: props.source,
                         port_index: *source,
-                        port_rate: props.rate,
+                        
                     },
                     sink: ConnectionEntry {
                         node_key: props.sink,
                         port_index: *sink,
-                        port_rate: props.rate,
+                        
                     },
                 })
                 .expect("Could not add edge");

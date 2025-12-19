@@ -10,7 +10,7 @@ use crate::{
         sampler::Sampler,
         sine::Sine,
         sweep::Sweep,
-    }, control::signal::ControlSignal}, params::ParamMeta, ports::{NodeKind, PortMeta}, spec::{NodeFactory, NodeSpec}
+    }, control::signal::Signal}, params::ParamMeta, spec::{NodeFactory, NodeSpec}
 };
 
 /// Node registries are simply hashmaps of String node names, and their
@@ -19,21 +19,20 @@ use crate::{
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
 pub struct NodeRegistry {
     // For now, entries must contain a specific rate as I work out graph semantics
-    kind: NodeKind,
     data: HashMap<String, NodeSpec>,
 }
 
 impl NodeRegistry {
-    pub fn new(node_kind: NodeKind) -> Self {
+    pub fn new() -> Self {
         let data = HashMap::new();
-        Self { kind: node_kind, data }
+        Self {data }
     }
     pub fn get_node(
         &self,
         resource_builder: &mut ResourceBuilderView,
         node_name: &String,
         params: &DSLParams,
-    ) -> Result<(Box<dyn DynNode>, NodeKind), ValidationError> {
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
             Some(spec) => (spec.build)(resource_builder, params),
             None => Err(ValidationError::NodeNotFound(format!(
@@ -41,7 +40,7 @@ impl NodeRegistry {
                 node_name
             ))),
         }?;
-        Ok((node, self.kind.clone()))
+        Ok(node)
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
         self.data
@@ -201,7 +200,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 }
             ),
         ]);
-        NodeRegistry { kind: NodeKind::Audio, data }
+        NodeRegistry { data }
 }
 
 pub fn control_registry_factory() -> NodeRegistry {
@@ -223,9 +222,9 @@ pub fn control_registry_factory() -> NodeRegistry {
 
                     let key = rb.add_param(name, meta);
 
-                    Ok(Box::new(ControlSignal::new(key, default, smoothing)))
+                    Ok(Box::new(Signal::new(key, default, smoothing)))
                 }
             ),
         ]);
-    NodeRegistry { kind: NodeKind::Control, data }
+    NodeRegistry { data }
 }

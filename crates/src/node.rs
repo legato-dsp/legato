@@ -1,12 +1,12 @@
 use std::{fmt::Debug};
 
-use crate::{context::AudioContext, msg::NodeMessage, ports::{NodeKind, Ports}};
+use crate::{context::AudioContext, msg::NodeMessage, ports::{Ports}};
 
 pub type Channels = [Box<[f32]>];
 
 /// The node trait that any audio processing nodes must implement.
 ///
-/// The channel inputs are slices of Box<[f32]>, that correspond to the interior graph audio and control rate.
+/// The channel inputs are slices of Box<[f32]>, that correspond to the interior graph audio graph rate.
 ///
 /// When defining your own nodes, look at internal examples for how you can use the port builder as well.
 ///
@@ -14,17 +14,11 @@ pub type Channels = [Box<[f32]>];
 /// For the time being, this should not be mutated or invalidated at runtime.
 pub trait Node {
     /// The process function for your node. They operate on slices of Box<[f32]>.
-    /// 
-    /// Note: Audio and Control have different block sizes, as they run at different rates.
-    /// 
-    /// Use control for slow modulations that don't require precise timing.
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
+        inputs: &Channels,
+        outputs: &mut Channels,
     );
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}
@@ -55,16 +49,14 @@ where
 pub struct LegatoNode {
     pub name: String,
     pub node_kind: String,
-    pub node_rate: NodeKind, // For now, clamping to either audio or contol out for DSL semantics
     node: Box<dyn DynNode>,
 }
 
 impl LegatoNode {
-    pub fn new(name: String, node_kind: String, node_rate: NodeKind, node: Box<dyn DynNode>) -> Self {
+    pub fn new(name: String, node_kind: String, node: Box<dyn DynNode>) -> Self {
         Self {
             name,
             node_kind,
-            node_rate,
             node,
         }
     }
@@ -90,7 +82,6 @@ impl Clone for LegatoNode {
         Self {
             name: self.name.clone(),
             node_kind: self.node_kind.clone(),
-            node_rate: self.node_rate.clone(),
             node: self.node.clone_box(),
         }
     }

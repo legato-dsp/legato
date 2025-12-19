@@ -57,7 +57,7 @@ impl LegatoApp {
     /// This is useful for tests, or compatability with different audio backends.
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
-    pub fn next_block(&mut self, external_inputs: Option<&(&Channels, &Channels)>) -> &Channels {
+    pub fn next_block(&mut self, external_inputs: Option<&Channels>) -> &Channels {
         // Handle messages from the LegatoFrontend
         while let Some(msg) = self.consumer.dequeue() {
             self.runtime.handle_msg(msg);

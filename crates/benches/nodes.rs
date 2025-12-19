@@ -139,9 +139,8 @@ fn bench_stereo_delay(c: &mut Criterion) {
             vec![0.0; config.audio_block_size].into(),
             vec![0.0; config.audio_block_size].into(),
         ];
-        let ci = &[];
         b.iter(|| {
-            let out = app.next_block(Some(&(ai, ci)));
+            let out = app.next_block(Some(&ai));
             black_box(out);
         });
     });
