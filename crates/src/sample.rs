@@ -2,6 +2,8 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 use arc_swap::ArcSwapOption;
 
+// TODO: Should any of these just be weak pointers?
+
 /// For now, we assume that all audio samples
 /// were loaded with FFMPEG with the same rate.
 ///
@@ -19,6 +21,7 @@ pub struct AudioSample {
 ///
 /// This helps prevent ArcSwap loads that allocate on the
 /// on the audio thread.
+#[derive(Debug)]
 pub struct AudioSampleHandle {
     pub sample: ArcSwapOption<AudioSample>,
     pub sample_version: AtomicU64,
@@ -53,10 +56,10 @@ impl AudioSample {
 pub enum AudioSampleError {
     PathNotFound,
     FailedDecoding,
-    BackendNotFound,
+    FrontendNotFound,
 }
 
-/// The audio sample backend is a quick trick to load a sample
+/// The audio sample frontend is a quick trick to load a sample
 /// on another thread, which prevents interfering with the audio thread.
 ///
 /// It's worth noting that I am not quite sure if there is UB here. It
@@ -64,10 +67,10 @@ pub enum AudioSampleError {
 /// or, for larger files, just having some sort of channel that streams the file
 /// in, but for the time being this seems to work okay.
 #[derive(Clone)]
-pub struct AudioSampleBackend {
+pub struct AudioSampleFrontend {
     handle: Arc<AudioSampleHandle>,
 }
-impl AudioSampleBackend {
+impl AudioSampleFrontend {
     pub fn new(handle: Arc<AudioSampleHandle>) -> Self {
         Self { handle }
     }

@@ -1,6 +1,6 @@
-use std::fmt::Debug;
+use std::{fmt::Debug};
 
-use crate::{context::AudioContext, ports::Ports};
+use crate::{context::AudioContext, msg::{NodeMessage}, ports::Ports};
 
 pub type Channels = [Box<[f32]>];
 
@@ -13,6 +13,11 @@ pub type Channels = [Box<[f32]>];
 /// The amount of channels passed to your node, depends on the ports given to that node when it is added to the runtime.
 /// For the time being, this should not be mutated or invalidated at runtime.
 pub trait Node {
+    /// The process function for your node. They operate on slices of Box<[f32]>.
+    /// 
+    /// Note: Audio and Control have different block sizes, as they run at different rates.
+    /// 
+    /// Use control for slow modulations that don't require precise timing.
     fn process(
         &mut self,
         ctx: &mut AudioContext,
@@ -21,11 +26,14 @@ pub trait Node {
         ci: &Channels,
         co: &mut Channels,
     );
+    // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
+    fn handle_msg(&mut self, _msg: NodeMessage) {}
+    // Get the port information for your node. This should not change after contruction.
     fn ports(&self) -> &Ports;
 }
 
 // This ceremony with NodeClone and DynNode is needed so that we can "clone" nodes by cloning the interior and boxing the result,
-// otherwise, we cannot create a v-table
+// otherwise, it's not object safe.
 
 pub trait NodeClone {
     fn clone_box(&self) -> Box<dyn DynNode>;
@@ -58,11 +66,20 @@ impl LegatoNode {
             node,
         }
     }
+
+    #[inline(always)]
     pub fn get_node(&self) -> &Box<dyn DynNode> {
         &self.node
     }
+
+    #[inline(always)]
     pub fn get_node_mut(&mut self) -> &mut Box<dyn DynNode> {
         &mut self.node
+    }
+    /// A meta wrapper that handles messages. This is used because we may need more messages in the future than just params
+    #[inline(always)]
+    pub fn handle_msg(&mut self, msg: NodeMessage){
+        self.get_node_mut().as_mut().handle_msg(msg);
     }
 }
 

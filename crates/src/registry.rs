@@ -3,20 +3,14 @@
 use std::{collections::HashMap, time::Duration};
 
 use crate::{
-    ValidationError,
-    builder::ResourceBuilderView,
-    node::DynNode,
-    node_spec,
-    nodes::audio::{
+    ast::DSLParams, builder::{ResourceBuilderView, ValidationError}, node::DynNode, node_spec, nodes::audio::{
         delay::{DelayLine, DelayRead, DelayWrite},
         mixer::TrackMixer,
         ops::{ApplyOpKind, mult_node_factory},
         sampler::Sampler,
         sine::Sine,
         sweep::Sweep,
-    },
-    params::Params,
-    spec::{NodeFactory, NodeSpec},
+    }, spec::{NodeFactory, NodeSpec}
 };
 
 /// Audio registries are simply hashmaps of String node names, and their
@@ -36,7 +30,7 @@ impl AudioRegistry {
         &self,
         resource_builder: &mut ResourceBuilderView,
         node_kind: &String,
-        params: &Params,
+        params: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         match self.data.get(node_kind) {
             Some(spec) => (spec.build)(resource_builder, params),

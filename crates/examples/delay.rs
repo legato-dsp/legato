@@ -51,11 +51,11 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_pipe("logger", Box::new(Logger {}))
         .build_dsl(&graph);
 
-    let _ = backend.load_sample(
+    let _ = frontend.load_sample(
         &String::from("amen"),
         Path::new("../samples/amen.wav"),
         2,

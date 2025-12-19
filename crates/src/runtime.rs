@@ -1,10 +1,11 @@
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
+use crate::msg::{self, LegatoMsg};
 use crate::node::{Channels, LegatoNode, Node};
 use crate::ports::{PortRate, Ports};
 use crate::resources::Resources;
-use crate::sample::{AudioSampleBackend, AudioSampleError};
+use crate::sample::{AudioSampleFrontend, AudioSampleError};
 use std::fmt::Debug;
 use std::vec;
 
@@ -116,6 +117,21 @@ impl Runtime {
     pub fn get_config(&self) -> Config {
         self.context.get_config()
     }
+    /// Handle the message from the LegatoFrontend
+    /// 
+    /// TODO: How do we handle nested runtimes?
+    pub fn handle_msg(&mut self, msg: LegatoMsg) {
+        #[cfg(debug_assertions)]
+        dbg!(&msg);
+        match msg {
+            LegatoMsg::NodeMessage(key, param_msg) => {
+                if let Some(node) = self.get_node_mut(&key) {
+                    node.handle_msg(param_msg);
+                }
+            }
+        }
+    }
+
     // F32 is a bit weird here, but we cast so frequently why not
     pub fn get_sample_rate(&self) -> usize {
         self.context.get_config().sample_rate
@@ -244,24 +260,34 @@ impl Node for Runtime {
     fn ports(&self) -> &Ports {
         &self.ports
     }
-}
-
-/// The backend that sends commands to the runtime.
-///
-/// For the time being, this is primarily used to load new samples,
-/// but in the future, it will likely use channels for invoking certain
-/// functions on certain nodes.
-///
-/// TOOD: Tidy this up a bit, needs better error handling
-pub struct RuntimeBackend {
-    audio_sample_backend: std::collections::HashMap<String, AudioSampleBackend>,
-}
-impl RuntimeBackend {
-    pub fn new(sample_backend: std::collections::HashMap<String, AudioSampleBackend>) -> Self {
-        Self {
-            audio_sample_backend: sample_backend,
+    fn handle_msg(&mut self, msg: msg::NodeMessage) {
+        match msg {
+            msg::NodeMessage::SetParam(_) => unimplemented!("Runtime subgraph messaging not yet setup")
         }
     }
+}
+
+/// The frontend that exposes a number of ways to communicate with the realtime audio thread.
+/// 
+/// At the moment, you can pass messages via a channel that will be forwarded to a node.
+/// 
+/// For control rate, you can use a Param node and register a parameter.
+/// 
+/// For audio rate, you should use a node with some sort of spsc or other thread safe queue.
+///
+/// TODO: Tidy this up a bit, needs better error handling
+/// TODO: Do we need this and the legato frontend
+/// TODO: How does this work with subgraphs? Do we just merge all of the params with the parent graph?
+pub struct RuntimeFrontend {
+    audio_sample_frontend: std::collections::HashMap<String, AudioSampleFrontend>,
+}
+impl RuntimeFrontend {
+    pub fn new(sample_frontends: std::collections::HashMap<String, AudioSampleFrontend>) -> Self {
+        Self {
+            audio_sample_frontend: sample_frontends,
+        }
+    }
+
     pub fn load_sample(
         &mut self,
         sampler: &String,
@@ -269,10 +295,10 @@ impl RuntimeBackend {
         chans: usize,
         sr: u32,
     ) -> Result<(), AudioSampleError> {
-        if let Some(backend) = self.audio_sample_backend.get(sampler) {
-            return backend.load_file(path, chans, sr);
+        if let Some(frontend) = self.audio_sample_frontend.get(sampler) {
+            return frontend.load_file(path, chans, sr);
         }
-        Err(AudioSampleError::BackendNotFound)
+        Err(AudioSampleError::FrontendNotFound)
     }
 }
 

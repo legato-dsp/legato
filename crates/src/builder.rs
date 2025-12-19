@@ -7,8 +7,8 @@ use std::{
 use arc_swap::ArcSwapOption;
 
 use crate::{
-    LegatoApp, LegatoBackend, LegatoMsg, ValidationError,
-    ast::{PortConnectionType, Value, build_ast},
+    LegatoApp, LegatoFrontend, LegatoMsg,
+    ast::{DSLParams, PortConnectionType, Value, build_ast},
     config::Config,
     graph::{Connection, ConnectionEntry},
     node::LegatoNode,
@@ -16,16 +16,32 @@ use crate::{
         delay::DelayLine,
         mixer::{MonoFanOut, TrackMixer},
     },
-    params::Params,
+    params::ParamMeta,
     parse::parse_legato_file,
     pipes::{Pipe, PipeRegistry},
     ports::{PortRate, Ports},
     registry::AudioRegistry,
-    resources::{DelayLineKey, Resources, SampleKey},
-    runtime::{NodeKey, Runtime, RuntimeBackend, build_runtime},
-    sample::{AudioSampleBackend, AudioSampleHandle},
+    resources::{DelayLineKey, ResourceBuilder, SampleKey},
+    runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
+    sample::{AudioSampleFrontend, AudioSampleHandle},
     spec::NodeSpec,
 };
+
+/// ValidationError covers logical issues
+/// when lowering from the AST to the IR.
+///
+/// These might be bad parameters,
+/// bad values, nodes that don't exist, etc.
+#[derive(Clone, PartialEq, Debug)]
+pub enum ValidationError {
+    NodeNotFound(String),
+    NamespaceNotFound(String),
+    InvalidParameter(String),
+    MissingRequiredParameters(String),
+    MissingRequiredParameter(String),
+    ResourceNotFound(String),
+    PipeNotFound(String),
+}
 
 // Typestates for the builder
 pub struct Unconfigured;
@@ -79,8 +95,8 @@ impl<S> LegatoBuilder<S> {
             namespaces: self.namespaces,
             working_name_lookup: self.working_name_lookup,
             delay_name_to_key: self.delay_name_to_key,
-            resources: self.resources,
-            sample_backends: self.sample_backends,
+            resource_builder: self.resource_builder,
+            sample_frontends: self.sample_frontends,
             sample_name_to_key: self.sample_name_to_key,
             pipe_lookup: self.pipe_lookup,
             last_selection: self.last_selection,
@@ -98,11 +114,11 @@ pub struct LegatoBuilder<State> {
     // Lookup from string to Pipe Fn
     pipe_lookup: PipeRegistry,
     // Resources being built. These can be pased to node factories
-    resources: Resources,
+    resource_builder: ResourceBuilder,
     // Name to key maps
     sample_name_to_key: HashMap<String, SampleKey>,
     delay_name_to_key: HashMap<String, DelayLineKey>,
-    sample_backends: HashMap<String, AudioSampleBackend>,
+    sample_frontends: HashMap<String, AudioSampleFrontend>,
     // When adding a node or piping, this tracks and sets the node key for pipes
     last_selection: Option<SelectionKind>,
     _state: PhantomData<State>,
@@ -119,10 +135,10 @@ impl LegatoBuilder<Unconfigured> {
 
         LegatoBuilder::<Configured> {
             runtime,
-            resources: Resources::default(),
+            resource_builder: ResourceBuilder::default(),
             sample_name_to_key: HashMap::new(),
             delay_name_to_key: HashMap::new(),
-            sample_backends: HashMap::new(),
+            sample_frontends: HashMap::new(),
             namespaces,
             working_name_lookup: HashMap::new(),
             pipe_lookup: PipeRegistry::default(),
@@ -133,7 +149,7 @@ impl LegatoBuilder<Unconfigured> {
 }
 
 impl LegatoBuilder<Configured> {
-    pub fn build_dsl(self, graph: &str) -> (LegatoApp, LegatoBackend) {
+    pub fn build_dsl(self, graph: &str) -> (LegatoApp, LegatoFrontend) {
         let can_build = self.into_state::<DslBuilding>();
         can_build._build_dsl(graph)
     }
@@ -173,7 +189,7 @@ where
         namespace: &String,
         node_kind: &String,
         alias: &String,
-        params: &Params,
+        params: &DSLParams,
     ) {
         let ns = self
             .namespaces
@@ -182,10 +198,10 @@ where
 
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
-            resources: &mut self.resources,
+            resource_builder: &mut self.resource_builder,
             sample_keys: &mut self.sample_name_to_key,
             delay_keys: &mut self.delay_name_to_key,
-            sample_backends: &mut self.sample_backends,
+            sample_frontends: &mut self.sample_frontends,
         };
 
         let node = ns
@@ -206,7 +222,7 @@ where
         namespace: &String,
         node_kind: &String,
         alias: &String,
-        params: &Params,
+        params: &DSLParams,
     ) -> LegatoBuilder<ContainsNodes> {
         self.add_node_ref_self(namespace, node_kind, alias, params);
         self.into_state()
@@ -386,9 +402,12 @@ impl<S> LegatoBuilder<S>
 where
     S: CanBuild,
 {
-    pub fn build(self) -> (LegatoApp, LegatoBackend) {
+    pub fn build(self) -> (LegatoApp, LegatoFrontend) {
         let mut runtime = self.runtime;
-        runtime.set_resources(self.resources);
+
+        let (resources, param_store_frontend) = self.resource_builder.build();
+
+        runtime.set_resources(resources);
 
         // TODO: Perhaps a different crate here instead of leaking
         let queue = Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 512>::new()));
@@ -397,16 +416,16 @@ where
 
         let app = LegatoApp::new(runtime, consumer);
 
-        let rt_backend = RuntimeBackend::new(self.sample_backends);
+        let rt_frontend = RuntimeFrontend::new(self.sample_frontends);
 
-        let backend = LegatoBackend::new(rt_backend, producer);
+        let frontend = LegatoFrontend::new(rt_frontend, param_store_frontend, producer);
 
-        (app, backend)
+        (app, frontend)
     }
 }
 
 impl LegatoBuilder<DslBuilding> {
-    fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoBackend) {
+    fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
         let pairs = parse_legato_file(content).unwrap();
 
         let ast = build_ast(pairs).unwrap();
@@ -417,7 +436,7 @@ impl LegatoBuilder<DslBuilding> {
                     &scope.namespace,
                     &node.node_type,
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
-                    &Params(&node.params.clone().unwrap_or_else(BTreeMap::new)),
+                    &DSLParams(&node.params.clone().unwrap_or_else(BTreeMap::new)),
                 );
 
                 for pipe in node.pipes.iter() {
@@ -579,17 +598,20 @@ impl<'a> SelectionView<'a> {
 /// A small slice of the runtime exposed for nodes in their node factories.
 ///
 /// This is useful to say reserve delay lines, or other shared logic.
+/// 
+/// TODO: Unify the interface between sample, delay, and param_store?
 pub struct ResourceBuilderView<'a> {
     pub config: &'a Config,
-    pub resources: &'a mut Resources,
+    pub resource_builder: &'a mut ResourceBuilder,
     pub sample_keys: &'a mut HashMap<String, SampleKey>,
     pub delay_keys: &'a mut HashMap<String, DelayLineKey>,
-    pub sample_backends: &'a mut HashMap<String, AudioSampleBackend>,
+    pub sample_frontends: &'a mut HashMap<String, AudioSampleFrontend>,
+
 }
 
 impl<'a> ResourceBuilderView<'a> {
     pub fn add_delay_line(&mut self, name: &str, delay_line: DelayLine) -> DelayLineKey {
-        let key = self.resources.add_delay_line(delay_line);
+        let key = self.resource_builder.add_delay_line(delay_line);
         self.delay_keys.insert(name.to_string(), key);
 
         key
@@ -602,7 +624,6 @@ impl<'a> ResourceBuilderView<'a> {
     }
 
     pub fn add_sampler(&mut self, name: &String) -> SampleKey {
-        
         if let Some(&key) = self.sample_keys.get(name) {
             key
         } else {
@@ -613,12 +634,16 @@ impl<'a> ResourceBuilderView<'a> {
                 sample_version: AtomicU64::new(0),
             });
 
-            let backend = AudioSampleBackend::new(handle.clone());
+            let frontend = AudioSampleFrontend::new(handle.clone());
 
-            self.sample_backends.insert(name.clone(), backend);
+            self.sample_frontends.insert(name.clone(), frontend);
 
-            self.resources.add_sample_resource(handle)
+            self.resource_builder.add_sample_resource(handle)
         }
+    }
+
+    pub fn add_param(&mut self, unique_name: &'static str, meta: ParamMeta) {
+        self.resource_builder.add_param(unique_name, meta);
     }
 
     pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {

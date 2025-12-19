@@ -1,3 +1,5 @@
+// While this project is AGPLv3, this file includes code under BSD-3 
+
 // Approximations adapted from Chowdhurry-DSP, license below
 
 // BSD 3-Clause License
@@ -33,10 +35,7 @@
 use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 use crate::{
-    context::AudioContext,
-    node::{Channels, Node},
-    ports::{PortBuilder, Ports},
-    simd::{LANES, Vf32},
+    context::AudioContext, msg::{NodeMessage, RtValue}, node::{Channels, Node}, ports::{PortBuilder, Ports}, simd::{LANES, Vf32}
 };
 
 #[derive(Clone)]
@@ -100,10 +99,25 @@ impl Node for Sine {
             }
         }
     }
+
+    /// For now, we panic here, as it's difficult to make a strong message without allocating
+    fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
+        match msg {
+            NodeMessage::SetParam(payload) => {
+                match (payload.param_name, payload.value) {
+                    ("freq", RtValue::F32(val)) => self.freq = val,
+                    _ => unreachable!("Invalid parameter and value passed")
+                }
+            }
+        }
+    }
+    
     fn ports(&self) -> &Ports {
         &self.ports
     }
 }
+
+// Start of BSD-3 Code
 
 #[inline(always)]
 fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
@@ -142,6 +156,8 @@ where
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
+
+// End of BSD-3 Code
 
 /// Utility to perform prefix scan
 fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
