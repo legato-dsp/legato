@@ -3,7 +3,7 @@ use std::sync::Arc;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
-    node::Channels, nodes::audio::delay::DelayLine, params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend}, sample::AudioSampleHandle, simd::Vf32
+    node::{Channels, Inputs}, nodes::audio::delay::DelayLine, params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend}, sample::AudioSampleHandle, simd::Vf32
 };
 
 new_key_type! { pub struct DelayLineKey; }
@@ -65,7 +65,7 @@ impl Resources {
     }
 
     #[inline(always)]
-    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &Channels) {
+    pub fn delay_write_block(&mut self, key: DelayLineKey, block: &Inputs) {
         let delay_line = self.delay_lines.get_mut(key).unwrap();
         delay_line.write_block(block);
     }

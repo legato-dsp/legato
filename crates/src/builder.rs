@@ -254,7 +254,6 @@ where
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
-        // Note: for the time being, control rate can only be set via explicit indexing!
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
@@ -278,12 +277,12 @@ where
 
         let sink_indicies: Vec<usize> = match connection.sink_kind {
             PortConnectionType::Auto => {
-                let ports = self.runtime.get_node_ports(&connection.source);
+                let ports = self.runtime.get_node_ports(&connection.sink);
                 ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
             },
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
-                let ports = self.runtime.get_node_ports(&connection.source);
+                let ports = self.runtime.get_node_ports(&connection.sink);
                 let index = ports.audio_in.iter()
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port)).index;
@@ -409,6 +408,8 @@ impl LegatoBuilder<DslBuilding> {
 
         let ast = build_ast(pairs).unwrap();
 
+        dbg!(&ast);
+
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
                 self._add_node_ref_self(
@@ -417,6 +418,9 @@ impl LegatoBuilder<DslBuilding> {
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
                     &DSLParams(&node.params.clone().unwrap_or_else(BTreeMap::new)),
                 );
+
+                dbg!("Added node:");
+                dbg!(&self.runtime);
 
                 for pipe in node.pipes.iter() {
                     self.pipe(&pipe.name, pipe.params.clone());
@@ -444,10 +448,6 @@ impl LegatoBuilder<DslBuilding> {
                 sink_kind: connection.sink_port.clone(),
             });
         };
-
-        dbg!(&ast.sink.name);
-
-        dbg!(&self.working_name_lookup);
 
         let sink_key = self
             .working_name_lookup

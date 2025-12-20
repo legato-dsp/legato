@@ -27,7 +27,7 @@ fn main() {
             sampler { sampler_name: "amen" } | logger(),
             delay_write: dw1 { delay_name: "d_one", chans: 2 },
             delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 231, 257 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 231, 257 ] },
             track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.3, 0.2] },
         }
 
@@ -42,9 +42,7 @@ fn main() {
 
     let config = Config {
         sample_rate: 48_000,
-        control_rate: 48_000 / 32,
-        audio_block_size: 1024,
-        control_block_size: 1024 / 32,
+        block_size: 1024,
         channels: 2,
         initial_graph_capacity: 4,
     };
@@ -54,6 +52,8 @@ fn main() {
     let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_pipe("logger", Box::new(Logger {}))
         .build_dsl(&graph);
+
+    dbg!(&app);
 
     let _ = frontend.load_sample(
         &String::from("amen"),
@@ -73,7 +73,7 @@ fn main() {
     let stream_config = StreamConfig {
         channels: config.channels as u16,
         sample_rate: SampleRate(config.sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(config.audio_block_size as u32),
+        buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
     };
 
     start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!")

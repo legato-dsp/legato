@@ -1,7 +1,7 @@
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -37,7 +37,7 @@ impl Node for TrackMixer {
     fn process<'a>(
         &mut self,
         _: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
         
         
@@ -50,7 +50,7 @@ impl Node for TrackMixer {
         for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
             let gain = self.gain[i];
             for (chan_idx, chan) in track.iter().enumerate() {
-                for (chunk_in, chunk_out) in chan
+                for (chunk_in, chunk_out) in chan.unwrap()
                     .chunks_exact(LANES)
                     .zip(ao[chan_idx].chunks_exact_mut(LANES))
                 {
@@ -93,7 +93,7 @@ impl Node for MonoFanOut {
     fn process(
         &mut self,
         _: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
         
         
@@ -102,7 +102,7 @@ impl Node for MonoFanOut {
         let chans_out = self.ports.audio_out.len();
         let gain = 1.0 / f32::sqrt(chans_out as f32);
 
-        for (i, sample) in ai[0].iter().enumerate() {
+        for (i, sample) in ai[0].unwrap().iter().enumerate() {
             let normalized = sample * gain;
             for chan_out in ao.iter_mut() {
                 chan_out[i] = normalized

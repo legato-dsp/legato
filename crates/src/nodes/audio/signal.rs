@@ -1,4 +1,4 @@
-use crate::{context::AudioContext, node::{Channels, Node}, params::ParamKey, ports::{PortBuilder, Ports}};
+use crate::{context::AudioContext, node::{Channels, Inputs, Node}, params::ParamKey, ports::{PortBuilder, Ports}};
 
 pub struct AudioSignal {
     key: ParamKey,
@@ -21,7 +21,7 @@ impl AudioSignal {
 }
 
 impl Node for AudioSignal {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Channels, ao: &mut Channels){
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels){
         // Param set on each block, then smoothed with a one pole filter
         // Maybe we do this per control sample as well in the future with less smoothing, provided the benchmark is decent
         if let Ok(target) = ctx.get_param(&self.key){

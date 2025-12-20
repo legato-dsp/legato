@@ -24,7 +24,7 @@ impl AudioContext {
     }
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
     pub fn set_block_size(&mut self, block_size: usize) {
-        self.config.audio_block_size = block_size;
+        self.config.block_size = block_size;
     }
     pub fn get_config(&self) -> Config {
         self.config

@@ -1,7 +1,7 @@
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -30,7 +30,7 @@ impl Node for ApplyOp {
     fn process(
         &mut self,
         _: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
         
         
@@ -41,7 +41,7 @@ impl Node for ApplyOp {
         let val = Vf32::splat(self.val);
 
         for (in_channel, out_channel) in ai.iter().zip(ao.iter_mut()) {
-            for (in_chunk, out_chunk) in in_channel
+            for (in_chunk, out_chunk) in in_channel.unwrap()
                 .chunks_exact(chunk_size)
                 .zip(out_channel.chunks_exact_mut(chunk_size))
             {

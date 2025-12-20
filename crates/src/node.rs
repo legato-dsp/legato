@@ -2,7 +2,11 @@ use std::{fmt::Debug};
 
 use crate::{context::AudioContext, msg::NodeMessage, ports::{Ports}};
 
+
+pub type Inputs<'a> = [Option<&'a [f32]>];
+
 pub type Channels = [Box<[f32]>];
+pub type Outputs = Channels;
 
 /// The node trait that any audio processing nodes must implement.
 ///
@@ -17,8 +21,8 @@ pub trait Node {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        inputs: &Channels,
-        outputs: &mut Channels,
+        inputs: &Inputs,
+        outputs: &mut Outputs,
     );
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}

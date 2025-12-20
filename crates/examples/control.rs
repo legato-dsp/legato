@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, thread::sleep, time::Duration};
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
@@ -24,12 +24,14 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
-            sine
+            sine { freq: 440.0, chans: 2 }
         }
 
-        control {
-            signal { name: "pitch", default: 440.0, min: 0.0, max: 24000.0 }
-        }
+        // control {
+        //     signal { name: "pitch", default: 440.0, min: 0.0, max: 24000.0 }
+        // }
+
+        // signal >> sine
 
         { sine }
     "#,
@@ -37,9 +39,7 @@ fn main() {
 
     let config = Config {
         sample_rate: 48_000,
-        control_rate: 48_000 / 32,
-        audio_block_size: 1024,
-        control_block_size: 1024 / 32,
+        block_size: 1024,
         channels: 2,
         initial_graph_capacity: 4,
     };
@@ -49,6 +49,8 @@ fn main() {
     let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_pipe("logger", Box::new(Logger {}))
         .build_dsl(&graph);
+
+    dbg!(&app);
 
     let _ = frontend.load_sample(
         &String::from("amen"),
@@ -68,8 +70,13 @@ fn main() {
     let stream_config = StreamConfig {
         channels: config.channels as u16,
         sample_rate: SampleRate(config.sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(config.audio_block_size as u32),
+        buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
     };
 
-    start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!")
+    start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!");
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        frontend.set_param("pitch", 880.0).unwrap();
+    });
 }

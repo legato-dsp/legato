@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::{Arc, atomic::Ordering}};
 use atomic_float::AtomicF32;
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum ParamError {
     ParamNotFound,
     ParamMetaNotFound

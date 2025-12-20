@@ -4,7 +4,7 @@ use legato::{
     config::Config,
     harness::get_node_test_harness,
     nodes::audio::{fir::FirFilter, sine::Sine},
-    ports::PortBuilder,
+    ports::PortBuilder, runtime::MAX_INPUTS,
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
@@ -111,11 +111,9 @@ fn bench_fir(c: &mut Criterion) {
 
 fn bench_stereo_delay(c: &mut Criterion) {
     let config = Config {
-        audio_block_size: 4096,
-        control_block_size: 4096 / 32,
+        block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        control_rate: 44_100 / 32,
         initial_graph_capacity: 4,
     };
 
@@ -136,11 +134,18 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
     c.bench_function("Basic stereo delay", |b| {
         let ai: &[Box<[f32]>] = &[
-            vec![0.0; config.audio_block_size].into(),
-            vec![0.0; config.audio_block_size].into(),
+            vec![0.0; config.block_size].into(),
+            vec![0.0; config.block_size].into(),
         ];
+
+        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        for (i,x) in ai.iter().enumerate() {
+            inputs[i] = Some(&x)
+        }
+
         b.iter(|| {
-            let out = app.next_block(Some(&ai));
+            let out = app.next_block(Some(&inputs));
             black_box(out);
         });
     });

@@ -2,17 +2,17 @@ use crate::config::Config;
 use crate::context::AudioContext;
 use crate::graph::{AudioGraph, Connection, GraphError};
 use crate::msg::{self, LegatoMsg};
-use crate::node::{Channels, LegatoNode, Node};
+use crate::node::{Channels, Inputs, LegatoNode, Node};
 use crate::ports::{Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleFrontend, AudioSampleError};
 use std::fmt::Debug;
-use std::vec;
+use std::{slice, vec};
 
 use slotmap::{SecondaryMap, new_key_type};
 
 // Arbitrary max init. inputs
-pub const MAX_INITIAL_INPUTS: usize = 32;
+pub const MAX_INPUTS: usize = 32;
 
 new_key_type! {
     /// A slotmap key corresponding to a particular node.
@@ -37,7 +37,7 @@ impl Runtime {
         let audio_sources = SecondaryMap::with_capacity(graph.len());
 
         let config = context.get_config();
-        let audio_block_size = config.audio_block_size;
+        let audio_block_size = config.block_size;
 
         Self {
             context,
@@ -45,7 +45,7 @@ impl Runtime {
             port_sources: audio_sources,
             scratch_buffers: vec![
                 vec![0.0; audio_block_size].into();
-                MAX_INITIAL_INPUTS
+                MAX_INPUTS
             ],
             sink_key: None,
             ports,
@@ -62,7 +62,7 @@ impl Runtime {
 
         self.port_sources.insert(
             node_key,
-            vec![vec![0.0; config.audio_block_size].into(); audio_chan_size],
+            vec![vec![0.0; config.block_size].into(); audio_chan_size],
         );
 
         node_key
@@ -132,60 +132,60 @@ impl Runtime {
     pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
         self.graph.get_node_mut(*key)
     }
-    // TODO: Graphs as nodes again
-    pub fn next_block(&mut self, external_inputs: Option<&Channels>) -> &Channels {
+    // TODO: Try a zero-copy, flat [L L L, R R R] approach for better performance
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
-
+        
         for (i, node_key) in sorted_order.iter().enumerate() {
-            // Reset all of the inputs about to be passed into this node
             let ports = nodes[*node_key].get_node().ports();
-
             let audio_inputs_size = ports.audio_in.len();
 
-            // Zero incoming buffers for all inputs
             self.scratch_buffers[..audio_inputs_size]
                 .iter_mut()
                 .for_each(|buf| buf.fill(0.0));
 
-            // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
+            let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
 
+            let mut has_inputs: [bool; MAX_INPUTS] = [false; MAX_INPUTS];
+
+            // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
             if i == 0 && external_inputs.as_ref().is_some() {
                 let ai = external_inputs.unwrap();
-
                 for (c, ai_chan) in ai.iter().enumerate() {
-                    self.scratch_buffers[c].copy_from_slice(ai_chan);
+                    inputs[c] = Some(ai_chan.unwrap());
                 }
             } 
             else {
                 let incoming = incoming.get(*node_key).expect("Invalid connection!");
+                for conn in incoming {
+                    dbg!(&conn);
+                    let buffer = &self.port_sources[conn.source.node_key][conn.source.port_index];
 
-                for connection in incoming {
-                    // Write all incoming data from the connection and port, to the current node, and the sink port
-                    debug_assert!(connection.sink.node_key == *node_key);
-                    for (n, sample) in self.port_sources[connection.source.node_key]
-                        [connection.source.port_index]
-                        .iter()
-                        .enumerate()
-                    {
-                        self.scratch_buffers[connection.sink.port_index][n] +=
-                            sample;
+                    has_inputs[conn.sink.port_index] = true;
+
+                    for (n, sample) in buffer.iter().enumerate() {
+                        self.scratch_buffers[conn.sink.port_index][n] += sample;
                     }
-                        
-                };
+                }
+
+                for i in 0..audio_inputs_size {
+                    if has_inputs[i] {
+                        inputs[i] = Some(&self.scratch_buffers[i]);
+                    }
+                }
             }
         
-
-        let audio_output_buffer = &mut self.port_sources[*node_key];
-
         let node = nodes
             .get_mut(*node_key)
             .expect("Could not find node at index {node_index:?}")
             .get_node_mut();
 
+        let output = &mut self.port_sources[*node_key];
+
         node.process(
             &mut self.context,
-            &self.scratch_buffers[0..audio_inputs_size],
-            audio_output_buffer,
+            &inputs[0..audio_inputs_size],
+            output,
         );
     }
 
@@ -200,7 +200,7 @@ impl Node for Runtime {
     fn process<'a>(
         &mut self,
         _: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
     ) {
         let outputs = self.next_block(Some(&ai));
@@ -226,9 +226,7 @@ impl Node for Runtime {
 /// 
 /// At the moment, you can pass messages via a channel that will be forwarded to a node.
 /// 
-/// For control rate, you can use a Param node and register a parameter.
-/// 
-/// For audio rate, you should use a node with some sort of spsc or other thread safe queue.
+/// There is also a dedicated signal node that can be controlled as well.
 ///
 /// TODO: Tidy this up a bit, needs better error handling
 /// TODO: Do we need this and the legato frontend
@@ -270,7 +268,7 @@ impl Debug for Runtime {
             .entry(&"config", &self.context.get_config())
             .key(&"graph")
             .value(&self.graph)
-            .entry(&"ports", &self.ports)
+            .entry(&"graph_ports", &self.ports)
             .entry(&"sink_key", &self.sink_key)
             .finish()
     }

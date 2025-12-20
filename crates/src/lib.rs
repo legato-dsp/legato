@@ -5,7 +5,7 @@ use std::{fmt::Debug, path::Path};
 use heapless::spsc::{Consumer, Producer};
 
 use crate::{
-    builder::ValidationError, config::Config, msg::LegatoMsg, node::Channels, params::{ParamError, ParamKey, ParamStoreFrontend}, runtime::{Runtime, RuntimeFrontend}
+    builder::ValidationError, config::Config, msg::LegatoMsg, node::{Channels, Inputs}, params::{ParamError, ParamKey, ParamStoreFrontend}, runtime::{Runtime, RuntimeFrontend}
 };
 
 pub mod ast;
@@ -33,6 +33,7 @@ pub mod spec;
 
 pub mod nodes;
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum LegatoError {
     ValidationError(ValidationError),
     ParamError(ParamError)
@@ -57,7 +58,7 @@ impl LegatoApp {
     /// This is useful for tests, or compatability with different audio backends.
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
-    pub fn next_block(&mut self, external_inputs: Option<&Channels>) -> &Channels {
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
         // Handle messages from the LegatoFrontend
         while let Some(msg) = self.consumer.dequeue() {
             self.runtime.handle_msg(msg);
@@ -72,7 +73,9 @@ impl LegatoApp {
 
 impl Debug for LegatoApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.runtime.fmt(f)
+        f.debug_struct("LegatoApp")
+            .field("runtime", &self.runtime)
+            .finish()        
     }
 }
 
@@ -111,6 +114,7 @@ impl LegatoFrontend {
     }
 
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
+        dbg!("set param!");
         if let Ok(key) = self.param_store_frontend.get_key(name) {
             return self.param_store_frontend.set_param(key, val)
         }

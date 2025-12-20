@@ -22,9 +22,7 @@ fn main() {
 
     let config = Config {
         sample_rate: 48_000,
-        control_rate: 48_000 / 32,
-        audio_block_size: 1024,
-        control_block_size: 1024 / 32,
+        block_size: 1024,
         channels: 2,
         initial_graph_capacity: 4,
     };

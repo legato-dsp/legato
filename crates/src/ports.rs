@@ -8,8 +8,6 @@ pub struct PortMeta {
 pub struct Ports {
     pub audio_in: Vec<PortMeta>,
     pub audio_out: Vec<PortMeta>,
-    pub control_in: Vec<PortMeta>,
-    pub control_out: Vec<PortMeta>,
 }
 
 impl Ports {
@@ -17,16 +15,10 @@ impl Ports {
         if let Some(port) = self.audio_in.iter().find(|x| x.name == name) {
             return Some(port.clone());
         }
-        if let Some(port) = self.control_in.iter().find(|x| x.name == name) {
-            return Some(port.clone());
-        }
         None
     }
     pub fn find_port_out(&self, name: &String) -> Option<PortMeta> {
         if let Some(port) = self.audio_out.iter().find(|x| x.name == name) {
-            return Some(port.clone());
-        }
-        if let Some(port) = self.control_out.iter().find(|x| x.name == name) {
             return Some(port.clone());
         }
         None
@@ -38,8 +30,6 @@ impl From<PortBuilder> for Ports {
         Ports {
             audio_in: builder.port_audio_in,
             audio_out: builder.port_audio_out,
-            control_in: builder.port_control_in,
-            control_out: builder.port_control_out,
         }
     }
 }
@@ -52,8 +42,6 @@ pub trait Ported {
 pub struct PortBuilder {
     port_audio_in: Vec<PortMeta>,
     port_audio_out: Vec<PortMeta>,
-    port_control_in: Vec<PortMeta>,
-    port_control_out: Vec<PortMeta>,
 }
 
 impl PortBuilder {
@@ -77,26 +65,6 @@ impl PortBuilder {
         self
     }
 
-    pub fn control_in(mut self, count: usize) -> Self {
-        for i in 0..count {
-            self.port_control_in.push(PortMeta {
-                name: "ctrl_in",
-                index: i,
-            });
-        }
-        self
-    }
-
-    pub fn control_out(mut self, count: usize) -> Self {
-        for i in 0..count {
-            self.port_control_out.push(PortMeta {
-                name: "ctrl_out",
-                index: i,
-            });
-        }
-        self
-    }
-
     pub fn audio_in_named(mut self, names: &[&'static str]) -> Self {
         let index = self.port_audio_in.len();
         for (i, name) in names.iter().enumerate() {
@@ -112,28 +80,6 @@ impl PortBuilder {
         let index = self.port_audio_out.len();
         for (i, name) in names.iter().enumerate() {
             self.port_audio_out.push(PortMeta {
-                name,
-                index: index + i,
-            });
-        }
-        self
-    }
-
-    pub fn control_in_named(mut self, names: &[&'static str]) -> Self {
-        let index = self.port_control_in.len();
-        for (i, name) in names.iter().enumerate() {
-            self.port_control_in.push(PortMeta {
-                name,
-                index: index + i,
-            });
-        }
-        self
-    }
-
-    pub fn control_out_named(mut self, names: &[&'static str]) -> Self {
-        let index = self.port_control_out.len();
-        for (i, name) in names.iter().enumerate() {
-            self.port_control_out.push(PortMeta {
                 name,
                 index: index + i,
             });
@@ -190,9 +136,7 @@ mod tests {
     fn test_default_audio_in_mono() {
         let ports = PortBuilder {
             port_audio_in: vec![],
-            port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
+            port_audio_out: vec![]
         }
         .audio_in(1)
         .build();
@@ -214,8 +158,6 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_in(2)
         .build();
@@ -229,8 +171,6 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_out(2)
         .build();
@@ -244,8 +184,6 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_in_named(&["fm", "sidechain"])
         .build();
@@ -259,8 +197,6 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_out_named(&["dry", "wet"])
         .build();
@@ -270,27 +206,10 @@ mod tests {
     }
 
     #[test]
-    fn test_named_control_in() {
-        let ports = PortBuilder {
-            port_audio_in: vec![],
-            port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
-        }
-        .control_in_named(&["cutoff", "res"])
-        .build();
-
-        assert_eq!(names(&ports.control_in), vec!["cutoff", "res"]);
-        assert_eq!(indices(&ports.control_in), vec![0, 1]);
-    }
-
-    #[test]
     fn test_mixed_audio_in() {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_in(1) // ["in"]
         .audio_in_named(&["mod1", "mod2"]) // appended, indices continue
@@ -305,8 +224,6 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_out(1) // ["out"]
         .audio_out_named(&["aux"]) // appended
@@ -321,25 +238,17 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_in(2)
         .audio_in_named(&["lfo"])
         .audio_out_named(&["dry", "wet"])
-        .control_in(1)
-        .control_out_named(&["env"])
         .build();
 
         assert_eq!(names(&ports.audio_in), vec!["l", "r", "lfo"]);
         assert_eq!(names(&ports.audio_out), vec!["dry", "wet"]);
-        assert_eq!(names(&ports.control_in), vec!["ctrl_in"]);
-        assert_eq!(names(&ports.control_out), vec!["env"]);
 
         assert_eq!(indices(&ports.audio_in), vec![0, 1, 2]);
         assert_eq!(indices(&ports.audio_out), vec![0, 1]);
-        assert_eq!(indices(&ports.control_in), vec![0]);
-        assert_eq!(indices(&ports.control_out), vec![0]);
     }
 
     #[test]
@@ -347,18 +256,12 @@ mod tests {
         let ports = PortBuilder {
             port_audio_in: vec![],
             port_audio_out: vec![],
-            port_control_in: vec![],
-            port_control_out: vec![],
         }
         .audio_in(0)
         .audio_out(0)
-        .control_in(0)
-        .control_out(0)
         .build();
 
         assert!(ports.audio_in.iter().len() == 0);
         assert!(ports.audio_out.iter().len() == 0);
-        assert!(ports.control_in.iter().len() == 0);
-        assert!(ports.control_out.iter().len() == 0);
     }
 }

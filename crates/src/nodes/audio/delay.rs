@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::DelayLineKey,
     ring::RingBuffer,
@@ -29,10 +29,12 @@ impl DelayLine {
     }
 
     #[inline(always)]
-    pub fn write_block(&mut self, block: &Channels) {
-        for (c, chan) in block.iter().enumerate() {
-            for chunk in chan.chunks_exact(LANES) {
-                self.buffers[c].push_simd(&Vf32::from_slice(chunk));
+    pub fn write_block(&mut self, block: &Inputs) {
+        for (c, chan_outer) in block.iter().enumerate() {
+            if let Some(chan) = chan_outer {
+                for chunk in chan.chunks_exact(LANES) {
+                    self.buffers[c].push_simd(&Vf32::from_slice(chunk));
+                }
             }
         }
     }
@@ -84,7 +86,7 @@ impl Node for DelayWrite {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
     ) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
@@ -121,12 +123,12 @@ impl Node for DelayRead {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        _: &Channels,
+        _: &Inputs,
         ao: &mut Channels
     ) {
         let config = ctx.get_config();
 
-        let block_size = config.audio_block_size;
+        let block_size = config.block_size;
 
         let resources = ctx.get_resources();
 
@@ -176,16 +178,19 @@ mod test_delay_simd_equivalence {
 
         let mut dl = DelayLine::new(CAP, CHANS);
 
-        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
-
-        let input: &mut Channels = &mut inputs_raw;
+        let mut inputs_raw: Box<[f32]> = vec![0.0; BLOCK].into_boxed_slice();
 
         let mut rng = rand::rng();
-        for s in &mut input[0] {
+
+        for s in inputs_raw.iter_mut() {
             *s = rng.random::<f32>();
         }
 
-        dl.write_block(input);
+        let mut inputs: [Option<&[f32]>; 1] = [None; 1];
+
+        inputs[0] = Some(&inputs_raw);
+
+        dl.write_block(&inputs);
 
         for _ in 0..10_000 {
             let off = rng.random::<f32>() * (CAP as f32 - 4.0);

@@ -26,7 +26,7 @@ pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hou
 
     let mut writer = WavWriter::create(path, spec).unwrap();
 
-    let block_size = config.audio_block_size;
+    let block_size = config.block_size;
 
     let mut count = 0_usize;
 

@@ -9,11 +9,6 @@ use crate::simd::LANES;
 ///
 /// In summary, depending on your latency requirements,
 /// you may need to change the blocksize somewhat.
-///
-/// The control rate is by default 1/32 of the audio rate.
-/// So, this is not suitable for say audio rate FM, but it is reasonable for changing parameters.
-///
-/// If you need smoothing, try using a lowpass filter or some averaging filter to prevent any sharp changes.
 pub enum BlockSize {
     Block64,
     Block128,
@@ -41,9 +36,7 @@ impl BlockSize {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Config {
     pub sample_rate: usize,
-    pub control_rate: usize,
-    pub audio_block_size: usize,
-    pub control_block_size: usize,
+    pub block_size: usize,
     pub channels: usize,
     pub initial_graph_capacity: usize,
 }
@@ -51,23 +44,19 @@ pub struct Config {
 impl Config {
     pub fn new(
         sr: usize,
-        cr: usize,
         block_size: BlockSize,
         channels: usize,
         initial_graph_capacity: usize,
     ) -> Self {
-        let audio_block_size = block_size.to_usize();
+        let block_size = block_size.to_usize();
         Self {
             sample_rate: sr,
-            control_rate: cr,
-            audio_block_size,
-            control_block_size: audio_block_size / 32,
+            block_size,
             channels,
             initial_graph_capacity,
         }
     }
     pub fn validate(&self) {
-        assert!(self.audio_block_size.is_multiple_of(LANES));
-        assert!(self.control_block_size.is_multiple_of(LANES));
+        assert!(self.block_size.is_multiple_of(LANES));
     }
 }

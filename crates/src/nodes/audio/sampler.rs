@@ -4,7 +4,7 @@ use assert_no_alloc::permit_alloc;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::SampleKey,
     sample::AudioSample,
@@ -37,7 +37,7 @@ impl Node for Sampler {
     fn process(
         &mut self,
         ctx: &mut AudioContext,
-        _: &Channels,
+        _: &Inputs,
         ao: &mut Channels,
     ) {
         let resources = ctx.get_resources();
@@ -71,7 +71,7 @@ impl Node for Sampler {
             let inner = &sample;
             let config = ctx.get_config();
 
-            let block_size = config.audio_block_size;
+            let block_size = config.block_size;
             let chans = self.ports.audio_out.iter().len();
 
             let buf = inner.data();

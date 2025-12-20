@@ -2,7 +2,7 @@ use std::simd::{StdFloat, num::SimdFloat};
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
     simd::{LANES, Vf32},
@@ -38,17 +38,15 @@ impl Node for FirFilter {
     fn process(
         &mut self,
         _: &mut AudioContext,
-        ai: &Channels,
+        ai: &Inputs,
         ao: &mut Channels,
-        
-        
     ) {
         // These checks are important because we are using this elsewhere for oversampling
         debug_assert_eq!(ai.len(), ao.len());
-        debug_assert_eq!(ai[0].len(), ao[0].len());
+        debug_assert_eq!(ai[0].unwrap().len(), ao[0].len());
 
         for ((input, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
-            for (n, x) in input.iter().enumerate() {
+            for (n, x) in input.unwrap().iter().enumerate() {
                 state.push(*x);
 
                 let mut y = Vf32::splat(0.0);

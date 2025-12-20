@@ -251,7 +251,7 @@ impl Debug for AudioGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
             .entry(&"capacity", &self.nodes.len())
-            .entry(&"topo_sorted", &self.topo_sorted)
+            .entry(&"topo_sorted", &self.topo_sorted.iter().map(|x| self.nodes.get(*x).unwrap().name.clone()).collect::<Vec<String>>())
             .entry(&"nodes", &self.nodes.iter().collect::<Vec<_>>())
             .finish()
     }
@@ -263,7 +263,7 @@ mod test {
     use crate::{
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
-        node::{Channels, Node},
+        node::{Channels, Inputs, Node},
         ports::{PortMeta, Ports},
     };
 
@@ -284,8 +284,6 @@ mod test {
                         name: "out",
                         index: 0,
                     }],
-                    control_in: vec![],
-                    control_out: vec![],
                 },
             }
         }
@@ -295,7 +293,7 @@ mod test {
         fn process(
             &mut self,
             _: &mut AudioContext,
-            _: &Channels,
+            _: &Inputs,
             _: &mut Channels
         ) {
         }
