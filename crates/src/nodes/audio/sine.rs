@@ -51,7 +51,7 @@ impl Sine {
             freq,
             phase: 0.0,
             ports: PortBuilder::default()
-            .audio_in_named(&["fm"])
+            .audio_in_named(&["freq"])
             .audio_out(chans)
             .build()
         }
@@ -126,7 +126,6 @@ impl Node for Sine {
         ai: &Inputs,
         ao: &mut Channels,
     ) {
-        // Kind of weird but we would prefer one branch up top instead of a few inside
         if let Some(fm_in) = ai[0] {
             self.process_external_freq(ctx, fm_in, ao);
         }

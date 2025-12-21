@@ -7,7 +7,7 @@ use crate::ports::{Ports};
 use crate::resources::Resources;
 use crate::sample::{AudioSampleFrontend, AudioSampleError};
 use std::fmt::Debug;
-use std::{slice, vec};
+use std::{vec};
 
 use slotmap::{SecondaryMap, new_key_type};
 
@@ -30,6 +30,7 @@ pub struct Runtime {
     scratch_buffers: Vec<Box<[f32]>>,
     // A sink key for pulling the final processed buffer. Optional for graph construction, but required at runtime
     sink_key: Option<NodeKey>,
+    source_key: Option<NodeKey>,
     ports: Ports,
 }
 impl Runtime {
@@ -48,6 +49,7 @@ impl Runtime {
                 MAX_INPUTS
             ],
             sink_key: None,
+            source_key: None,
             ports,
         }
     }
@@ -83,6 +85,15 @@ impl Runtime {
         self.graph.remove_edge(connection)
     }
     pub fn set_sink_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
+        match self.graph.exists(key) {
+            true => {
+                self.sink_key = Some(key);
+                Ok(())
+            }
+            false => Err(GraphError::NodeDoesNotExist),
+        }
+    }
+    pub fn set_source_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
         match self.graph.exists(key) {
             true => {
                 self.sink_key = Some(key);
@@ -149,7 +160,7 @@ impl Runtime {
             let mut has_inputs: [bool; MAX_INPUTS] = [false; MAX_INPUTS];
 
             // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
-            if i == 0 && external_inputs.as_ref().is_some() {
+            if self.source_key.is_some() && self.source_key.unwrap() == *node_key && external_inputs.as_ref().is_some() {
                 let ai = external_inputs.unwrap();
                 for (c, ai_chan) in ai.iter().enumerate() {
                     inputs[c] = Some(ai_chan.unwrap());

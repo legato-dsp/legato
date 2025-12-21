@@ -11,7 +11,8 @@ use crate::parse::Rule;
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<AstNodeConnection>,
-    pub sink: Sink,
+    pub source: Option<NodeSinkSource>,
+    pub sink: NodeSinkSource,
 }
 
 // Declarations
@@ -85,7 +86,7 @@ pub enum PortConnectionType {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Sink {
+pub struct NodeSinkSource {
     pub name: String,
 }
 
@@ -104,10 +105,17 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
             Rule::sink => {
                 let mut inner = declaration.into_inner();
                 let s = inner.next().unwrap(); // ident or node-path
-                ast.sink = Sink {
+                ast.sink = NodeSinkSource {
                     name: s.as_str().to_string(),
                 };
-            }
+            },
+            Rule::source => {
+                let mut inner = declaration.into_inner();
+                let s = inner.next().unwrap(); // ident or node-path
+                ast.source = Some(NodeSinkSource {
+                    name: s.as_str().to_string(),
+                });
+            },
             Rule::WHITESPACE => (),
             _ => (),
         }

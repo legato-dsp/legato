@@ -121,12 +121,12 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
     let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
         r#"
+            { delay_write }
+
             audio {
                 delay_write { delay_name: "a", chans: 2, delay_length: 1000 },
                 delay_read { delay_name: "a", chans: 2, delay_length: [120, 240] }
             }
-
-            delay_write >> delay_read
 
             { delay_read }
         "#,

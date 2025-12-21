@@ -1,11 +1,12 @@
 #![feature(portable_simd)]
 
-use std::{fmt::Debug, path::Path};
+use core::slice;
+use std::{collections::HashMap, fmt::Debug, path::Path};
 
-use heapless::spsc::{Consumer, Producer};
+use heapless::{spsc::{Consumer, Producer}};
 
 use crate::{
-    builder::ValidationError, config::Config, msg::LegatoMsg, node::{Channels, Inputs}, params::{ParamError, ParamKey, ParamStoreFrontend}, runtime::{Runtime, RuntimeFrontend}
+    builder::ValidationError, config::Config, msg::LegatoMsg, node::{Channels, Inputs}, params::{ParamError, ParamKey, ParamStoreFrontend}, runtime::{MAX_INPUTS, Runtime, RuntimeFrontend}
 };
 
 pub mod ast;

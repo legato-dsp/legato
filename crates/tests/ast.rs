@@ -1,5 +1,5 @@
 use legato::{
-    ast::{Ast, PortConnectionType, Sink, Value, build_ast},
+    ast::{Ast, PortConnectionType, NodeSinkSource, Value, build_ast},
     parse::{LegatoParser, Rule, print_pair},
 };
 use pest::Parser;
@@ -39,7 +39,7 @@ fn ast_node_with_alias_and_params() {
     let sink = ast.sink;
     assert_eq!(
         sink,
-        Sink {
+        NodeSinkSource {
             name: String::from("osc")
         }
     )
@@ -131,7 +131,7 @@ fn ast_graph_with_port_slices() {
 
     assert_eq!(
         ast.sink,
-        Sink {
+        NodeSinkSource {
             name: "gain_stage".to_string()
         }
     );

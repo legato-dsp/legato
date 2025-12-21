@@ -343,6 +343,10 @@ where
         self.runtime.set_sink_key(key).expect("Sink key not found");
         self.into_state()
     }
+    pub fn set_source(mut self, key: NodeKey) -> LegatoBuilder<ReadyToBuild> {
+        self.runtime.set_sink_key(key).expect("Sink key not found");
+        self.into_state()
+    }
 }
 
 impl<S> LegatoBuilder<S>
@@ -457,6 +461,14 @@ impl LegatoBuilder<DslBuilding> {
         self.runtime
             .set_sink_key(*sink_key)
             .expect("Could not set sink!");
+
+        if let Some(source) = ast.source {
+            let source_key = self.working_name_lookup
+                .get(&source.name)
+                .expect("Explicit source passed but node not found!!");
+
+            self.runtime.set_source_key(*source_key).expect("Could not set runtime source!");
+        }
 
         self.build()
     }

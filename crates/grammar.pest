@@ -28,7 +28,7 @@ array = { "[" ~ (value ~ ("," ~ value)*)? ~ ","? ~ "]" }
 
 // Project Graph
 
-graph = _{ WHITESPACE* ~ scope_block+ ~ connections? ~ sink ~ WHITESPACE* }
+graph = _{ WHITESPACE* ~ source? ~ WHITESPACE* ~ scope_block+ ~ connections? ~ sink ~ WHITESPACE* }
 
 // Declaration Scopes
 
@@ -69,4 +69,5 @@ connections = _{ connection+ }
 // Sink
 
 sink = { "{" ~ ident ~ "}" }
+source = { "{" ~ ident ~ "}" }
 
