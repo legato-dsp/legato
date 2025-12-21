@@ -116,6 +116,7 @@ impl LegatoFrontend {
 
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
         dbg!("set param!");
+        
         if let Ok(key) = self.param_store_frontend.get_key(name) {
             return self.param_store_frontend.set_param(key, val)
         }

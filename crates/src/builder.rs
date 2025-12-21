@@ -412,8 +412,6 @@ impl LegatoBuilder<DslBuilding> {
 
         let ast = build_ast(pairs).unwrap();
 
-        dbg!(&ast);
-
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
                 self._add_node_ref_self(
@@ -422,9 +420,6 @@ impl LegatoBuilder<DslBuilding> {
                     &node.alias.clone().unwrap_or(node.node_type.clone()),
                     &DSLParams(&node.params.clone().unwrap_or_else(BTreeMap::new)),
                 );
-
-                dbg!("Added node:");
-                dbg!(&self.runtime);
 
                 for pipe in node.pipes.iter() {
                     self.pipe(&pipe.name, pipe.params.clone());
@@ -633,6 +628,7 @@ impl<'a> ResourceBuilderView<'a> {
     }
 
     pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+        dbg!("add param");
         self.resource_builder.add_param(unique_name, meta)
     }
 

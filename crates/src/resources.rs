@@ -26,6 +26,7 @@ impl ResourceBuilder {
     }
 
     pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+        dbg!("add param resources!");
         self.param_builder.add_param(unique_name, meta)
     }
 

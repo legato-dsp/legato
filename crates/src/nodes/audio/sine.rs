@@ -59,13 +59,10 @@ impl Sine {
     fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels){
         let config = ctx.get_config();
 
-        let base_freq = Vf32::splat(self.freq);
-
         let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
 
-        for (n, fm_chunk) in fm_in.chunks_exact(LANES).enumerate() {
-            let fm = Vf32::from_slice(fm_chunk);
-            let freq = base_freq + fm;
+        for (n, freq_chunk) in fm_in.chunks_exact(LANES).enumerate() {
+            let freq = Vf32::from_slice(freq_chunk);
 
             let mut inc = freq * fs_recipricol;
             inc = simd_scan(inc);

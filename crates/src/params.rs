@@ -114,6 +114,7 @@ impl ParamStoreFrontend {
     }
 
     pub fn get_key(&self, name: &'static str) -> Result<ParamKey, ParamError> {
+        dbg!(&self.param_lookup);
         match self.param_lookup.get(name) {
             Some(inner) => Ok(inner.clone()),
             None => Err(ParamError::ParamNotFound)
