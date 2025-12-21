@@ -7,3 +7,4 @@ pub mod sampler;
 pub mod sine;
 pub mod sweep;
 pub mod signal;
+pub mod svf;
