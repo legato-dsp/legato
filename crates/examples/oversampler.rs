@@ -31,8 +31,6 @@ fn main() {
 
     let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
-    dbg!(&app);
-
     let _ = frontend.load_sample(
         &String::from("amen"),
         Path::new("../samples/amen.wav"),

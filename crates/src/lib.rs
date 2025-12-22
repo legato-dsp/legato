@@ -3,10 +3,15 @@
 use core::slice;
 use std::{collections::HashMap, fmt::Debug, path::Path};
 
-use heapless::{spsc::{Consumer, Producer}};
+use heapless::spsc::{Consumer, Producer};
 
 use crate::{
-    builder::ValidationError, config::Config, msg::LegatoMsg, node::{Channels, Inputs}, params::{ParamError, ParamKey, ParamStoreFrontend}, runtime::{MAX_INPUTS, Runtime, RuntimeFrontend}
+    builder::ValidationError,
+    config::Config,
+    msg::LegatoMsg,
+    node::{Channels, Inputs},
+    params::{ParamError, ParamKey, ParamStoreFrontend},
+    runtime::{MAX_INPUTS, Runtime, RuntimeFrontend},
 };
 
 pub mod ast;
@@ -37,9 +42,8 @@ pub mod nodes;
 #[derive(Debug, PartialEq, Clone)]
 pub enum LegatoError {
     ValidationError(ValidationError),
-    ParamError(ParamError)
+    ParamError(ParamError),
 }
-
 
 pub struct LegatoApp {
     runtime: Runtime,
@@ -76,7 +80,7 @@ impl Debug for LegatoApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LegatoApp")
             .field("runtime", &self.runtime)
-            .finish()        
+            .finish()
     }
 }
 
@@ -87,7 +91,11 @@ pub struct LegatoFrontend {
 }
 
 impl LegatoFrontend {
-    pub fn new(runtime_frontend: RuntimeFrontend, param_store_frontend: ParamStoreFrontend, producer: Producer<'static, LegatoMsg>) -> Self {
+    pub fn new(
+        runtime_frontend: RuntimeFrontend,
+        param_store_frontend: ParamStoreFrontend,
+        producer: Producer<'static, LegatoMsg>,
+    ) -> Self {
         Self {
             runtime_frontend,
             param_store_frontend,
@@ -111,14 +119,15 @@ impl LegatoFrontend {
     }
 
     pub unsafe fn set_param_unchecked(&mut self, key: ParamKey, val: f32) {
-        unsafe { self.param_store_frontend.set_param_unchecked_no_clamp(key, val) }
+        unsafe {
+            self.param_store_frontend
+                .set_param_unchecked_no_clamp(key, val)
+        }
     }
 
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
-        dbg!("set param!");
-        
         if let Ok(key) = self.param_store_frontend.get_key(name) {
-            return self.param_store_frontend.set_param(key, val)
+            return self.param_store_frontend.set_param(key, val);
         }
         Err(ParamError::ParamNotFound)
     }

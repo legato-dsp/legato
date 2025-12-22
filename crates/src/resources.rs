@@ -3,7 +3,11 @@ use std::sync::Arc;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
-    node::{Channels, Inputs}, nodes::audio::delay::DelayLine, params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend}, sample::AudioSampleHandle, simd::Vf32
+    node::{Channels, Inputs},
+    nodes::audio::delay::DelayLine,
+    params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend},
+    sample::AudioSampleHandle,
+    simd::Vf32,
 };
 
 new_key_type! { pub struct DelayLineKey; }
@@ -13,7 +17,7 @@ new_key_type! { pub struct SampleKey; }
 pub struct ResourceBuilder {
     delay_lines: SlotMap<DelayLineKey, DelayLine>,
     sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>,
-    param_builder: ParamStoreBuilder
+    param_builder: ParamStoreBuilder,
 }
 
 impl ResourceBuilder {
@@ -26,18 +30,13 @@ impl ResourceBuilder {
     }
 
     pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
-        dbg!("add param resources!");
         self.param_builder.add_param(unique_name, meta)
     }
 
     pub fn build(self) -> (Resources, ParamStoreFrontend) {
         let (frontend, store) = self.param_builder.build();
 
-        let resources = Resources::new(
-            self.delay_lines,
-            self.sample_handles,
-            store
-        );
+        let resources = Resources::new(self.delay_lines, self.sample_handles, store);
 
         (resources, frontend)
     }
@@ -53,15 +52,19 @@ impl ResourceBuilder {
 pub struct Resources {
     delay_lines: SlotMap<DelayLineKey, DelayLine>,
     sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>,
-    param_store: ParamStore
+    param_store: ParamStore,
 }
 
 impl Resources {
-    pub fn new(delay_lines: SlotMap<DelayLineKey, DelayLine>, sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>, param_store: ParamStore) -> Self {
+    pub fn new(
+        delay_lines: SlotMap<DelayLineKey, DelayLine>,
+        sample_handles: SlotMap<SampleKey, Arc<AudioSampleHandle>>,
+        param_store: ParamStore,
+    ) -> Self {
         Self {
             delay_lines,
             sample_handles,
-            param_store
+            param_store,
         }
     }
 

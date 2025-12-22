@@ -8,7 +8,6 @@ use legato::{
     ports::PortBuilder,
 };
 
-
 fn main() {
     let graph = String::from(
         r#"
@@ -35,8 +34,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
-        .build_dsl(&graph);
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
     let _ = frontend.load_sample(
         &String::from("amen"),
@@ -61,7 +59,6 @@ fn main() {
 
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(5));
-        dbg!("other thread!");
         frontend.set_param("pitch", 880.0).unwrap();
     });
 

@@ -97,7 +97,6 @@ impl Svf {
 
         match filter_type {
             FilterType::LowPass => {
-                dbg!(self.cutoff);
                 let g = (PI * self.cutoff / self.sample_rate).tan();
                 let k = 1.0 / self.q;
 

@@ -121,8 +121,6 @@ pub fn build_ast(pairs: Pairs<Rule>) -> Result<Ast, BuildAstError> {
         }
     }
 
-    dbg!(&ast);
-
     Ok(ast)
 }
 
@@ -568,8 +566,6 @@ mod test {
         let ast = parse_ast(graph);
 
         assert_eq!(ast.connections.len(), 1);
-
-        dbg!(&ast.connections[0]);
 
         assert!(ast.connections[0].source_port == PortConnectionType::Indexed { port: 1 });
         assert!(ast.connections[0].sink_port == PortConnectionType::Named { port: "l".into() });

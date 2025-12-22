@@ -251,8 +251,6 @@ where
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
-        dbg!(&connection);
-
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
@@ -293,8 +291,6 @@ where
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
                     .index;
-
-                dbg!(index);
 
                 vec![index]
             }
@@ -641,7 +637,6 @@ impl<'a> ResourceBuilderView<'a> {
     }
 
     pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
-        dbg!("add param");
         self.resource_builder.add_param(unique_name, meta)
     }
 

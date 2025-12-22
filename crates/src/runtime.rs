@@ -116,7 +116,6 @@ impl Runtime {
     /// TODO: How do we handle nested runtimes?
     pub fn handle_msg(&mut self, msg: LegatoMsg) {
         #[cfg(debug_assertions)]
-        dbg!(&msg);
         match msg {
             LegatoMsg::NodeMessage(key, param_msg) => {
                 if let Some(node) = self.get_node_mut(&key) {

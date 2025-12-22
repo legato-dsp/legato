@@ -62,8 +62,6 @@ fn main() {
         .register_pipe("logger", Box::new(Logger {}))
         .build_dsl(&graph);
 
-    dbg!(&app);
-
     let _ = frontend.load_sample(
         &String::from("amen"),
         Path::new("../samples/amen.wav"),
