@@ -125,7 +125,7 @@ impl Pipe for Oversample2X {
                 let oversampler = oversample_by_two_factory(
                     node.clone(),
                     ports.audio_out.len(),
-                    config.audio_block_size,
+                    config.block_size,
                 );
 
                 let new_kind = format!("Oversample2X{}", node.node_kind);
@@ -141,7 +141,7 @@ impl Pipe for Oversample2X {
                     let oversampler = oversample_by_two_factory(
                         node.clone(),
                         ports.audio_out.len(),
-                        config.audio_block_size,
+                        config.block_size,
                     );
 
                     let new_kind = format!("Oversample2X{}", node.node_kind);

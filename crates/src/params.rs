@@ -1,150 +1,190 @@
-use std::{collections::BTreeSet, time::Duration};
-
-use crate::{
-    ValidationError,
-    ast::{Object, Value},
+use atomic_float::AtomicF32;
+use std::{
+    collections::HashMap,
+    sync::{Arc, atomic::Ordering},
 };
 
-pub struct Params<'a>(pub &'a Object);
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParamError {
+    ParamNotFound,
+    ParamMetaNotFound,
+}
 
-impl<'a> Params<'a> {
-    pub fn new(obj: &'a Object) -> Self {
-        Self(obj)
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub struct ParamKey(usize);
+
+/// The param store, hoisted up on the context for the audio graph.
+///
+/// This is laid out in this way, rather than individual pairs of atomics,
+/// to hopefully provide better caching performance, and to
+/// also make it a bit easier to serialize the state of a graph for presets
+/// or other functionality in the future.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ParamStore {
+    data: Arc<[AtomicF32]>,
+}
+
+impl ParamStore {
+    pub fn new(data: Arc<[AtomicF32]>) -> Self {
+        Self { data }
     }
 
-    pub fn get_f32(&self, key: &str) -> Option<f32> {
-        match self.0.get(key) {
-            Some(Value::F32(x)) => Some(*x),
-            Some(Value::I32(x)) => Some(*x as f32),
-            Some(Value::U32(x)) => Some(*x as f32),
-            Some(x) => panic!("Expected F32 param, found {:?}", x),
-            _ => None,
-        }
+    #[inline(always)]
+    pub fn get(&self, key: &ParamKey) -> Result<f32, ParamError> {
+        self.data
+            .get(key.0)
+            .map(|v| v.load(Ordering::Relaxed))
+            .ok_or(ParamError::ParamNotFound)
     }
 
-    // Just ms for the time being
-    pub fn get_duration(&self, key: &str) -> Option<Duration> {
-        match self.0.get(key) {
-            Some(Value::F32(ms)) => Some(Duration::from_secs_f32(ms / 1000.0)),
-            Some(Value::I32(ms)) => Some(Duration::from_millis(*ms as u64)),
-            Some(Value::U32(ms)) => Some(Duration::from_millis(*ms as u64)),
-            Some(x) => panic!("Expected F32 or I32 param for ms, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_u32(&self, key: &str) -> Option<u32> {
-        match self.0.get(key) {
-            Some(Value::U32(s)) => Some(*s),
-            Some(x) => panic!("Expected U32 param, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_usize(&self, key: &str) -> Option<usize> {
-        self.get_u32(key).map(|i| i as usize)
-    }
-
-    pub fn get_str(&self, key: &str) -> Option<String> {
-        match self.0.get(key) {
-            Some(Value::Str(s)) => Some(s.clone()),
-            Some(Value::Ident(i)) => Some(i.clone()),
-            Some(x) => panic!("Expected str param, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
-        match self.0.get(key) {
-            Some(Value::Bool(b)) => Some(*b),
-            Some(x) => panic!("Expected bool param, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_object(&self, key: &str) -> Option<Object> {
-        match self.0.get(key) {
-            Some(Value::Obj(o)) => Some(o.clone()),
-            Some(x) => panic!("Expected object param, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_array(&self, key: &str) -> Option<Vec<Value>> {
-        match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
-        }
-    }
-
-    pub fn get_array_f32(&self, key: &str) -> Option<Vec<f32>> {
-        let arr = match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
-        }?;
-
-        Some(
-            arr.into_iter()
-                .map(|x| match x {
-                    Value::F32(x) => x,
-                    Value::I32(x) => x as f32,
-                    Value::U32(x) => x as f32,
-                    _ => panic!("Unexpected value in f32 array {:?}", x),
-                })
-                .collect(),
-        )
-    }
-
-    pub fn get_array_duration_ms(&self, key: &str) -> Option<Vec<Duration>> {
-        let arr = match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
-        };
-
-        Some(
-            arr.unwrap()
-                .into_iter()
-                .map(|x| match x {
-                    Value::F32(x) => Duration::from_secs_f32(x / 1000.0),
-                    Value::I32(x) => Duration::from_millis(x as u64),
-                    Value::U32(x) => Duration::from_millis(x as u64),
-                    _ => panic!("Unexpected value in f32 array {:?}", x),
-                })
-                .collect(),
-        )
-    }
-
-    pub fn validate(&self, allowed: &BTreeSet<String>) -> Result<(), ValidationError> {
-        // Iterate through keys. If we have one that's not allowed, return an error
-        for k in self.0.keys() {
-            if !allowed.contains(k) {
-                return Err(ValidationError::InvalidParameter(format!(
-                    "Could not find parameter with name {}",
-                    k
-                )));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn required(&self, required: &BTreeSet<String>) -> Result<(), ValidationError> {
-        for k in required {
-            if !self.0.contains_key(k) {
-                return Err(ValidationError::MissingRequiredParameter(format!(
-                    "Missing required perameter {}",
-                    k,
-                )));
-            }
-        }
-        Ok(())
+    /// # Safety
+    ///
+    /// ParamKey must map to a valid index on this parameter store.
+    ///
+    /// To ensure this, this must be the same ParamKey made by the builder,
+    /// and the array must have not been resized.
+    ///
+    /// This is more of an escape hatch if a downstream user has the performance requirement.
+    #[inline(always)]
+    pub unsafe fn get_unchecked(&self, key: &ParamKey) -> f32 {
+        // ParamKeys should not be changed at runtime, there may be a level of safety here that is acceptible.
+        unsafe { self.data.get_unchecked(key.0).load(Ordering::Relaxed) }
     }
 }
 
-impl<'a> From<&'a Object> for Params<'a> {
-    fn from(value: &'a Object) -> Self {
-        Params(value)
+/// A struct of meta information for a param, useful for debugging or visualizing in the UI thread
+///
+/// Note: You would not add smoothing behavior here, rather you would do so using a control rate lowpass node.
+///
+/// This is because it's easier to just block process the entire stream, we can use SIMD, etc.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamMeta {
+    pub name: String,
+    pub min: f32,
+    pub max: f32,
+    pub default: f32,
+}
+
+impl Default for ParamMeta {
+    fn default() -> Self {
+        Self {
+            name: "Uninitialized".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+        }
+    }
+}
+
+/// The "frontend" for the param store.
+///
+/// This is not realtime safe, and should be on a dedicated control thread.
+#[derive(Debug, Clone)]
+pub struct ParamStoreFrontend {
+    // The underling container for our params
+    store: Arc<[AtomicF32]>,
+    // Box here because we want to discourage resizing after the builder constructs the pair
+    meta: Box<[ParamMeta]>,
+    // Lookup for name to param key
+    param_lookup: HashMap<String, ParamKey>,
+}
+
+impl ParamStoreFrontend {
+    pub fn new(
+        store: Arc<[AtomicF32]>,
+        meta: Box<[ParamMeta]>,
+        param_lookup: HashMap<String, ParamKey>,
+    ) -> Self {
+        Self {
+            store,
+            meta,
+            param_lookup,
+        }
+    }
+
+    /// Set a parameter's value. Note: This will be clamped by the meta info for the param.
+    pub fn set_param(&self, key: ParamKey, val: f32) -> Result<(), ParamError> {
+        let meta = self.meta.get(key.0).ok_or(ParamError::ParamMetaNotFound)?;
+
+        let clamped = val.clamp(meta.min, meta.max);
+
+        if let Some(item) = self.store.get(key.0) {
+            item.store(clamped, Ordering::Relaxed);
+            return Ok(());
+        }
+        Err(ParamError::ParamNotFound)
+    }
+
+    /// # Safety
+    ///
+    /// You are in charge of ensuring that your ParamKey is valid, and that params has not resized.
+    ///
+    /// A function to ignore the meta information, and unsafely set a param.
+    /// This serves as an escape hatch if the performance is needed.
+    pub unsafe fn set_param_unchecked_no_clamp(&self, key: ParamKey, val: f32) {
+        unsafe {
+            self.store.get_unchecked(key.0).swap(val, Ordering::Relaxed);
+        }
+    }
+
+    pub fn get_param(&self, key: ParamKey) -> Result<f32, ParamError> {
+        match self.store.get(key.0) {
+            Some(inner) => Ok(inner.load(Ordering::Relaxed)),
+            None => Err(ParamError::ParamNotFound),
+        }
+    }
+
+    pub fn get_key(&self, name: &'static str) -> Result<ParamKey, ParamError> {
+        match self.param_lookup.get(name) {
+            Some(inner) => Ok(inner.clone()),
+            None => Err(ParamError::ParamNotFound),
+        }
+    }
+
+    pub fn get_all(&self) -> Vec<f32> {
+        self.store
+            .iter()
+            .map(|x| x.load(Ordering::Relaxed))
+            .collect::<Vec<f32>>()
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct ParamStoreBuilder {
+    meta: Vec<ParamMeta>,
+    param_lookup: HashMap<String, ParamKey>,
+}
+
+impl ParamStoreBuilder {
+    // Add a param to our builder, with the given meta information.
+    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+        let key = ParamKey(self.meta.len());
+        self.meta.push(meta);
+
+        // Put it in this string to key lookup for later use in the frontend
+        self.param_lookup.insert(unique_name, key.clone());
+
+        key
+    }
+
+    pub fn build(self) -> (ParamStoreFrontend, ParamStore) {
+        let data_vec = self
+            .meta
+            .iter()
+            .map(|x| {
+                // Quickly check bounds on param
+                assert!(x.default <= x.max);
+                assert!(x.default >= x.min);
+                AtomicF32::new(x.default)
+            })
+            .collect::<Vec<AtomicF32>>();
+
+        let data: Arc<[AtomicF32]> = Arc::from(data_vec);
+
+        let store = ParamStore::new(data.clone());
+
+        let frontend = ParamStoreFrontend::new(data, self.meta.into(), self.param_lookup);
+
+        (frontend, store)
     }
 }

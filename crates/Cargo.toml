@@ -16,6 +16,7 @@ indexmap = "2.12.0"
 pest = "2.8.3"
 pest_derive = "2.8.3"
 heapless = "0.9.2"
+atomic_float = "1.1.0"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -1,3 +1,5 @@
+// While this project is AGPLv3, this file includes code under BSD-3
+
 // Approximations adapted from Chowdhurry-DSP, license below
 
 // BSD 3-Clause License
@@ -34,7 +36,8 @@ use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    msg::{NodeMessage, RtValue},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -52,33 +55,18 @@ impl Sine {
             freq,
             phase: 0.0,
             ports: PortBuilder::default()
-                .audio_in_named(&["fm"])
+                .audio_in_named(&["freq"])
                 .audio_out(chans)
                 .build(),
         }
     }
-}
-
-impl Node for Sine {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
-    ) {
+    fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels) {
         let config = ctx.get_config();
-
-        let fm_in = &ai[0];
-
-        let base_freq = Vf32::splat(self.freq);
 
         let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
 
-        for (n, fm_chunk) in fm_in.chunks_exact(LANES).enumerate() {
-            let fm = Vf32::from_slice(fm_chunk);
-            let freq = base_freq + fm;
+        for (n, freq_chunk) in fm_in.chunks_exact(LANES).enumerate() {
+            let freq = Vf32::from_slice(freq_chunk);
 
             let mut inc = freq * fs_recipricol;
             inc = simd_scan(inc);
@@ -100,10 +88,63 @@ impl Node for Sine {
             }
         }
     }
+
+    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut Channels) {
+        let config = ctx.get_config();
+        let freq = Vf32::splat(self.freq);
+
+        let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
+
+        let block_size = config.block_size;
+        let n = block_size / LANES;
+
+        for i in 0..n {
+            let mut inc = freq * fs_recipricol;
+
+            inc = simd_scan(inc);
+
+            let mut phase = Simd::splat(self.phase.fract());
+            phase += inc;
+
+            self.phase = phase.as_array()[LANES - 1];
+
+            let sample = sin_turns_7(phase);
+
+            let start = i * LANES;
+            let end = start + LANES;
+
+            for chan in ao.iter_mut() {
+                chan[start..end].copy_from_slice(sample.as_array());
+            }
+        }
+    }
+}
+
+impl Node for Sine {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+        if let Some(fm_in) = ai[0] {
+            self.process_external_freq(ctx, fm_in, ao);
+        } else {
+            self.process_internal_freq(ctx, ao);
+        }
+    }
+
+    /// For now, we panic here, as it's difficult to make a strong message without allocating
+    fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
+        match msg {
+            NodeMessage::SetParam(payload) => match (payload.param_name, payload.value) {
+                ("freq", RtValue::F32(val)) => self.freq = val,
+                _ => unreachable!("Invalid parameter and value passed"),
+            },
+        }
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
 }
+
+// Start of BSD-3 Code
 
 #[inline(always)]
 fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
@@ -142,6 +183,8 @@ where
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
+
+// End of BSD-3 Code
 
 /// Utility to perform prefix scan
 fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>

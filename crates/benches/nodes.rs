@@ -3,14 +3,19 @@ use legato::{
     builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness,
-    nodes::audio::{fir::FirFilter, sine::Sine},
+    nodes::audio::{
+        fir::FirFilter,
+        sine::Sine,
+        svf::{FilterType, Svf},
+    },
     ports::PortBuilder,
+    runtime::MAX_INPUTS,
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
     let mut graph = get_node_test_harness(Box::new(Sine::new(440.0, 2)));
 
-    c.bench_function("Sine node legato two", |b| {
+    c.bench_function("Sine", |b| {
         b.iter(|| {
             let out = graph.next_block(None);
             black_box(out);
@@ -101,7 +106,7 @@ fn bench_fir(c: &mut Criterion) {
 
     let mut graph = get_node_test_harness(Box::new(FirFilter::new(coeffs, 2)));
 
-    c.bench_function("fir node", |b| {
+    c.bench_function("fir", |b| {
         b.iter(|| {
             let out = graph.next_block(None);
             black_box(out);
@@ -111,11 +116,9 @@ fn bench_fir(c: &mut Criterion) {
 
 fn bench_stereo_delay(c: &mut Criterion) {
     let config = Config {
-        audio_block_size: 4096,
-        control_block_size: 4096 / 32,
+        block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        control_rate: 44_100 / 32,
         initial_graph_capacity: 4,
     };
 
@@ -123,12 +126,12 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
     let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
         r#"
+            { delay_write }
+
             audio {
                 delay_write { delay_name: "a", chans: 2, delay_length: 1000 },
                 delay_read { delay_name: "a", chans: 2, delay_length: [120, 240] }
             }
-
-            delay_write >> delay_read
 
             { delay_read }
         "#,
@@ -136,16 +139,46 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
     c.bench_function("Basic stereo delay", |b| {
         let ai: &[Box<[f32]>] = &[
-            vec![0.0; config.audio_block_size].into(),
-            vec![0.0; config.audio_block_size].into(),
+            vec![0.0; config.block_size].into(),
+            vec![0.0; config.block_size].into(),
         ];
-        let ci = &[];
+
+        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        for (i, x) in ai.iter().enumerate() {
+            inputs[i] = Some(&x)
+        }
+
         b.iter(|| {
-            let out = app.next_block(Some(&(ai, ci)));
+            let out = app.next_block(Some(&inputs));
             black_box(out);
         });
     });
 }
 
-criterion_group!(benches, bench_stereo_sine, bench_fir, bench_stereo_delay);
+fn bench_svf(c: &mut Criterion) {
+    let mut graph = get_node_test_harness(Box::new(Svf::new(
+        48_000.0,
+        FilterType::LowPass,
+        5400.0,
+        0.8,
+        0.6,
+        2,
+    )));
+
+    c.bench_function("SVF", |b| {
+        b.iter(|| {
+            let out = graph.next_block(None);
+            black_box(out);
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_stereo_sine,
+    bench_fir,
+    bench_stereo_delay,
+    bench_svf
+);
 criterion_main!(benches);

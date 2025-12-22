@@ -4,5 +4,7 @@ pub mod mixer;
 pub mod ops;
 pub mod oversample;
 pub mod sampler;
+pub mod signal;
 pub mod sine;
+pub mod svf;
 pub mod sweep;

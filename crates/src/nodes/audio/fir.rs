@@ -2,7 +2,7 @@ use std::simd::{StdFloat, num::SimdFloat};
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
     simd::{LANES, Vf32},
@@ -35,39 +35,38 @@ impl FirFilter {
 }
 
 impl Node for FirFilter {
-    fn process(
-        &mut self,
-        _: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
-    ) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         // These checks are important because we are using this elsewhere for oversampling
-        debug_assert_eq!(ai.len(), ao.len());
-        debug_assert_eq!(ai[0].len(), ao[0].len());
+        if let Some(inner) = ai[0] {
+            // Channel alignment
+            debug_assert_eq!(ai.len(), ao.len());
+            // Block alignment
+            debug_assert_eq!(inner.len(), inner.len());
+        }
 
-        for ((input, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
-            for (n, x) in input.iter().enumerate() {
-                state.push(*x);
+        for ((chan_in, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
+            if let Some(input) = chan_in {
+                for (n, x) in input.iter().enumerate() {
+                    state.push(*x);
 
-                let mut y = Vf32::splat(0.0);
+                    let mut y = Vf32::splat(0.0);
 
-                for (k, h) in self.coeffs.chunks_exact(LANES).enumerate() {
-                    let a = Vf32::from_slice(h);
-                    let b = state.get_chunk_by_offset(k * LANES);
-                    y = a.mul_add(b, y)
+                    for (k, h) in self.coeffs.chunks_exact(LANES).enumerate() {
+                        let a = Vf32::from_slice(h);
+                        let b = state.get_chunk_by_offset(k * LANES);
+                        y = a.mul_add(b, y)
+                    }
+
+                    let start = self.coeffs.chunks_exact(LANES).len() * LANES;
+
+                    let mut scalar = y.reduce_sum();
+
+                    for (k, h) in self.coeffs[start..].iter().enumerate() {
+                        scalar += h * state.get_offset(k + start);
+                    }
+
+                    out[n] = scalar;
                 }
-
-                let start = self.coeffs.chunks_exact(LANES).len() * LANES;
-
-                let mut scalar = y.reduce_sum();
-
-                for (k, h) in self.coeffs[start..].iter().enumerate() {
-                    scalar += h * state.get_offset(k + start);
-                }
-
-                out[n] = scalar;
             }
         }
     }

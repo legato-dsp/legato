@@ -4,7 +4,7 @@ use assert_no_alloc::permit_alloc;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::SampleKey,
     sample::AudioSample,
@@ -34,14 +34,7 @@ impl Sampler {
 }
 
 impl Node for Sampler {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        _: &Channels,
-        ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
         let resources = ctx.get_resources();
         // Check for sample update by seeing if the handle and local version match
         // This is all done rather than directly using the swap option, because Arc has a small allocation.
@@ -73,7 +66,7 @@ impl Node for Sampler {
             let inner = &sample;
             let config = ctx.get_config();
 
-            let block_size = config.audio_block_size;
+            let block_size = config.block_size;
             let chans = self.ports.audio_out.iter().len();
 
             let buf = inner.data();

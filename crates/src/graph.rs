@@ -2,7 +2,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{node::LegatoNode, ports::PortRate, runtime::NodeKey};
+use crate::{node::LegatoNode, runtime::NodeKey};
 
 #[derive(Debug, PartialEq)]
 pub enum GraphError {
@@ -15,7 +15,6 @@ pub enum GraphError {
 pub struct ConnectionEntry {
     pub node_key: NodeKey,
     pub port_index: usize,
-    pub port_rate: PortRate,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -31,7 +30,7 @@ const INITIAL_INPUTS: usize = 8;
 #[derive(Clone)]
 pub struct AudioGraph {
     nodes: SlotMap<NodeKey, LegatoNode>,
-    incoming_edges: EdgeMap ,
+    incoming_edges: EdgeMap,
     outgoing_edges: EdgeMap,
     // Pre-allocated work buffers for topo sort
     indegree: SecondaryMap<NodeKey, usize>,
@@ -92,11 +91,7 @@ impl AudioGraph {
 
     pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
-    ) -> (
-        &Vec<NodeKey>,
-        &mut SlotMap<NodeKey, LegatoNode>,
-        &EdgeMap,
-    ) {
+    ) -> (&Vec<NodeKey>, &mut SlotMap<NodeKey, LegatoNode>, &EdgeMap) {
         (&self.topo_sorted, &mut self.nodes, &self.incoming_edges)
     }
 
@@ -210,9 +205,10 @@ impl AudioGraph {
         // Build indegrees
         for (key, targets) in &self.incoming_edges {
             if self.nodes.contains_key(key)
-                && let Some(count) = self.indegree.get_mut(key) {
-                    *count = targets.len();
-                }
+                && let Some(count) = self.indegree.get_mut(key)
+            {
+                *count = targets.len();
+            }
         }
 
         self.no_incoming_edges_queue.clear();
@@ -252,7 +248,14 @@ impl Debug for AudioGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
             .entry(&"capacity", &self.nodes.len())
-            .entry(&"topo_sorted", &self.topo_sorted)
+            .entry(
+                &"topo_sorted",
+                &self
+                    .topo_sorted
+                    .iter()
+                    .map(|x| self.nodes.get(*x).unwrap().name.clone())
+                    .collect::<Vec<String>>(),
+            )
             .entry(&"nodes", &self.nodes.iter().collect::<Vec<_>>())
             .finish()
     }
@@ -264,8 +267,8 @@ mod test {
     use crate::{
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
-        node::{Channels, Node},
-        ports::{PortMeta, PortRate, Ports},
+        node::{Channels, Inputs, Node},
+        ports::{PortMeta, Ports},
     };
 
     #[derive(Clone)]
@@ -285,23 +288,13 @@ mod test {
                         name: "out",
                         index: 0,
                     }],
-                    control_in: vec![],
-                    control_out: vec![],
                 },
             }
         }
     }
 
     impl Node for MonoExample {
-        fn process(
-            &mut self,
-            _: &mut AudioContext,
-            _: &Channels,
-            _: &mut Channels,
-            _: &Channels,
-            _: &mut Channels,
-        ) {
-        }
+        fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut Channels) {}
         fn ports(&self) -> &Ports {
             &self.ports
         }
@@ -348,12 +341,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -362,12 +353,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -399,12 +388,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .expect("Could not add e1");
@@ -414,12 +401,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .expect("Could not add e2");
@@ -489,12 +474,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -504,12 +487,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -519,12 +500,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: d,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -534,12 +513,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: e,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -567,12 +544,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -581,12 +556,10 @@ mod test {
             source: ConnectionEntry {
                 node_key: b,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
         });
 
@@ -608,12 +581,10 @@ mod test {
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
             sink: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
         });
 
@@ -658,12 +629,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -673,12 +642,10 @@ mod test {
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
                 sink: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
-                    port_rate: PortRate::Audio,
                 },
             })
             .unwrap();
@@ -714,12 +681,10 @@ mod test {
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
             sink: ConnectionEntry {
                 node_key: nonexistent_key,
                 port_index: 0,
-                port_rate: PortRate::Audio,
             },
         });
 

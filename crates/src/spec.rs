@@ -3,15 +3,14 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    ValidationError,
-    builder::ResourceBuilderView,
-    node::{DynNode},
-    params::Params,
+    ast::DSLParams,
+    builder::{ResourceBuilderView, ValidationError},
+    node::DynNode,
 };
 
 /// A NodeFactory type. The resource builder allows your plugin to register shared delay or sample lines, maybe in the future generic buffers as well.
 pub type NodeFactory =
-    fn(&mut ResourceBuilderView, &Params) -> Result<Box<dyn DynNode>, ValidationError>;
+    fn(&mut ResourceBuilderView, &DSLParams) -> Result<Box<dyn DynNode>, ValidationError>;
 
 /// This struct defines the node display/debug name, required and optional params,
 /// as well as a node factory for a node definition.
@@ -23,7 +22,6 @@ pub struct NodeSpec {
     pub optional_params: BTreeSet<String>,
     pub build: NodeFactory,
 }
-
 
 #[macro_export]
 macro_rules! node_spec {

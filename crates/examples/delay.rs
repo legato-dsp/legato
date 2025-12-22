@@ -27,8 +27,13 @@ fn main() {
             sampler { sampler_name: "amen" } | logger(),
             delay_write: dw1 { delay_name: "d_one", chans: 2 },
             delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 231, 257 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 231, 257 ] },
             track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.3, 0.2] },
+            svf { chans: 2, cutoff: 2400.0, q: 0.2, type: "lowpass" },
+        }
+
+        control {
+            signal { name: "cutoff", min: 120.0, max: 24000.0, default: 800.0 }
         }
 
         sampler[0..2] >> track_mixer[0..2]
@@ -36,26 +41,28 @@ fn main() {
         dr1[0..2] >> track_mixer[2..4]
         dr2[0] >> track_mixer[4..6]
 
-        { track_mixer }
+        signal >> svf.cutoff
+
+        track_mixer[0..2] >> svf[0..2]
+
+        { svf }
     "#,
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        control_rate: 48_000 / 32,
-        audio_block_size: 1024,
-        control_block_size: 1024 / 32,
+        sample_rate: 44_100,
+        block_size: 4096,
         channels: 2,
         initial_graph_capacity: 4,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_pipe("logger", Box::new(Logger {}))
         .build_dsl(&graph);
 
-    let _ = backend.load_sample(
+    let _ = frontend.load_sample(
         &String::from("amen"),
         Path::new("../samples/amen.wav"),
         2,
@@ -73,7 +80,7 @@ fn main() {
     let stream_config = StreamConfig {
         channels: config.channels as u16,
         sample_rate: SampleRate(config.sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(config.audio_block_size as u32),
+        buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
     };
 
     start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!")

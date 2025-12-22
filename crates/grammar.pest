@@ -28,7 +28,7 @@ array = { "[" ~ (value ~ ("," ~ value)*)? ~ ","? ~ "]" }
 
 // Project Graph
 
-graph = _{ WHITESPACE* ~ scope_block+ ~ connections? ~ sink ~ WHITESPACE* }
+graph = _{ WHITESPACE* ~ source? ~ WHITESPACE* ~ scope_block+ ~ connections? ~ sink ~ WHITESPACE* }
 
 // Declaration Scopes
 
@@ -56,11 +56,12 @@ add_node = {
 
 node = @{ ident ~ ("." ~ !WHITESPACE ~ uint)? }
 
-port_name = { "." ~ !WHITESPACE ~ ident }
+port_named = { "." ~ ident }
+
 port_slice = { "[" ~ uint ~ ".." ~ uint ~ "]" }
 port_index = { "[" ~ uint ~ "]"}
 
-node_with_port = { node ~ !WHITESPACE ~ (port_name | port_slice | port_index) }
+node_with_port = { node ~ !WHITESPACE ~ (port_named | port_slice | port_index) }
 
 connection = { (node_with_port | node) ~ (">>" ~ (node_with_port | node))+ }
 connections = _{ connection+ }
@@ -69,4 +70,5 @@ connections = _{ connection+ }
 // Sink
 
 sink = { "{" ~ ident ~ "}" }
+source = { "{" ~ ident ~ "}" }
 

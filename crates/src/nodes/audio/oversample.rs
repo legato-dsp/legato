@@ -2,9 +2,10 @@
 
 use crate::{
     context::AudioContext,
-    node::{Channels, LegatoNode, Node},
+    node::{Channels, Inputs, LegatoNode, Node},
     nodes::audio::fir::FirFilter,
     ports::{PortBuilder, Ports},
+    runtime::MAX_INPUTS,
 };
 
 #[derive(Clone)]
@@ -30,31 +31,41 @@ impl<const N: usize> Upsample<N> {
 }
 
 impl<const N: usize> Node for Upsample<N> {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
-    ) {
-        debug_assert_eq!(ai.len(), ao.len()); // Channels match
-        debug_assert_eq!(ai[0].len() * N, ao[0].len()); // Conversion matches
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+        if ai.is_empty() {
+            return;
+        };
+
+        if let Some(inner) = ai[0] {
+            debug_assert_eq!(inner.len() * N, ao[0].len());
+        }
 
         for c in 0..self.chans {
-            let input = &ai[c];
             let out = &mut self.zero_stuffed[c];
 
-            // Zero stuff the sample, this makes spectral images that must be filtered
-            for (n, sample) in input.iter().enumerate() {
-                out[n * N] = *sample;
-                for k in 1..N {
-                    out[n * N + k] = 0.0;
+            if let Some(input) = &ai[c] {
+                // Zero stuff the sample, this makes spectral images that must be filtered
+                for (n, sample) in input.iter().enumerate() {
+                    out[n * N] = *sample;
+                    for k in 1..N {
+                        out[n * N + k] = 0.0;
+                    }
                 }
             }
         }
+
+        let output_size = self.ports().audio_out.len();
+
+        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        self.zero_stuffed.iter().enumerate().for_each(|(c, x)| {
+            if ai[c].is_some() {
+                inputs[c] = Some(x);
+            }
+        });
+
         // FIR filter the zero stuffed buffer
-        self.filter.process(ctx, &self.zero_stuffed, ao, ci, co);
+        self.filter.process(ctx, &inputs[..output_size], ao);
     }
     fn ports(&self) -> &Ports {
         &self.ports
@@ -83,19 +94,14 @@ impl<const N: usize> Downsample<N> {
 }
 
 impl<const N: usize> Node for Downsample<N> {
-    fn process<'a>(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
-    ) {
+    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         // Ensure that ai = ao * N
-        debug_assert_eq!(ai[0].len(), ao[0].len() * N);
+        if let Some(inner) = ai[0] {
+            debug_assert_eq!(inner.len(), ao[0].len() * N);
+        }
 
         // Filter the audio before decimating to prevent aliasing
-        self.filter.process(ctx, ai, &mut self.filtered, ci, co);
+        self.filter.process(ctx, ai, &mut self.filtered);
 
         // Decimate the filtered audio
         for c in 0..self.chans {
@@ -131,53 +137,64 @@ impl<const N: usize> Oversampler<N> {
         chans: usize,
         buff_size: usize,
     ) -> Self {
+        let node_ports = node.get_node().ports().clone();
         Self {
             node,
             upsampler,
             downsampler,
             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
             downsampled_inputs: vec![vec![0.0; buff_size * N].into(); chans],
-            ports: PortBuilder::default()
-                .audio_in(chans)
-                .audio_out(chans)
-                .build(),
+            ports: node_ports,
         }
     }
 }
 
 impl<const N: usize> Node for Oversampler<N> {
-    fn process<'a>(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
-    ) {
+    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         let config = ctx.get_config();
 
         let sr = config.sample_rate;
-        let block_size = config.audio_block_size;
+        let block_size = config.block_size;
 
-        self.upsampler
-            .process(ctx, ai, &mut self.upsampled_outputs, ci, co);
+        self.upsampler.process(ctx, ai, &mut self.upsampled_outputs);
 
-        ctx.set_sample_rate(sr * 2);
-        ctx.set_block_size(block_size * 2);
+        let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
 
-        self.node.get_node_mut().process(
-            ctx,
-            &self.upsampled_outputs,
-            &mut self.downsampled_inputs,
-            ci,
-            co,
-        );
+        if !ai.is_empty() {
+            self.upsampled_outputs
+                .iter()
+                .enumerate()
+                .for_each(|(c, x)| {
+                    if ai[c].is_some() {
+                        node_inputs[c] = Some(x);
+                    }
+                });
+        }
+
+        // TODO: Better pattern than this
+        ctx.set_sample_rate(sr * N);
+        ctx.set_block_size(block_size * N);
+
+        self.node
+            .get_node_mut()
+            .process(ctx, &node_inputs, &mut self.downsampled_inputs);
 
         ctx.set_sample_rate(sr);
         ctx.set_block_size(block_size);
 
+        let mut downsampler_node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        self.downsampled_inputs
+            .iter()
+            .enumerate()
+            .for_each(|(c, x)| {
+                downsampler_node_inputs[c] = Some(x);
+            });
+
+        let out_chans = self.ports().audio_out.len();
+
         self.downsampler
-            .process(ctx, &self.downsampled_inputs, ao, ci, co);
+            .process(ctx, &downsampler_node_inputs[..out_chans], ao);
     }
     fn ports(&self) -> &Ports {
         &self.ports

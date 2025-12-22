@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Node},
+    node::{Channels, Inputs, Node},
     ports::{PortBuilder, Ports},
 };
 
@@ -28,19 +28,12 @@ impl Sweep {
 }
 
 impl Node for Sweep {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        _: &Channels,
-        ao: &mut Channels,
-        _: &Channels,
-        _: &mut Channels,
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
         let config = ctx.get_config();
 
         let fs = config.sample_rate as f32;
 
-        let block_size = ctx.get_config().audio_block_size;
+        let block_size = ctx.get_config().block_size;
 
         let mut min = self.range[0];
         let max = self.range[1];

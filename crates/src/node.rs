@@ -1,31 +1,31 @@
 use std::fmt::Debug;
 
-use crate::{context::AudioContext, ports::Ports};
+use crate::{context::AudioContext, msg::NodeMessage, ports::Ports};
+
+pub type Inputs<'a> = [Option<&'a [f32]>];
 
 pub type Channels = [Box<[f32]>];
+pub type Outputs = Channels;
 
 /// The node trait that any audio processing nodes must implement.
 ///
-/// The channel inputs are slices of Box<[f32]>, that correspond to the interior graph audio and control rate.
+/// The channel inputs are slices of Box<[f32]>, that correspond to the interior graph audio graph rate.
 ///
 /// When defining your own nodes, look at internal examples for how you can use the port builder as well.
 ///
 /// The amount of channels passed to your node, depends on the ports given to that node when it is added to the runtime.
 /// For the time being, this should not be mutated or invalidated at runtime.
 pub trait Node {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Channels,
-        ao: &mut Channels,
-        ci: &Channels,
-        co: &mut Channels,
-    );
+    /// The process function for your node. They operate on slices of Box<[f32]>.
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Outputs);
+    // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
+    fn handle_msg(&mut self, _msg: NodeMessage) {}
+    // Get the port information for your node. This should not change after contruction.
     fn ports(&self) -> &Ports;
 }
 
 // This ceremony with NodeClone and DynNode is needed so that we can "clone" nodes by cloning the interior and boxing the result,
-// otherwise, we cannot create a v-table
+// otherwise, it's not object safe.
 
 pub trait NodeClone {
     fn clone_box(&self) -> Box<dyn DynNode>;
@@ -58,11 +58,20 @@ impl LegatoNode {
             node,
         }
     }
+
+    #[inline(always)]
     pub fn get_node(&self) -> &Box<dyn DynNode> {
         &self.node
     }
+
+    #[inline(always)]
     pub fn get_node_mut(&mut self) -> &mut Box<dyn DynNode> {
         &mut self.node
+    }
+    /// A meta wrapper that handles messages. This is used because we may need more messages in the future than just params
+    #[inline(always)]
+    pub fn handle_msg(&mut self, msg: NodeMessage) {
+        self.get_node_mut().as_mut().handle_msg(msg);
     }
 }
 

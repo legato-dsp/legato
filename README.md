@@ -56,7 +56,6 @@ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.
 
 - More nodes (pitch shifter, convolution, iir filters)
 - Matrix mixers
-- More control and UI abstractions.
 - Semi-tuned NixOS images, perhaps also Zephyr?
 - WASM bindings?
 - FFI bindings?
@@ -70,3 +69,7 @@ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.
 Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
 
 - We need delay compensation down the line to prevent phasing issues if there is group delay (not sure if using term correctly).
+- Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
+- Can we use a continous buffer for all samples and channels in the runtime? I have experiemented with this again, but splitting all
+  of the nodes required a lot of unsafe, and I also don't want to just expose the entire runtime buffer to each node. I think this 
+  will have much, much better caching performance.

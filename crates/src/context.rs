@@ -1,4 +1,8 @@
-use crate::{config::Config, resources::Resources};
+use crate::{
+    config::Config,
+    params::{ParamError, ParamKey},
+    resources::Resources,
+};
 
 /// The AudioContext struct contains information about the current audio graph, as well as
 /// some resources that are hosted up for nodes to access within a specific runtime.
@@ -24,7 +28,7 @@ impl AudioContext {
     }
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
     pub fn set_block_size(&mut self, block_size: usize) {
-        self.config.audio_block_size = block_size;
+        self.config.block_size = block_size;
     }
     pub fn get_config(&self) -> Config {
         self.config
@@ -37,5 +41,11 @@ impl AudioContext {
     }
     pub fn get_resources_mut(&mut self) -> &mut Resources {
         &mut self.resources
+    }
+    pub fn get_param(&self, key: &ParamKey) -> Result<f32, ParamError> {
+        self.resources.get_param(key)
+    }
+    pub unsafe fn get_param_unchecked(&self, key: &ParamKey) -> f32 {
+        unsafe { self.resources.get_param_unchecked(key) }
     }
 }

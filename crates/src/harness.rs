@@ -8,9 +8,7 @@ use crate::{
 pub fn get_node_test_harness(node: Box<dyn DynNode>) -> Runtime {
     let config = Config {
         sample_rate: 48_000,
-        audio_block_size: 4096,
-        control_rate: 48_000 / 32,
-        control_block_size: 4096 / 32,
+        block_size: 4096,
         channels: 2,
         initial_graph_capacity: 1,
     };

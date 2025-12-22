@@ -22,20 +22,16 @@ fn main() {
 
     let config = Config {
         sample_rate: 48_000,
-        control_rate: 48_000 / 32,
-        audio_block_size: 1024,
-        control_block_size: 1024 / 32,
+        block_size: 1024,
         channels: 2,
         initial_graph_capacity: 4,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut backend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
-    dbg!(&app);
-
-    let _ = backend.load_sample(
+    let _ = frontend.load_sample(
         &String::from("amen"),
         Path::new("../samples/amen.wav"),
         2,
