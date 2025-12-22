@@ -1,7 +1,12 @@
 // A collection of naive oversamplers. May be worth checking out halfband and polyphase filters in the future
 
 use crate::{
-    context::AudioContext, node::{Channels, Inputs, LegatoNode, Node}, nodes::audio::fir::FirFilter, out, ports::{PortBuilder, Ports}, runtime::MAX_INPUTS
+    context::AudioContext,
+    node::{Channels, Inputs, LegatoNode, Node},
+    nodes::audio::fir::FirFilter,
+    out,
+    ports::{PortBuilder, Ports},
+    runtime::MAX_INPUTS,
 };
 
 #[derive(Clone)]
@@ -27,13 +32,10 @@ impl<const N: usize> Upsample<N> {
 }
 
 impl<const N: usize> Node for Upsample<N> {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
-        if ai.len() == 0 { return };
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+        if ai.len() == 0 {
+            return;
+        };
 
         if let Some(inner) = ai[0] {
             debug_assert_eq!(inner.len() * N, ao[0].len());
@@ -50,7 +52,7 @@ impl<const N: usize> Node for Upsample<N> {
                         out[n * N + k] = 0.0;
                     }
                 }
-            }   
+            }
         }
 
         let output_size = self.ports().audio_out.len();
@@ -93,12 +95,7 @@ impl<const N: usize> Downsample<N> {
 }
 
 impl<const N: usize> Node for Downsample<N> {
-    fn process<'a>(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         // Ensure that ai = ao * N
         if let Some(inner) = ai[0] {
             debug_assert_eq!(inner.len(), ao[0].len() * N);
@@ -141,61 +138,59 @@ impl<const N: usize> Oversampler<N> {
         chans: usize,
         buff_size: usize,
     ) -> Self {
-        let node_ports =  node.get_node().ports().clone();
+        let node_ports = node.get_node().ports().clone();
         Self {
             node,
             upsampler,
             downsampler,
             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
             downsampled_inputs: vec![vec![0.0; buff_size * N].into(); chans],
-            ports: node_ports
+            ports: node_ports,
         }
     }
 }
 
 impl<const N: usize> Node for Oversampler<N> {
-    fn process<'a>(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         let config = ctx.get_config();
 
         let sr = config.sample_rate;
         let block_size = config.block_size;
 
-        self.upsampler
-            .process(ctx, ai, &mut self.upsampled_outputs);
+        self.upsampler.process(ctx, ai, &mut self.upsampled_outputs);
 
         let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
 
         if ai.len() != 0 {
-            self.upsampled_outputs.iter().enumerate().for_each(|(c, x)| {
-                if ai[c].is_some() {
-                    node_inputs[c] = Some(&x);
-                }
-            });
+            self.upsampled_outputs
+                .iter()
+                .enumerate()
+                .for_each(|(c, x)| {
+                    if ai[c].is_some() {
+                        node_inputs[c] = Some(&x);
+                    }
+                });
         }
 
         // TODO: Better pattern than this
         ctx.set_sample_rate(sr * N);
         ctx.set_block_size(block_size * N);
 
-        self.node.get_node_mut().process(
-            ctx,
-            &node_inputs,
-            &mut self.downsampled_inputs,
-        );
+        self.node
+            .get_node_mut()
+            .process(ctx, &node_inputs, &mut self.downsampled_inputs);
 
         ctx.set_sample_rate(sr);
         ctx.set_block_size(block_size);
 
         let mut downsampler_node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
 
-        self.downsampled_inputs.iter().enumerate().for_each(|(c, x)| {
-            downsampler_node_inputs[c] = Some(&x);
-        });
+        self.downsampled_inputs
+            .iter()
+            .enumerate()
+            .for_each(|(c, x)| {
+                downsampler_node_inputs[c] = Some(&x);
+            });
 
         let out_chans = self.ports().audio_out.len();
 

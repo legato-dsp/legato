@@ -28,12 +28,7 @@ impl Sweep {
 }
 
 impl Node for Sweep {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        _: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
         let config = ctx.get_config();
 
         let fs = config.sample_rate as f32;

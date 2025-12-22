@@ -136,7 +136,7 @@ mod tests {
     fn test_default_audio_in_mono() {
         let ports = PortBuilder {
             port_audio_in: vec![],
-            port_audio_out: vec![]
+            port_audio_out: vec![],
         }
         .audio_in(1)
         .build();

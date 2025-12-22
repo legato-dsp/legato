@@ -27,21 +27,15 @@ impl ApplyOp {
 }
 
 impl Node for ApplyOp {
-    fn process(
-        &mut self,
-        _: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-        
-        
-    ) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         let chunk_size = LANES;
 
         // TODO: Automation for value
         let val = Vf32::splat(self.val);
 
         for (in_channel, out_channel) in ai.iter().zip(ao.iter_mut()) {
-            for (in_chunk, out_chunk) in in_channel.unwrap()
+            for (in_chunk, out_chunk) in in_channel
+                .unwrap()
                 .chunks_exact(chunk_size)
                 .zip(out_channel.chunks_exact_mut(chunk_size))
             {

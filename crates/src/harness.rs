@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     node::{DynNode, LegatoNode},
-    ports::{PortBuilder},
+    ports::PortBuilder,
     runtime::{Runtime, build_runtime},
 };
 

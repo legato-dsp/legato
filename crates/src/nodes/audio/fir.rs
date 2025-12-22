@@ -35,12 +35,7 @@ impl FirFilter {
 }
 
 impl Node for FirFilter {
-    fn process(
-        &mut self,
-        _: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         // These checks are important because we are using this elsewhere for oversampling
         if let Some(inner) = ai[0] {
             // Channel alignment

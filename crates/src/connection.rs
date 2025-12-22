@@ -1,4 +1,4 @@
-use crate::{runtime::NodeKey};
+use crate::runtime::NodeKey;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct ConnectionEntry {

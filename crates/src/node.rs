@@ -1,7 +1,6 @@
-use std::{fmt::Debug};
+use std::fmt::Debug;
 
-use crate::{context::AudioContext, msg::NodeMessage, ports::{Ports}};
-
+use crate::{context::AudioContext, msg::NodeMessage, ports::Ports};
 
 pub type Inputs<'a> = [Option<&'a [f32]>];
 
@@ -18,12 +17,7 @@ pub type Outputs = Channels;
 /// For the time being, this should not be mutated or invalidated at runtime.
 pub trait Node {
     /// The process function for your node. They operate on slices of Box<[f32]>.
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        inputs: &Inputs,
-        outputs: &mut Outputs,
-    );
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Outputs);
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}
     // Get the port information for your node. This should not change after contruction.
@@ -76,7 +70,7 @@ impl LegatoNode {
     }
     /// A meta wrapper that handles messages. This is used because we may need more messages in the future than just params
     #[inline(always)]
-    pub fn handle_msg(&mut self, msg: NodeMessage){
+    pub fn handle_msg(&mut self, msg: NodeMessage) {
         self.get_node_mut().as_mut().handle_msg(msg);
     }
 }

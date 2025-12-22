@@ -1,4 +1,8 @@
-use crate::{config::Config, params::{ParamError, ParamKey}, resources::Resources};
+use crate::{
+    config::Config,
+    params::{ParamError, ParamKey},
+    resources::Resources,
+};
 
 /// The AudioContext struct contains information about the current audio graph, as well as
 /// some resources that are hosted up for nodes to access within a specific runtime.

@@ -1,4 +1,4 @@
-// While this project is AGPLv3, this file includes code under BSD-3 
+// While this project is AGPLv3, this file includes code under BSD-3
 
 // Approximations adapted from Chowdhurry-DSP, license below
 
@@ -35,7 +35,11 @@
 use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 use crate::{
-    context::AudioContext, msg::{NodeMessage, RtValue}, node::{Channels, Inputs, Node}, ports::{PortBuilder, Ports}, simd::{LANES, Vf32}
+    context::AudioContext,
+    msg::{NodeMessage, RtValue},
+    node::{Channels, Inputs, Node},
+    ports::{PortBuilder, Ports},
+    simd::{LANES, Vf32},
 };
 
 #[derive(Clone)]
@@ -51,12 +55,12 @@ impl Sine {
             freq,
             phase: 0.0,
             ports: PortBuilder::default()
-            .audio_in_named(&["freq"])
-            .audio_out(chans)
-            .build()
+                .audio_in_named(&["freq"])
+                .audio_out(chans)
+                .build(),
         }
     }
-    fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels){
+    fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels) {
         let config = ctx.get_config();
 
         let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
@@ -85,7 +89,7 @@ impl Sine {
         }
     }
 
-    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut Channels){
+    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut Channels) {
         let config = ctx.get_config();
         let freq = Vf32::splat(self.freq);
 
@@ -96,7 +100,7 @@ impl Sine {
 
         for i in 0..n {
             let mut inc = freq * fs_recipricol;
-            
+
             inc = simd_scan(inc);
 
             let mut phase = Simd::splat(self.phase.fract());
@@ -117,16 +121,10 @@ impl Sine {
 }
 
 impl Node for Sine {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         if let Some(fm_in) = ai[0] {
             self.process_external_freq(ctx, fm_in, ao);
-        }
-        else {
+        } else {
             self.process_internal_freq(ctx, ao);
         }
     }
@@ -134,15 +132,13 @@ impl Node for Sine {
     /// For now, we panic here, as it's difficult to make a strong message without allocating
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
         match msg {
-            NodeMessage::SetParam(payload) => {
-                match (payload.param_name, payload.value) {
-                    ("freq", RtValue::F32(val)) => self.freq = val,
-                    _ => unreachable!("Invalid parameter and value passed")
-                }
-            }
+            NodeMessage::SetParam(payload) => match (payload.param_name, payload.value) {
+                ("freq", RtValue::F32(val)) => self.freq = val,
+                _ => unreachable!("Invalid parameter and value passed"),
+            },
         }
     }
-    
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

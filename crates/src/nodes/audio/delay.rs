@@ -83,12 +83,7 @@ impl DelayWrite {
 }
 
 impl Node for DelayWrite {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        ai: &Inputs,
-        ao: &mut Channels,
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
@@ -120,12 +115,7 @@ impl DelayRead {
 }
 
 impl Node for DelayRead {
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        _: &Inputs,
-        ao: &mut Channels
-    ) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
         let config = ctx.get_config();
 
         let block_size = config.block_size;
