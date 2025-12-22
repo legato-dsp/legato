@@ -37,6 +37,14 @@ impl ParamStore {
             .ok_or(ParamError::ParamNotFound)
     }
 
+    /// # Safety
+    ///
+    /// ParamKey must map to a valid index on this parameter store.
+    ///
+    /// To ensure this, this must be the same ParamKey made by the builder,
+    /// and the array must have not been resized.
+    ///
+    /// This is more of an escape hatch if a downstream user has the performance requirement.
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, key: &ParamKey) -> f32 {
         // ParamKeys should not be changed at runtime, there may be a level of safety here that is acceptible.
@@ -107,7 +115,12 @@ impl ParamStoreFrontend {
         Err(ParamError::ParamNotFound)
     }
 
+    /// # Safety
+    ///
+    /// You are in charge of ensuring that your ParamKey is valid, and that params has not resized.
+    ///
     /// A function to ignore the meta information, and unsafely set a param.
+    /// This serves as an escape hatch if the performance is needed.
     pub unsafe fn set_param_unchecked_no_clamp(&self, key: ParamKey, val: f32) {
         unsafe {
             self.store.get_unchecked(key.0).swap(val, Ordering::Relaxed);

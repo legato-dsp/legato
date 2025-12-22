@@ -118,6 +118,14 @@ impl Resources {
         self.param_store.get(param_key)
     }
 
+    /// # Safety
+    ///
+    /// ParamKey must map to a valid index on this parameter store.
+    ///
+    /// To ensure this, this must be the same ParamKey made by the builder,
+    /// and the array must have not been resized.
+    ///
+    /// This is more of an escape hatch if a downstream user has the performance requirement.
     #[inline(always)]
     pub unsafe fn get_param_unchecked(&self, param_key: &ParamKey) -> f32 {
         unsafe { self.param_store.get_unchecked(param_key) }

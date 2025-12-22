@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
+    ValidationError,
     ast::Value,
-    builder::{SelectionKind, SelectionView, ValidationError},
+    builder::{SelectionKind, SelectionView},
     node::LegatoNode,
     nodes::audio::oversample::oversample_by_two_factory,
 };
