@@ -143,7 +143,7 @@ impl Runtime {
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
         let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
-        for (i, node_key) in sorted_order.iter().enumerate() {
+        for (_i, node_key) in sorted_order.iter().enumerate() {
             let ports = nodes[*node_key].get_node().ports();
             let audio_inputs_size = ports.audio_in.len();
 
@@ -202,7 +202,7 @@ impl Runtime {
 
 impl Node for Runtime {
     fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
-        let outputs = self.next_block(Some(&ai));
+        let outputs = self.next_block(Some(ai));
 
         debug_assert_eq!(ai.len(), ao.len());
         debug_assert_eq!(outputs.len(), ao.len());

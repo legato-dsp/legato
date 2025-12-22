@@ -4,7 +4,6 @@ use crate::{
     context::AudioContext,
     node::{Channels, Inputs, LegatoNode, Node},
     nodes::audio::fir::FirFilter,
-    out,
     ports::{PortBuilder, Ports},
     runtime::MAX_INPUTS,
 };
@@ -33,7 +32,7 @@ impl<const N: usize> Upsample<N> {
 
 impl<const N: usize> Node for Upsample<N> {
     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
-        if ai.len() == 0 {
+        if ai.is_empty() {
             return;
         };
 
@@ -61,7 +60,7 @@ impl<const N: usize> Node for Upsample<N> {
 
         self.zero_stuffed.iter().enumerate().for_each(|(c, x)| {
             if ai[c].is_some() {
-                inputs[c] = Some(&x);
+                inputs[c] = Some(x);
             }
         });
 
@@ -161,13 +160,13 @@ impl<const N: usize> Node for Oversampler<N> {
 
         let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
 
-        if ai.len() != 0 {
+        if !ai.is_empty() {
             self.upsampled_outputs
                 .iter()
                 .enumerate()
                 .for_each(|(c, x)| {
                     if ai[c].is_some() {
-                        node_inputs[c] = Some(&x);
+                        node_inputs[c] = Some(x);
                     }
                 });
         }
@@ -189,7 +188,7 @@ impl<const N: usize> Node for Oversampler<N> {
             .iter()
             .enumerate()
             .for_each(|(c, x)| {
-                downsampler_node_inputs[c] = Some(&x);
+                downsampler_node_inputs[c] = Some(x);
             });
 
         let out_chans = self.ports().audio_out.len();

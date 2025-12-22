@@ -3,7 +3,7 @@ use std::sync::Arc;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{
-    node::{Channels, Inputs},
+    node::Inputs,
     nodes::audio::delay::DelayLine,
     params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend},
     sample::AudioSampleHandle,

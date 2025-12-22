@@ -263,7 +263,7 @@ where
                     .audio_out
                     .iter()
                     .find(|x| x.name == port)
-                    .expect(&format!("Could not find index for named port {}", port))
+                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
                     .index;
 
                 vec![index]

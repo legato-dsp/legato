@@ -32,6 +32,12 @@ pub struct NodeRegistry {
     data: HashMap<String, NodeSpec>,
 }
 
+impl Default for NodeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NodeRegistry {
     pub fn new() -> Self {
         let data = HashMap::new();

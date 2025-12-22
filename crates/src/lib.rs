@@ -1,7 +1,6 @@
 #![feature(portable_simd)]
 
-use core::slice;
-use std::{collections::HashMap, fmt::Debug, path::Path};
+use std::{fmt::Debug, path::Path};
 
 use heapless::spsc::{Consumer, Producer};
 
@@ -11,7 +10,7 @@ use crate::{
     msg::LegatoMsg,
     node::{Channels, Inputs},
     params::{ParamError, ParamKey, ParamStoreFrontend},
-    runtime::{MAX_INPUTS, Runtime, RuntimeFrontend},
+    runtime::{Runtime, RuntimeFrontend},
 };
 
 pub mod ast;
