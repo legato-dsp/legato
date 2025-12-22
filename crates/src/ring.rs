@@ -432,35 +432,34 @@ mod test {
     fn scalar_and_chunk_push_random() {
         use rand::random_range;
 
-        let mut rb_a = RingBuffer::new(16);
-        let mut rb_b = RingBuffer::new(16);
+        let capacity = LANES * 4;
+        let mut rb_a = RingBuffer::new(capacity);
+        let mut rb_b = RingBuffer::new(capacity);
 
-        let mut samples = Vec::with_capacity(16);
+        let num_samples = capacity * 2; // Wrap around twice
+        let mut samples = Vec::with_capacity(num_samples);
 
-        // Some random number not cleanly divisible by chunks
-        for _ in 0..256 {
-            let sample = random_range(0.0..=1.0);
-            samples.push(sample);
+        for _ in 0..num_samples {
+            samples.push(random_range(0.0..1.0));
         }
 
         samples.iter().for_each(|x| rb_a.push(*x));
-        samples
-            .chunks_exact(LANES)
-            .for_each(|x| rb_b.push_simd(&Vf32::from_slice(x)));
 
-        // Assert that data is right
-        assert_eq!(rb_a.data, rb_b.data);
+        samples.chunks_exact(LANES).for_each(|x| {
+            rb_b.push_simd(&Vf32::from_slice(x));
+        });
 
-        let c1: Vec<f32> = (0..256).map(|x| rb_a.get_offset(x)).collect();
-        let c2: Vec<f32> = (0..256)
-            .flat_map(|x| rb_a.get_chunk_by_offset(x * LANES).to_array())
-            .collect();
+        assert_eq!(
+            rb_a.data, rb_b.data,
+            "Buffer data mismatch after SIMD pushes"
+        );
 
-        dbg!(&c1[..16]);
-        dbg!(&c2[..16]);
+        for i in 0..capacity {
+            let scalar_val = rb_a.get_offset(i);
+            let chunk = rb_a.get_chunk_by_offset(i);
+            let chunk_val = chunk.as_array()[0];
 
-        for i in 0..256 {
-            assert_eq!(c1[i], c2[i], "panicking on index {}", i)
+            assert_eq!(scalar_val, chunk_val, "Mismatch at offset {}", i);
         }
     }
 }
