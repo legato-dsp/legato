@@ -19,7 +19,7 @@ use crate::{
     params::{ParamKey, ParamMeta},
     parse::parse_legato_file,
     pipes::{Pipe, PipeRegistry},
-    ports::{Ports},
+    ports::Ports,
     registry::{NodeRegistry, audio_registry_factory, control_registry_factory},
     resources::{DelayLineKey, ResourceBuilder, SampleKey},
     runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
@@ -34,6 +34,7 @@ use crate::{
 /// bad values, nodes that don't exist, etc.
 #[derive(Clone, PartialEq, Debug)]
 pub enum ValidationError {
+    ParseError(String),
     NodeNotFound(String),
     NamespaceNotFound(String),
     InvalidParameter(String),
@@ -233,11 +234,7 @@ where
     }
 
     /// Skip the ceremony with namespaces, specs, etc. and just add a LegatoNode. This still requires an alias for connections and debugging
-    pub fn add_node_raw(
-        mut self,
-        node: LegatoNode,
-        alias: &str,
-    ) -> LegatoBuilder<ContainsNodes> {
+    pub fn add_node_raw(mut self, node: LegatoNode, alias: &str) -> LegatoBuilder<ContainsNodes> {
         let key = self.runtime.add_node(node);
 
         self.last_selection = Some(SelectionKind::Single(key));
@@ -254,6 +251,8 @@ where
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
+        dbg!(&connection);
+
         let source_indicies: Vec<usize> = match connection.source_kind {
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.source);
@@ -262,7 +261,12 @@ where
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                let index = ports.audio_out.iter().find(|x| x.name == port).expect(&format!("Could not find index for named port {}", port)).index;
+                let index = ports
+                    .audio_out
+                    .iter()
+                    .find(|x| x.name == port)
+                    .expect(&format!("Could not find index for named port {}", port))
+                    .index;
 
                 vec![index]
             }
@@ -279,13 +283,18 @@ where
             PortConnectionType::Auto => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
                 ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
-            },
+            }
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
-                let index = ports.audio_in.iter()
+                let index = ports
+                    .audio_in
+                    .iter()
                     .find(|x| x.name == port)
-                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port)).index;
+                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
+                    .index;
+
+                dbg!(index);
 
                 vec![index]
             }
@@ -408,7 +417,9 @@ where
 
 impl LegatoBuilder<DslBuilding> {
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
-        let pairs = parse_legato_file(content).unwrap();
+        let pairs = parse_legato_file(content)
+            .map_err(|x| ValidationError::ParseError(x.to_string()))
+            .unwrap();
 
         let ast = build_ast(pairs).unwrap();
 
@@ -431,14 +442,22 @@ impl LegatoBuilder<DslBuilding> {
             let source_key = self
                 .working_name_lookup
                 .get(&connection.source_name)
-                .unwrap_or_else(|| panic!("Could not find source key in connection {}",
-                    &connection.source_name));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Could not find source key in connection {}",
+                        &connection.source_name
+                    )
+                });
 
             let sink_key = self
                 .working_name_lookup
                 .get(&connection.sink_name)
-                .unwrap_or_else(|| panic!("Could not find sink key in connection {}",
-                    &connection.sink_name));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Could not find sink key in connection {}",
+                        &connection.sink_name
+                    )
+                });
 
             self._connect_ref_self(AddConnectionProps {
                 source: *source_key,
@@ -446,7 +465,7 @@ impl LegatoBuilder<DslBuilding> {
                 source_kind: connection.source_port.clone(),
                 sink_kind: connection.sink_port.clone(),
             });
-        };
+        }
 
         let sink_key = self
             .working_name_lookup
@@ -458,11 +477,14 @@ impl LegatoBuilder<DslBuilding> {
             .expect("Could not set sink!");
 
         if let Some(source) = ast.source {
-            let source_key = self.working_name_lookup
+            let source_key = self
+                .working_name_lookup
                 .get(&source.name)
                 .expect("Explicit source passed but node not found!!");
 
-            self.runtime.set_source_key(*source_key).expect("Could not set runtime source!");
+            self.runtime
+                .set_source_key(*source_key)
+                .expect("Could not set runtime source!");
         }
 
         self.build()
@@ -536,11 +558,7 @@ impl<'a> SelectionView<'a> {
         self.runtime.replace_node(key, node);
 
         // Find the working name and replace the name with the new node name, but point to the same key.
-        if let Some((old_key, _)) = self
-            .working_name_lookup
-            .iter()
-            .find(|(_, nk)| **nk == key)
-        {
+        if let Some((old_key, _)) = self.working_name_lookup.iter().find(|(_, nk)| **nk == key) {
             self.working_name_lookup.remove(&old_key.clone());
             self.working_name_lookup.insert(working_name, key);
         }
@@ -562,11 +580,7 @@ impl<'a> SelectionView<'a> {
         self.runtime.remove_node(key);
 
         // Remove the key from the working name lookup
-        if let Some((old_key, _)) = self
-            .working_name_lookup
-            .iter()
-            .find(|(_, nk)| **nk == key)
-        {
+        if let Some((old_key, _)) = self.working_name_lookup.iter().find(|(_, nk)| **nk == key) {
             self.working_name_lookup.remove(&old_key.clone());
         }
     }
@@ -583,7 +597,7 @@ impl<'a> SelectionView<'a> {
 /// A small slice of the runtime exposed for nodes in their node factories.
 ///
 /// This is useful to say reserve delay lines, or other shared logic.
-/// 
+///
 /// TODO: Unify the interface between sample, delay, and param_store?
 pub struct ResourceBuilderView<'a> {
     pub config: &'a Config,
@@ -591,7 +605,6 @@ pub struct ResourceBuilderView<'a> {
     pub sample_keys: &'a mut HashMap<String, SampleKey>,
     pub delay_keys: &'a mut HashMap<String, DelayLineKey>,
     pub sample_frontends: &'a mut HashMap<String, AudioSampleFrontend>,
-
 }
 
 impl<'a> ResourceBuilderView<'a> {
@@ -643,6 +656,7 @@ impl<'a> ResourceBuilderView<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct AddConnectionProps {
     pub source: NodeKey,
     pub source_kind: PortConnectionType,
@@ -669,12 +683,10 @@ fn one_to_one(
             source: ConnectionEntry {
                 node_key: props.source,
                 port_index: source_index,
-                
             },
             sink: ConnectionEntry {
                 node_key: props.sink,
                 port_index: sink_index,
-                
             },
         })
         .expect("Could not add edge");
@@ -701,30 +713,26 @@ fn one_to_n(
             source: ConnectionEntry {
                 node_key: props.source,
                 port_index: source_index,
-                
             },
             sink: ConnectionEntry {
                 node_key: mixer,
                 port_index: 0,
-                
             },
         })
         .expect("Could not add edge");
 
     // Wire fanout connection to each sink. We add this node in order to change the gain when fanning out
-    
+
     for sink_index in sink_indicies.iter() {
         runtime
             .add_edge(Connection {
                 source: ConnectionEntry {
                     node_key: mixer,
                     port_index: 0,
-                    
                 },
                 sink: ConnectionEntry {
                     node_key: props.sink,
                     port_index: *sink_index,
-                    
                 },
             })
             .expect("Could not add edge");
@@ -753,12 +761,10 @@ fn n_to_one(
                 source: ConnectionEntry {
                     node_key: props.source,
                     port_index: *source_index,
-                    
                 },
                 sink: ConnectionEntry {
                     node_key: mixer,
                     port_index: i,
-                    
                 },
             })
             .expect("Could not add edge");
@@ -770,12 +776,10 @@ fn n_to_one(
             source: ConnectionEntry {
                 node_key: mixer,
                 port_index: 0,
-                
             },
             sink: ConnectionEntry {
                 node_key: props.sink,
                 port_index: sink_index,
-                
             },
         })
         .expect("Could not add edge");
@@ -797,12 +801,10 @@ fn n_to_n(
                     source: ConnectionEntry {
                         node_key: props.source,
                         port_index: *source,
-                        
                     },
                     sink: ConnectionEntry {
                         node_key: props.sink,
                         port_index: *sink,
-                        
                     },
                 })
                 .expect("Could not add edge");
