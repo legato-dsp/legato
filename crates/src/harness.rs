@@ -5,7 +5,7 @@ use crate::{
     runtime::{Runtime, build_runtime},
 };
 
-pub fn get_node_test_harness(node: Box<dyn DynNode>) -> Runtime {
+pub fn get_node_test_harness_stereo_4096(node: Box<dyn DynNode>) -> Runtime {
     let config = Config {
         sample_rate: 48_000,
         block_size: 4096,
