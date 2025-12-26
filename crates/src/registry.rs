@@ -17,7 +17,7 @@ use crate::{
             svf::{FilterType, Svf},
             sweep::Sweep,
         },
-        control::signal::Signal,
+        control::{map::Map, signal::Signal},
     },
     params::ParamMeta,
     spec::{NodeFactory, NodeSpec},
@@ -251,31 +251,63 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
 pub fn control_registry_factory() -> NodeRegistry {
     let mut data = HashMap::new();
-    data.extend([node_spec!(
-        "signal".into(),
-        required = ["name", "min", "max", "default"],
-        optional = ["smoothing"],
-        build = |rb, p| {
-            let name = p.get_str("name").expect("Must pass name to signal!");
-            let min = p.get_f32("min").expect("Must provide min to signal!");
-            let max = p.get_f32("max").expect("Must provide max to signal!");
-            let default = p
-                .get_f32("default")
-                .expect("Must provide default(f32) to signal!");
+    data.extend([
+        node_spec!(
+            "signal".into(),
+            required = ["name", "min", "max", "default"],
+            optional = ["smoothing"],
+            build = |rb, p| {
+                let name = p.get_str("name").expect("Must pass name to signal!");
+                let min = p.get_f32("min").expect("Must provide min to signal!");
+                let max = p.get_f32("max").expect("Must provide max to signal!");
+                let default = p
+                    .get_f32("default")
+                    .expect("Must provide default(f32) to signal!");
 
-            let smoothing = p.get_f32("smoothing").unwrap_or(0.5).clamp(0.0, 1.0);
+                let smoothing = p.get_f32("smoothing").unwrap_or(0.5).clamp(0.0, 1.0);
 
-            let meta = ParamMeta {
-                name: name.clone(),
-                min,
-                max,
-                default,
-            };
+                let meta = ParamMeta {
+                    name: name.clone(),
+                    min,
+                    max,
+                    default,
+                };
 
-            let key = rb.add_param(name, meta);
+                let key = rb.add_param(name, meta);
 
-            Ok(Box::new(Signal::new(key, default, smoothing)))
-        }
-    )]);
+                Ok(Box::new(Signal::new(key, default, smoothing)))
+            }
+        ),
+        node_spec!(
+            "map".into(),
+            required = ["range", "new_range "],
+            optional = ["chans"],
+            build = |_, p| {
+                let range = p
+                    .get_array_f32("range")
+                    .expect("Must pass original range to map");
+                let new_range = p
+                    .get_array_f32("new_range")
+                    .expect("Must pass new_range to map");
+                let chans = p.get_usize("chans").unwrap_or(1);
+
+                // Make sure range is correct length
+                assert!(range.len() == 2);
+                assert!(new_range.len() == 2);
+
+                // Probably a nicer way to do this
+
+                let mut r_0 = [0.0; 2];
+                let mut r_1 = [0.0; 2];
+
+                for i in 0..2 {
+                    r_0[i] = range[i];
+                    r_1[i] = new_range[i]
+                }
+
+                Ok(Box::new(Map::new(r_0, r_1)))
+            }
+        ),
+    ]);
     NodeRegistry { data }
 }

@@ -12,22 +12,23 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
+            sine: lfo { freq: 6.0, chans: 1 },
             sine { freq: 440.0, chans: 2 }
         }
 
         control {
-            signal { name: "pitch", default: 440.0, min: 0.0, max: 24000.0 }
+            map { range: [-1.0, 1.0], new_range: [432.0, 448.0] }
         }
 
-        signal >> sine
+        lfo >> map >> sine[0]
 
         { sine }
     "#,
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        block_size: 1024,
+        sample_rate: 44_100,
+        block_size: 4096,
         channels: 2,
         initial_graph_capacity: 4,
     };
@@ -43,6 +44,8 @@ fn main() {
         config.sample_rate as u32,
     );
 
+    dbg!(&app);
+
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
 
@@ -57,10 +60,10 @@ fn main() {
         buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
     };
 
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(5));
-        frontend.set_param("pitch", 880.0).unwrap();
-    });
+    // std::thread::spawn(move || {
+    //     std::thread::sleep(Duration::from_secs(5));
+    //     frontend.set_param("pitch", 880.0).unwrap();
+    // });
 
     start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!");
 }
