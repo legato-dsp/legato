@@ -21,6 +21,7 @@ pub mod context;
 pub mod graph;
 pub mod harness;
 pub mod math;
+pub mod midi;
 pub mod msg;
 pub mod node;
 pub mod out;

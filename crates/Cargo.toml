@@ -17,6 +17,8 @@ pest = "2.8.3"
 pest_derive = "2.8.3"
 heapless = "0.9.2"
 atomic_float = "1.1.0"
+midir = "0.10.3"
+ringbuf = "0.4.8"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
