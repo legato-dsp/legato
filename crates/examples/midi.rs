@@ -5,10 +5,10 @@ use legato::midi::MidiMessage;
 use midir::{Ignore, MidiInput};
 
 fn main() {
-    match run() {
-        Ok(_) => (),
-        Err(err) => println!("Error: {}", err),
-    }
+    std::thread::spawn(|| {
+        let _ = run();
+    });
+    std::thread::park();
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
@@ -47,19 +47,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     let in_port_name = midi_in.port_name(in_port)?;
 
     // _conn_in needs to be a named parameter, because it needs to be kept alive until the end of the scope
+
     let _conn_in = midi_in.connect(
         in_port,
         "midir-read-input",
         move |_, message, _| {
             let msg = MidiMessage::try_from(message);
-            match msg {
-                Ok(data) => {
-                    dbg!(&data);
-                }
-                Err(err) => {
-                    dbg!(&err);
-                }
-            };
+            let _ = dbg!(msg);
         },
         (),
     )?;

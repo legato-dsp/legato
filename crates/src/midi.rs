@@ -1,16 +1,23 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, thread::JoinHandle};
 
-use ringbuf::traits::{Consumer, Producer};
-use ringbuf::{HeapRb, SharedRb, storage::Heap, traits::Split, wrap::caching::Caching};
+use crossbeam::{
+    channel::{Receiver, Sender, bounded},
+    select,
+};
+use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-pub type MidiProducer = Caching<Arc<SharedRb<Heap<MidiMessage>>>, true, false>;
-pub type MidiConsumer = Caching<Arc<SharedRb<Heap<MidiMessage>>>, false, true>;
+pub type MidiProducer = Sender<MidiMessage>;
+pub type MidiReceiver = Receiver<MidiMessage>;
 
 /// A number of errors that can occur when parsing midi messages
 #[derive(Debug, Clone, PartialEq)]
 pub enum MidiError {
     CouldNotParse,
     NotImplemented,
+    InvalidPort,
+    RingbufferFull,
+    ConnectionError(String),
+    SendError(String),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -33,7 +40,8 @@ impl Debug for PitchBend {
     }
 }
 
-// Prefixes for various channels
+// Prefixes for various functionality
+
 const NOTE_ON: u8 = 0x9;
 const NOTE_OFF: u8 = 0x8;
 const CONTROL: u8 = 0xB;
@@ -50,7 +58,13 @@ const SONG_POSITION_POINTER: u8 = 0xF2;
 
 /// Limited subset of midi functionality for now.
 ///
-/// Spec taken from https://github.com/mixxxdj/mixxx/wiki/MIDI-Crash-Course
+/// Spec taken from this nice overview: https://github.com/mixxxdj/mixxx/wiki/MIDI-Crash-Course
+///
+/// Currently not using more complicated system messages as this may require
+/// a dedicated parser and is a bit more complicated. Basically, some messages
+/// are a flag to start capturing everything in-between the start and end flag,
+/// and pass it to the system. This is useful for presets, updates, etc, but is
+/// a bit beyond the scope here for the time being.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MidiMessageKind {
     NoteOn { note: u8, velocity: u8 },
@@ -68,44 +82,174 @@ pub enum MidiMessageKind {
     SongPositionPointer { value: u16 },
 }
 
-/// The frontend to send MidiMessages to.
-///
-/// This should live on a different thread than the audio thread.
-pub struct MidiFrontend {
+pub struct MidiListener {
     producer: MidiProducer,
 }
 
-impl MidiFrontend {
+impl MidiListener {
     pub fn new(producer: MidiProducer) -> Self {
         Self { producer }
     }
-    pub fn send(&mut self, msg: MidiMessage) -> Result<(), MidiMessage> {
-        self.producer.try_push(msg)
+    /// Send a midi message to the midi store
+    pub fn send_to_store(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        self.producer
+            .try_send(msg)
+            .map_err(|_| MidiError::RingbufferFull)
     }
 }
 
-/// The rt-safe backend that the audio graph uses for
-/// to drain midi messages.
-pub struct MidiBackend {
-    consumer: MidiConsumer,
+pub struct MidiWriter {
+    receiver: MidiReceiver,
 }
 
-impl MidiBackend {
-    pub fn new(consumer: MidiConsumer) -> Self {
-        Self { consumer }
+impl MidiWriter {
+    pub fn new(receiver: MidiReceiver) -> Self {
+        Self { receiver }
     }
-    pub fn recv(&mut self) -> Option<&MidiMessage> {
+    pub fn send_to_midi_output(
+        &mut self,
+        msg: MidiMessage,
+        connection: &mut MidiOutputConnection,
+    ) -> Result<(), MidiError> {
+        let encoded = msg.encode();
+        let sliced = &encoded.data[..encoded.len];
+        connection
+            .send(&sliced)
+            .map_err(|x| MidiError::SendError(x.to_string()))
+    }
+    /// Drain the incoming messages and send to the system.
+    /// You will most likely want to run this on a dedicated thread.
+    ///
+    /// TODO: Use some sort of timing to eliminate jitter.
+    pub fn run(mut self, connection: &mut MidiOutputConnection) {
+        loop {
+            select! {
+                recv(self.receiver) -> msg => {
+                    if let Ok(inner) = msg {
+                        let _ = self.send_to_midi_output(inner, connection);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct MidiStore {
+    consumer: MidiReceiver,
+    system_midi_producer: MidiProducer,
+}
+
+impl MidiStore {
+    pub fn new(consumer: MidiReceiver, system_midi_producer: MidiProducer) -> Self {
+        Self {
+            consumer,
+            system_midi_producer,
+        }
+    }
+    /// Send a message from the store to the midi runtime to be executed on the system
+    pub fn send_to_system_midi(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        self.system_midi_producer
+            .try_send(msg)
+            .map_err(|x| MidiError::SendError(x.to_string()))
+    }
+    /// Pop a midi message from the system
+    pub fn recv(&mut self) -> Option<MidiMessage> {
         self.consumer.iter().next()
     }
 }
 
-pub fn build_midi(capacity: usize) -> (MidiFrontend, MidiBackend) {
-    let (prod, cons) = HeapRb::<MidiMessage>::new(capacity).split();
+pub struct MidiRuntime {
+    reader_handle: MidiInputConnection<()>,
+    writer_handle: JoinHandle<()>,
+    store: MidiStore,
+}
 
-    let frontend = MidiFrontend::new(prod);
-    let backend = MidiBackend::new(cons);
+impl MidiRuntime {
+    pub fn new(
+        reader_handle: MidiInputConnection<()>,
+        writer_handle: JoinHandle<()>,
+        store: MidiStore,
+    ) -> Self {
+        Self {
+            reader_handle,
+            writer_handle,
+            store,
+        }
+    }
+}
 
-    (frontend, backend)
+pub fn start_midi_thread(
+    capacity: usize,
+    client_name: &'static str,
+    in_port: MidiPortKind,
+    out_port: MidiPortKind,
+    port_name: &'static str,
+) -> Result<MidiRuntime, MidiError> {
+    // Setup the MidiInput with our client name
+    let mut input = MidiInput::new(client_name).expect("Could not create MidiInput device!");
+    // Ignore unsupported messages
+    input.ignore(Ignore::SysexAndActiveSense);
+
+    let in_ports = input.ports();
+    // Find our port index from the enum passed in
+    let in_port_index = in_port
+        .select_port_in(&input)
+        .expect("Could not create input port!");
+
+    let input_port = &in_ports[in_port_index];
+
+    // These are the channels that signal from reader -> store and store -> writer
+    let (midi_reader_prod, midi_reader_consumer) = bounded::<MidiMessage>(capacity);
+    let (midi_writer_prod, midi_writer_consumer) = bounded::<MidiMessage>(capacity);
+
+    let mut midi_listener = MidiListener::new(midi_reader_prod);
+
+    // The input connection thread
+    let input_connection = input
+        .connect(
+            &input_port,
+            port_name,
+            move |_, message, _| {
+                if let Ok(msg) = MidiMessage::try_from(message) {
+                    // TODO: Proper app wide error handling
+                    let _ = midi_listener.send_to_store(msg);
+                }
+            },
+            (),
+        )
+        .map_err(|x| MidiError::ConnectionError(x.to_string()))?;
+
+    let output = MidiOutput::new(client_name).expect("Could not create MidiOutput device!");
+
+    let midi_writer = MidiWriter::new(midi_writer_consumer);
+
+    let out_ports = output.ports();
+    // Create output port
+    let out_port_index = out_port
+        .select_port_out(&output)
+        .expect("Could not create input port!");
+
+    let output_port = &out_ports[out_port_index];
+
+    let mut output_connection = output
+        .connect(output_port, port_name)
+        .map_err(|x| MidiError::ConnectionError(x.to_string()))?;
+
+    // Spawning the writer thread, we keep the handle as we will use this on the MidiRuntime struct
+    let writer_handle = std::thread::spawn(move || {
+        midi_writer.run(&mut output_connection);
+    });
+
+    // Here we assemble the store with the required producers and consumers. This is used in the audio thread to get messages, or send them.
+    let store = MidiStore {
+        consumer: midi_reader_consumer,
+        system_midi_producer: midi_writer_prod,
+    };
+
+    // Assemble the final midi runtime.
+    let runtime = MidiRuntime::new(input_connection, writer_handle, store);
+
+    Ok(runtime)
 }
 
 /// A small struct to easily create variable slices of our midi
@@ -116,7 +260,7 @@ pub fn build_midi(capacity: usize) -> (MidiFrontend, MidiBackend) {
 /// for the Midir crate.
 pub struct EncodedMidi {
     pub data: [u8; 3],
-    pub len: u8,
+    pub len: usize,
 }
 
 /// A minimal struct wrapping the message kind and targeted channel
@@ -319,6 +463,51 @@ impl TryFrom<&[u8]> for MidiMessage {
                 })
             }
             _ => Err(MidiError::NotImplemented),
+        }
+    }
+}
+
+#[derive(Default, Clone, PartialEq)]
+pub enum MidiPortKind {
+    #[default]
+    Default,
+    Index(usize),
+    Named(&'static str),
+}
+
+impl MidiPortKind {
+    pub fn select_port_in(&self, midi_input: &MidiInput) -> Result<usize, MidiError> {
+        match self {
+            MidiPortKind::Default => Ok(0),
+            MidiPortKind::Index(i) => Ok(*i),
+            MidiPortKind::Named(name) => {
+                if let Some(idx) = midi_input
+                    .ports()
+                    .iter()
+                    .position(|x| midi_input.port_name(x).unwrap() == *name)
+                {
+                    Ok(idx)
+                } else {
+                    return Err(MidiError::InvalidPort);
+                }
+            }
+        }
+    }
+    pub fn select_port_out(&self, midi_output: &MidiOutput) -> Result<usize, MidiError> {
+        match self {
+            MidiPortKind::Default => Ok(0),
+            MidiPortKind::Index(i) => Ok(*i),
+            MidiPortKind::Named(name) => {
+                if let Some(idx) = midi_output
+                    .ports()
+                    .iter()
+                    .position(|x| midi_output.port_name(x).unwrap() == *name)
+                {
+                    Ok(idx)
+                } else {
+                    return Err(MidiError::InvalidPort);
+                }
+            }
         }
     }
 }
