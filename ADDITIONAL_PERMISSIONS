@@ -1,22 +1,25 @@
-ADDITIONAL_PERMISSIONS.txt
+Copyright (c) 2026 Legato DSP
 
-Copyright (c) 2025 Legato DSP
+Additional Permission Under GNU AGPL v3
 
-You are granted the ADDITIONAL permission to distribute binaries, applications, VST plugins, 
-hardware or modifications derived from this software without releasing the corresponding 
-source code, provided that your use does NOT fall into the following domains:
+As an additional permission under Section 7 of the GNU Affero General Public License v3,
+you are granted permission to distribute works derived from this software in binary-only
+form without providing Corresponding Source, provided that all of the following conditions
+are met:
 
-  - Visual editors for plugins
-  - Paid downloadable content (DLC), extensions or forks of the framework
-  - Digital audio workstations (DAWs)
-  - Starter kits or Legato specific UI frameworks
+1. The derived work is an end-user-facing software or hardware application whose primary purpose is
+   interactive music creation.
 
-Any work that falls within the above domains must comply with the existing AGPL license.
+2. The derived work is not:
+   a) A digital audio workstation (DAW);
+   b) A development tool, editor, SDK, or authoring environment for plugins or audio content;
+   c) A paid downloadable content pack, extension, fork, or framework derived from Legato DSP;
+   d) An embedded system, firmware, or dedicated hardware device, including automotive or
+      consumer electronics systems, not designed for interactive music creation.
 
-This additional permission is granted in addition to the AGPL and does not replace it.
-All other terms of the AGPL remain in effect.
+Any derived work that does not meet all of the above conditions must comply fully with the
+terms of the GNU Affero General Public License v3, including the obligation to provide
+Corresponding Source.
 
-Negotiable Commercial Licenses:
+This additional permission does not modify or replace the AGPL; all other terms remain in effect.
 
-For use beyond the above permissions, including proprietary products in the restricted domains,
-a separate commercial license may be negotiated on a case-by-case basis.
