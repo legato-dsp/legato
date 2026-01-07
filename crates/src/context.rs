@@ -1,5 +1,6 @@
 use crate::{
     config::Config,
+    midi::{MidiError, MidiMessage, MidiStore},
     params::{ParamError, ParamKey},
     resources::Resources,
 };
@@ -12,6 +13,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AudioContext {
     config: Config,
+    midi_store: Option<MidiStore>,
     resources: Resources,
 }
 
@@ -19,6 +21,7 @@ impl AudioContext {
     pub fn new(config: Config) -> Self {
         Self {
             config,
+            midi_store: None,
             resources: Resources::default(),
         }
     }
@@ -44,6 +47,16 @@ impl AudioContext {
     }
     pub fn get_param(&self, key: &ParamKey) -> Result<f32, ParamError> {
         self.resources.get_param(key)
+    }
+    // Add a midi store to the runtime.
+    pub fn set_midi_store(&mut self, store: MidiStore) {
+        self.midi_store = Some(store);
+    }
+    /// Insert a midi message into the store.
+    #[inline(always)]
+    pub fn insert_midi_msg(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        let store = self.midi_store.as_mut().unwrap();
+        store.insert(msg)
     }
     pub unsafe fn get_param_unchecked(&self, key: &ParamKey) -> f32 {
         unsafe { self.resources.get_param_unchecked(key) }

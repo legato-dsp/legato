@@ -7,6 +7,7 @@ use heapless::spsc::{Consumer, Producer};
 use crate::{
     builder::ValidationError,
     config::Config,
+    midi::{MidiMessage, MidiMessageKind, MidiRuntimeFrontend},
     msg::LegatoMsg,
     node::{Channels, Inputs},
     params::{ParamError, ParamKey, ParamStoreFrontend},
@@ -47,6 +48,7 @@ pub enum LegatoError {
 
 pub struct LegatoApp {
     runtime: Runtime,
+    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     consumer: Consumer<'static, LegatoMsg>,
 }
 
@@ -54,6 +56,7 @@ impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
         Self {
             runtime,
+            midi_runtime_frontend: None,
             consumer: receiver,
         }
     }
@@ -64,6 +67,14 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
+        // If we have a midi runtime, drain it.
+        if let Some(midi_runtime) = &self.midi_runtime_frontend {
+            let ctx = self.runtime.get_context_mut();
+            while let Some(msg) = midi_runtime.recv() {
+                // TOOD: Realtime logging with channel maybe?
+                let _ = ctx.insert_midi_msg(msg);
+            }
+        }
         // Handle messages from the LegatoFrontend
         while let Some(msg) = self.consumer.dequeue() {
             self.runtime.handle_msg(msg);

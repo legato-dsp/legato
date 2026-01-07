@@ -1,4 +1,4 @@
-use std::{fmt::Debug, thread::JoinHandle};
+use std::{fmt::Debug, sync::Arc, thread::JoinHandle};
 
 use crossbeam::{
     channel::{Receiver, Sender, bounded},
@@ -75,11 +75,14 @@ pub enum MidiMessageKind {
     Control { control_number: u8, value: u8 },
     PitchWheel { shift: PitchBend },
     // Basic clock functionality
+    // TODO: Do we make these nodes? Do we make these control the runtime?
     Start,
     Stop,
     Clock,
     Continue,
     SongPositionPointer { value: u16 },
+    // Dummy Message Only Used for Preallocated
+    Dummy,
 }
 
 pub struct MidiListener {
@@ -134,47 +137,141 @@ impl MidiWriter {
     }
 }
 
-pub struct MidiStore {
-    consumer: MidiReceiver,
-    system_midi_producer: MidiProducer,
+/// A small struct to send messages to the midi-writer
+pub struct MidiWriterFrontend {
+    producer: MidiProducer,
 }
 
-impl MidiStore {
-    pub fn new(consumer: MidiReceiver, system_midi_producer: MidiProducer) -> Self {
-        Self {
-            consumer,
-            system_midi_producer,
-        }
+impl MidiWriterFrontend {
+    pub fn new(producer: MidiProducer) -> Self {
+        Self { producer }
     }
     /// Send a message from the store to the midi runtime to be executed on the system
-    pub fn send_to_system_midi(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
-        self.system_midi_producer
+    #[inline(always)]
+    pub fn send_to_system_midi(&self, msg: MidiMessage) -> Result<(), MidiError> {
+        self.producer
             .try_send(msg)
             .map_err(|x| MidiError::SendError(x.to_string()))
     }
-    /// Pop a midi message from the system
-    pub fn recv(&mut self) -> Option<MidiMessage> {
-        self.consumer.iter().next()
+}
+
+const MIDI_CHANS: usize = 16;
+
+#[derive(Clone)]
+/// The MidiStore stores Midi messages in a flat layout.
+///
+/// So, channel 0 is 0..per_chan_cap, 1 is per_chan_cap..2*per_chan_cap, etc.
+pub struct MidiStore {
+    channel_messages: Vec<MidiMessageKind>,
+    channel_messages_count: [usize; MIDI_CHANS],
+    general_messages: Vec<MidiMessageKind>,
+    general_messages_count: usize,
+    capacity: usize,
+}
+
+impl MidiStore {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            channel_messages: vec![MidiMessageKind::Dummy; capacity * MIDI_CHANS],
+            channel_messages_count: [0; MIDI_CHANS],
+            general_messages: vec![MidiMessageKind::Dummy; capacity],
+            general_messages_count: 0,
+            capacity,
+        }
+    }
+    /// Clear the messages. We still have the same underlying allocation.
+    pub fn clear(&mut self) {
+        self.channel_messages.fill(MidiMessageKind::Dummy);
+        self.general_messages.fill(MidiMessageKind::Dummy);
+        self.channel_messages_count = [0; MIDI_CHANS];
+        self.general_messages_count = 0;
+    }
+
+    #[inline(always)]
+    pub fn insert(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        let chan = msg.channel_idx as usize;
+        match msg.data {
+            // Channel messages
+            MidiMessageKind::NoteOn { .. }
+            | MidiMessageKind::NoteOff { .. }
+            | MidiMessageKind::Control { .. }
+            | MidiMessageKind::PolyphonicAftertouch { .. }
+            | MidiMessageKind::ChannelAftertouch { .. }
+            | MidiMessageKind::PitchWheel { .. } => {
+                if chan >= MIDI_CHANS {
+                    return Err(MidiError::InvalidPort);
+                }
+
+                let count = self.channel_messages_count[chan];
+                if count >= self.capacity {
+                    return Err(MidiError::RingbufferFull);
+                }
+
+                let index = chan * self.capacity + count;
+                self.channel_messages[index] = msg.data;
+                self.channel_messages_count[chan] += 1;
+
+                return Ok(());
+            }
+            MidiMessageKind::Start
+            | MidiMessageKind::Continue
+            | MidiMessageKind::Clock
+            | MidiMessageKind::Stop
+            | MidiMessageKind::SongPositionPointer { .. } => {
+                let count = self.general_messages_count;
+                if count >= self.capacity {
+                    return Err(MidiError::RingbufferFull);
+                }
+
+                self.general_messages[count] = msg.data;
+                self.general_messages_count += 1;
+
+                return Ok(());
+            }
+            MidiMessageKind::Dummy => unreachable!(),
+        }
+    }
+    pub fn get_channel(&self, chan: usize) -> &[MidiMessageKind] {
+        debug_assert!(chan < MIDI_CHANS);
+
+        let start = self.capacity * chan;
+        let end = start + self.capacity;
+
+        &self.channel_messages[start..end]
+    }
+    pub fn get_general(&self) -> &[MidiMessageKind] {
+        &self.general_messages
     }
 }
 
-pub struct MidiRuntime {
-    reader_handle: MidiInputConnection<()>,
-    writer_handle: JoinHandle<()>,
-    store: MidiStore,
+pub struct MidiRuntimeFrontend {
+    _reader_handle: MidiInputConnection<()>,
+    _writer_handle: JoinHandle<()>,
+    writer_frontend: Arc<MidiWriterFrontend>,
+    reader_consumer: MidiReceiver,
 }
 
-impl MidiRuntime {
+impl MidiRuntimeFrontend {
     pub fn new(
         reader_handle: MidiInputConnection<()>,
         writer_handle: JoinHandle<()>,
-        store: MidiStore,
+        writer_frontend: Arc<MidiWriterFrontend>,
+        consumer: MidiReceiver,
     ) -> Self {
         Self {
-            reader_handle,
-            writer_handle,
-            store,
+            _reader_handle: reader_handle,
+            _writer_handle: writer_handle,
+            writer_frontend,
+            reader_consumer: consumer,
         }
+    }
+    #[inline(always)]
+    pub fn send(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        self.writer_frontend.send_to_system_midi(msg)
+    }
+    #[inline(always)]
+    pub fn recv(&self) -> Option<MidiMessage> {
+        self.reader_consumer.recv().ok()
     }
 }
 
@@ -184,7 +281,7 @@ pub fn start_midi_thread(
     in_port: MidiPortKind,
     out_port: MidiPortKind,
     port_name: &'static str,
-) -> Result<MidiRuntime, MidiError> {
+) -> Result<(MidiRuntimeFrontend, Arc<MidiWriterFrontend>), MidiError> {
     // Setup the MidiInput with our client name
     let mut input = MidiInput::new(client_name).expect("Could not create MidiInput device!");
     // Ignore unsupported messages
@@ -205,7 +302,7 @@ pub fn start_midi_thread(
     let mut midi_listener = MidiListener::new(midi_reader_prod);
 
     // The input connection thread
-    let input_connection = input
+    let reader_handle = input
         .connect(
             &input_port,
             port_name,
@@ -240,16 +337,17 @@ pub fn start_midi_thread(
         midi_writer.run(&mut output_connection);
     });
 
-    // Here we assemble the store with the required producers and consumers. This is used in the audio thread to get messages, or send them.
-    let store = MidiStore {
-        consumer: midi_reader_consumer,
-        system_midi_producer: midi_writer_prod,
-    };
+    let writer_frontend = Arc::new(MidiWriterFrontend::new(midi_writer_prod));
 
     // Assemble the final midi runtime.
-    let runtime = MidiRuntime::new(input_connection, writer_handle, store);
+    let runtime = MidiRuntimeFrontend::new(
+        reader_handle,
+        writer_handle,
+        writer_frontend.clone(),
+        midi_reader_consumer,
+    );
 
-    Ok(runtime)
+    Ok((runtime, writer_frontend))
 }
 
 /// A small struct to easily create variable slices of our midi
@@ -355,6 +453,7 @@ impl MidiMessage {
 
                 EncodedMidi { data, len: 3 }
             }
+            MidiMessageKind::Dummy => unreachable!(),
         }
     }
 }
