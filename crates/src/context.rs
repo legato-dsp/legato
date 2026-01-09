@@ -52,12 +52,23 @@ impl AudioContext {
     pub fn set_midi_store(&mut self, store: MidiStore) {
         self.midi_store = Some(store);
     }
+    pub fn get_midi_store(&self) -> Option<&MidiStore> {
+        self.midi_store.as_ref()
+    }
     /// Insert a midi message into the store.
     #[inline(always)]
     pub fn insert_midi_msg(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
         let store = self.midi_store.as_mut().unwrap();
         store.insert(msg)
     }
+
+    #[inline(always)]
+    pub fn clear_midi(&mut self) {
+        if let Some(store) = &mut self.midi_store {
+            store.clear();
+        }
+    }
+
     pub unsafe fn get_param_unchecked(&self, key: &ParamKey) -> f32 {
         unsafe { self.resources.get_param_unchecked(key) }
     }

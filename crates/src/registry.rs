@@ -18,6 +18,7 @@ use crate::{
             sweep::Sweep,
         },
         control::{map::Map, signal::Signal},
+        midi::basic::Voice,
     },
     params::ParamMeta,
     spec::{NodeFactory, NodeSpec},
@@ -281,7 +282,7 @@ pub fn control_registry_factory() -> NodeRegistry {
         node_spec!(
             "map".into(),
             required = ["range", "new_range "],
-            optional = ["chans"],
+            optional = [],
             build = |_, p| {
                 let range = p
                     .get_array_f32("range")
@@ -289,7 +290,6 @@ pub fn control_registry_factory() -> NodeRegistry {
                 let new_range = p
                     .get_array_f32("new_range")
                     .expect("Must pass new_range to map");
-                let chans = p.get_usize("chans").unwrap_or(1);
 
                 // Make sure range is correct length
                 assert!(range.len() == 2);
@@ -309,5 +309,22 @@ pub fn control_registry_factory() -> NodeRegistry {
             }
         ),
     ]);
+    NodeRegistry { data }
+}
+
+pub fn midi_registry_factory() -> NodeRegistry {
+    let mut data = HashMap::new();
+    data.extend([node_spec!(
+        "voice".into(),
+        required = ["chan"],
+        optional = [],
+        build = |_, p| {
+            let channel = p
+                .get_usize("chan")
+                .expect("Must provide midi channel (chan) (0-15) to voice!");
+            assert!(channel <= 15);
+            Ok(Box::new(Voice::new(channel)))
+        }
+    )]);
     NodeRegistry { data }
 }

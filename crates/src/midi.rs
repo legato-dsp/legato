@@ -181,14 +181,13 @@ impl MidiStore {
     }
     /// Clear the messages. We still have the same underlying allocation.
     pub fn clear(&mut self) {
-        self.channel_messages.fill(MidiMessageKind::Dummy);
-        self.general_messages.fill(MidiMessageKind::Dummy);
         self.channel_messages_count = [0; MIDI_CHANS];
         self.general_messages_count = 0;
     }
 
     #[inline(always)]
     pub fn insert(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+        dbg!(&msg);
         let chan = msg.channel_idx as usize;
         match msg.data {
             // Channel messages
@@ -235,9 +234,9 @@ impl MidiStore {
         debug_assert!(chan < MIDI_CHANS);
 
         let start = self.capacity * chan;
-        let end = start + self.capacity;
+        let count = self.channel_messages_count[chan];
 
-        &self.channel_messages[start..end]
+        &self.channel_messages[start..start + count]
     }
     pub fn get_general(&self) -> &[MidiMessageKind] {
         &self.general_messages
@@ -271,7 +270,7 @@ impl MidiRuntimeFrontend {
     }
     #[inline(always)]
     pub fn recv(&self) -> Option<MidiMessage> {
-        self.reader_consumer.recv().ok()
+        self.reader_consumer.try_recv().ok()
     }
 }
 

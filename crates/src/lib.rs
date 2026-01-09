@@ -70,9 +70,13 @@ impl LegatoApp {
         // If we have a midi runtime, drain it.
         if let Some(midi_runtime) = &self.midi_runtime_frontend {
             let ctx = self.runtime.get_context_mut();
+            ctx.clear_midi(); // Clear our old messages
             while let Some(msg) = midi_runtime.recv() {
+                dbg!(&msg);
                 // TOOD: Realtime logging with channel maybe?
-                let _ = ctx.insert_midi_msg(msg);
+                if let Err(e) = ctx.insert_midi_msg(msg) {
+                    dbg!(e);
+                }
             }
         }
         // Handle messages from the LegatoFrontend
@@ -80,6 +84,10 @@ impl LegatoApp {
             self.runtime.handle_msg(msg);
         }
         self.runtime.next_block(external_inputs)
+    }
+
+    pub fn set_midi_runtime(&mut self, rt: MidiRuntimeFrontend) {
+        self.midi_runtime_frontend = Some(rt);
     }
 
     pub fn get_config(&self) -> Config {
