@@ -305,8 +305,8 @@ pub fn start_midi_thread(
         .connect(
             &input_port,
             port_name,
-            move |_, message, _| {
-                if let Ok(msg) = MidiMessage::try_from(message) {
+            move |timestamp, message, _| {
+                if let Ok(msg) = parse_midi(message, timestamp) {
                     // TODO: Proper app wide error handling
                     let _ = midi_listener.send_to_store(msg);
                 }
@@ -364,6 +364,7 @@ pub struct EncodedMidi {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MidiMessage {
     pub data: MidiMessageKind,
+    pub timestamp: u64,
     pub channel_idx: u8,
 }
 
@@ -457,111 +458,115 @@ impl MidiMessage {
     }
 }
 
-impl TryFrom<&[u8]> for MidiMessage {
-    type Error = MidiError;
-    fn try_from(message: &[u8]) -> Result<Self, Self::Error> {
-        if message.len() < 1 {
-            return Err(MidiError::CouldNotParse);
+pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiError> {
+    if message.len() < 1 {
+        return Err(MidiError::CouldNotParse);
+    }
+
+    let message_byte = message[0];
+
+    let message_kind = message_byte >> 4;
+    let message_channel_index = message_byte & 0x0F;
+
+    match message_kind {
+        NOTE_ON => {
+            let note = message[1];
+            let velocity = message[2];
+
+            let data = MidiMessageKind::NoteOn { note, velocity };
+
+            Ok(MidiMessage {
+                channel_idx: message_channel_index,
+                timestamp,
+                data,
+            })
         }
+        NOTE_OFF => {
+            let note = message[1];
+            let velocity = message[2];
+            let data = MidiMessageKind::NoteOff { note, velocity };
 
-        let message_byte = message[0];
-
-        let message_kind = message_byte >> 4;
-        let message_channel_index = message_byte & 0x0F;
-
-        match message_kind {
-            NOTE_ON => {
-                let note = message[1];
-                let velocity = message[2];
-
-                let data = MidiMessageKind::NoteOn { note, velocity };
-
-                Ok(MidiMessage {
-                    channel_idx: message_channel_index,
-                    data,
-                })
-            }
-            NOTE_OFF => {
-                let note = message[1];
-                let velocity = message[2];
-                let data = MidiMessageKind::NoteOff { note, velocity };
-
-                Ok(MidiMessage {
-                    channel_idx: message_channel_index,
-                    data,
-                })
-            }
-            CONTROL => {
-                let control_number = message[1];
-                let value = message[2];
-                let data = MidiMessageKind::Control {
-                    control_number,
-                    value,
-                };
-
-                Ok(MidiMessage {
-                    data,
-                    channel_idx: message_channel_index,
-                })
-            }
-            PITCH_WHEEL => {
-                let lsb = message[1];
-                let msb = message[2];
-
-                let value = ((msb as u16) << 7) | (lsb as u16 & 0x7F);
-                let data = MidiMessageKind::PitchWheel {
-                    shift: PitchBend(value),
-                };
-
-                Ok(MidiMessage {
-                    data,
-                    channel_idx: message_channel_index,
-                })
-            }
-            CHANNEL_AFTER_TOUCH => {
-                let amount = message[1];
-                let data = MidiMessageKind::ChannelAftertouch { amount };
-
-                Ok(MidiMessage {
-                    data,
-                    channel_idx: message_channel_index,
-                })
-            }
-            POLYPHONIC_AFTER_TOUCH => {
-                let note = message[1];
-                let amount = message[2];
-
-                let data = MidiMessageKind::PolyphonicAftertouch { note, amount };
-
-                Ok(MidiMessage {
-                    data,
-                    channel_idx: message_channel_index,
-                })
-            }
-            SYSTEM_PREFIX => {
-                let data = match message_byte {
-                    START => Ok(MidiMessageKind::Start),
-                    CONTINUE => Ok(MidiMessageKind::Continue),
-                    STOP => Ok(MidiMessageKind::Stop),
-                    CLOCK => Ok(MidiMessageKind::Clock),
-                    SONG_POSITION_POINTER => {
-                        let lsb = message[1];
-                        let msb = message[2];
-
-                        let value = ((msb as u16) << 7) | (lsb as u16 & 0x7F);
-
-                        Ok(MidiMessageKind::SongPositionPointer { value })
-                    }
-                    _ => Err(MidiError::NotImplemented),
-                }?;
-
-                Ok(MidiMessage {
-                    data,
-                    channel_idx: 0,
-                })
-            }
-            _ => Err(MidiError::NotImplemented),
+            Ok(MidiMessage {
+                channel_idx: message_channel_index,
+                timestamp,
+                data,
+            })
         }
+        CONTROL => {
+            let control_number = message[1];
+            let value = message[2];
+            let data = MidiMessageKind::Control {
+                control_number,
+                value,
+            };
+
+            Ok(MidiMessage {
+                data,
+                timestamp,
+                channel_idx: message_channel_index,
+            })
+        }
+        PITCH_WHEEL => {
+            let lsb = message[1];
+            let msb = message[2];
+
+            let value = ((msb as u16) << 7) | (lsb as u16 & 0x7F);
+            let data = MidiMessageKind::PitchWheel {
+                shift: PitchBend(value),
+            };
+
+            Ok(MidiMessage {
+                data,
+                timestamp,
+                channel_idx: message_channel_index,
+            })
+        }
+        CHANNEL_AFTER_TOUCH => {
+            let amount = message[1];
+            let data = MidiMessageKind::ChannelAftertouch { amount };
+
+            Ok(MidiMessage {
+                data,
+                timestamp,
+                channel_idx: message_channel_index,
+            })
+        }
+        POLYPHONIC_AFTER_TOUCH => {
+            let note = message[1];
+            let amount = message[2];
+
+            let data = MidiMessageKind::PolyphonicAftertouch { note, amount };
+
+            Ok(MidiMessage {
+                data,
+                timestamp,
+                channel_idx: message_channel_index,
+            })
+        }
+        SYSTEM_PREFIX => {
+            let data = match message_byte {
+                START => Ok(MidiMessageKind::Start),
+                CONTINUE => Ok(MidiMessageKind::Continue),
+                STOP => Ok(MidiMessageKind::Stop),
+                CLOCK => Ok(MidiMessageKind::Clock),
+                SONG_POSITION_POINTER => {
+                    let lsb = message[1];
+                    let msb = message[2];
+
+                    let value = ((msb as u16) << 7) | (lsb as u16 & 0x7F);
+
+                    Ok(MidiMessageKind::SongPositionPointer { value })
+                }
+                _ => Err(MidiError::NotImplemented),
+            }?;
+
+            Ok(MidiMessage {
+                data,
+                timestamp,
+                channel_idx: 0,
+            })
+        }
+        _ => Err(MidiError::NotImplemented),
     }
 }
 
@@ -617,7 +622,7 @@ mod tests {
     /// Small helper to just encode, re-encode, and assert that they are the same
     fn assert_can_reconstruct(msg: MidiMessage) {
         let encoded = msg.encode();
-        let decoded = MidiMessage::try_from(&encoded.data[..encoded.len as usize])
+        let decoded = parse_midi(&encoded.data[..encoded.len as usize], 0)
             .expect("Failed to decode message!");
         assert_eq!(msg, decoded);
     }
@@ -627,6 +632,7 @@ mod tests {
         for channel in 0..16 {
             let note_on = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::NoteOn {
                     note: 60,
                     velocity: 100,
@@ -636,6 +642,7 @@ mod tests {
 
             let note_off = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::NoteOff {
                     note: 60,
                     velocity: 50,
@@ -650,6 +657,7 @@ mod tests {
         for channel in 0..16 {
             let msg = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::Control {
                     control_number: 10,
                     value: 127,
@@ -664,6 +672,7 @@ mod tests {
         for channel in 0..16 {
             let msg = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(8192),
                 },
@@ -672,6 +681,7 @@ mod tests {
 
             let msg_low = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(0),
                 },
@@ -680,6 +690,7 @@ mod tests {
 
             let msg_high = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(16383),
                 },
@@ -693,12 +704,14 @@ mod tests {
         for channel in 0..16 {
             let channel_at = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::ChannelAftertouch { amount: 64 },
             };
             assert_can_reconstruct(channel_at);
 
             let poly_at = MidiMessage {
                 channel_idx: channel,
+                timestamp: 0,
                 data: MidiMessageKind::PolyphonicAftertouch {
                     note: 60,
                     amount: 127,
@@ -712,30 +725,35 @@ mod tests {
     fn test_system_messages() {
         let start = MidiMessage {
             channel_idx: 0,
+            timestamp: 0,
             data: MidiMessageKind::Start,
         };
         assert_can_reconstruct(start);
 
         let continue_msg = MidiMessage {
             channel_idx: 0,
+            timestamp: 0,
             data: MidiMessageKind::Continue,
         };
         assert_can_reconstruct(continue_msg);
 
         let stop = MidiMessage {
             channel_idx: 0,
+            timestamp: 0,
             data: MidiMessageKind::Stop,
         };
         assert_can_reconstruct(stop);
 
         let clock = MidiMessage {
             channel_idx: 0,
+            timestamp: 0,
             data: MidiMessageKind::Clock,
         };
         assert_can_reconstruct(clock);
 
         let spp = MidiMessage {
             channel_idx: 0,
+            timestamp: 0,
             data: MidiMessageKind::SongPositionPointer { value: 0x1234 },
         };
         assert_can_reconstruct(spp);
@@ -744,11 +762,11 @@ mod tests {
     #[test]
     fn test_invalid_parse() {
         let empty: &[u8] = &[];
-        assert!(MidiMessage::try_from(empty).is_err());
+        assert!(parse_midi(empty, 0).is_err());
 
         let unknown: &[u8] = &[0xFF];
         assert!(matches!(
-            MidiMessage::try_from(unknown),
+            parse_midi(unknown, 0),
             Err(MidiError::NotImplemented)
         ));
     }
