@@ -21,6 +21,8 @@ fn main() {
             voice { chan: 0 }
         }
 
+        voice.freq >> sine
+
         { sine }
     "#,
     );

@@ -70,7 +70,10 @@ impl LegatoApp {
         // If we have a midi runtime, drain it.
         if let Some(midi_runtime) = &self.midi_runtime_frontend {
             let ctx = self.runtime.get_context_mut();
-            ctx.clear_midi(); // Clear our old messages
+            // Update timestamp for midi messages
+            ctx.set_instant();
+            // Clear our old messages
+            ctx.clear_midi();
             while let Some(msg) = midi_runtime.recv() {
                 dbg!(&msg);
                 // TOOD: Realtime logging with channel maybe?

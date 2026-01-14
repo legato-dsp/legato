@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::{
     config::Config,
     midi::{MidiError, MidiMessage, MidiStore},
@@ -15,6 +17,7 @@ pub struct AudioContext {
     config: Config,
     midi_store: Option<MidiStore>,
     resources: Resources,
+    block_start: Instant,
 }
 
 impl AudioContext {
@@ -23,6 +26,7 @@ impl AudioContext {
             config,
             midi_store: None,
             resources: Resources::default(),
+            block_start: Instant::now(),
         }
     }
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
@@ -54,6 +58,12 @@ impl AudioContext {
     }
     pub fn get_midi_store(&self) -> Option<&MidiStore> {
         self.midi_store.as_ref()
+    }
+    pub fn set_instant(&mut self) {
+        self.block_start = Instant::now()
+    }
+    pub fn get_instant(&mut self) -> Instant {
+        self.block_start
     }
     /// Insert a midi message into the store.
     #[inline(always)]

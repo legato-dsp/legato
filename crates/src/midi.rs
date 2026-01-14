@@ -1,4 +1,9 @@
-use std::{fmt::Debug, sync::Arc, thread::JoinHandle};
+use std::{
+    fmt::Debug,
+    sync::Arc,
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 
 use crossbeam::{
     channel::{Receiver, Sender, bounded},
@@ -6,8 +11,8 @@ use crossbeam::{
 };
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-pub type MidiProducer = Sender<MidiMessage>;
-pub type MidiReceiver = Receiver<MidiMessage>;
+pub type MidiProducer = Sender<(MidiMessage, Instant)>;
+pub type MidiReceiver = Receiver<(MidiMessage, Instant)>;
 
 /// A number of errors that can occur when parsing midi messages
 #[derive(Debug, Clone, PartialEq)]
@@ -94,9 +99,9 @@ impl MidiListener {
         Self { producer }
     }
     /// Send a midi message to the midi store
-    pub fn send_to_store(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
+    pub fn send_to_store(&mut self, msg: MidiMessage, instant: Instant) -> Result<(), MidiError> {
         self.producer
-            .try_send(msg)
+            .try_send((msg, instant))
             .map_err(|_| MidiError::RingbufferFull)
     }
 }
@@ -129,10 +134,39 @@ impl MidiWriter {
             select! {
                 recv(self.receiver) -> msg => {
                     if let Ok(inner) = msg {
-                        let _ = self.send_to_midi_output(inner, connection);
+                        let _ = self.send_to_midi_output(inner.0, connection);
                     }
                 }
             }
+        }
+    }
+}
+
+/// A small struct to store the system -> audio offset from midi and hide it behind a nice interface.
+///
+/// When constructed, it uses the instant of that point, as well as that first midi message data.
+pub struct MidiOffsetStore {
+    sync_point: (Instant, u64),
+}
+
+impl MidiOffsetStore {
+    /// Note: The time in which this is constructed matters.
+    pub fn new(first_midi_micros: u64) -> Self {
+        Self {
+            sync_point: (Instant::now(), first_midi_micros),
+        }
+    }
+
+    /// Get the instant value from the midi message
+    pub fn to_instant(&self, midi_micros: u64) -> Instant {
+        let (anchor_inst, anchor_micros) = self.sync_point;
+
+        if midi_micros >= anchor_micros {
+            anchor_inst + Duration::from_micros(midi_micros - anchor_micros)
+        } else {
+            anchor_inst
+                .checked_sub(Duration::from_micros(anchor_micros - midi_micros))
+                .unwrap_or(anchor_inst)
         }
     }
 }
@@ -148,9 +182,9 @@ impl MidiWriterFrontend {
     }
     /// Send a message from the store to the midi runtime to be executed on the system
     #[inline(always)]
-    pub fn send_to_system_midi(&self, msg: MidiMessage) -> Result<(), MidiError> {
+    pub fn send_to_system_midi(&self, msg: MidiMessage, instant: Instant) -> Result<(), MidiError> {
         self.producer
-            .try_send(msg)
+            .try_send((msg, instant))
             .map_err(|x| MidiError::SendError(x.to_string()))
     }
 }
@@ -162,19 +196,27 @@ const MIDI_CHANS: usize = 16;
 ///
 /// So, channel 0 is 0..per_chan_cap, 1 is per_chan_cap..2*per_chan_cap, etc.
 pub struct MidiStore {
-    channel_messages: Vec<MidiMessageKind>,
+    channel_messages: Vec<MidiMessage>,
     channel_messages_count: [usize; MIDI_CHANS],
-    general_messages: Vec<MidiMessageKind>,
+    general_messages: Vec<MidiMessage>,
     general_messages_count: usize,
     capacity: usize,
+}
+
+fn get_dummy_midi() -> MidiMessage {
+    MidiMessage {
+        channel_idx: 0,
+        data: MidiMessageKind::Dummy,
+        instant: Instant::now(),
+    }
 }
 
 impl MidiStore {
     pub fn new(capacity: usize) -> Self {
         Self {
-            channel_messages: vec![MidiMessageKind::Dummy; capacity * MIDI_CHANS],
+            channel_messages: vec![get_dummy_midi(); capacity * MIDI_CHANS],
             channel_messages_count: [0; MIDI_CHANS],
-            general_messages: vec![MidiMessageKind::Dummy; capacity],
+            general_messages: vec![get_dummy_midi(); capacity],
             general_messages_count: 0,
             capacity,
         }
@@ -207,7 +249,7 @@ impl MidiStore {
                 }
 
                 let index = chan * self.capacity + count;
-                self.channel_messages[index] = msg.data;
+                self.channel_messages[index] = msg;
                 self.channel_messages_count[chan] += 1;
 
                 return Ok(());
@@ -222,7 +264,7 @@ impl MidiStore {
                     return Err(MidiError::RingbufferFull);
                 }
 
-                self.general_messages[count] = msg.data;
+                self.general_messages[count] = msg;
                 self.general_messages_count += 1;
 
                 return Ok(());
@@ -230,7 +272,7 @@ impl MidiStore {
             MidiMessageKind::Dummy => unreachable!(),
         }
     }
-    pub fn get_channel(&self, chan: usize) -> &[MidiMessageKind] {
+    pub fn get_channel(&self, chan: usize) -> &[MidiMessage] {
         debug_assert!(chan < MIDI_CHANS);
 
         let start = self.capacity * chan;
@@ -238,7 +280,7 @@ impl MidiStore {
 
         &self.channel_messages[start..start + count]
     }
-    pub fn get_general(&self) -> &[MidiMessageKind] {
+    pub fn get_general(&self) -> &[MidiMessage] {
         &self.general_messages
     }
 }
@@ -266,11 +308,12 @@ impl MidiRuntimeFrontend {
     }
     #[inline(always)]
     pub fn send(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
-        self.writer_frontend.send_to_system_midi(msg)
+        self.writer_frontend
+            .send_to_system_midi(msg, Instant::now())
     }
     #[inline(always)]
     pub fn recv(&self) -> Option<MidiMessage> {
-        self.reader_consumer.try_recv().ok()
+        self.reader_consumer.try_recv().ok().map(|x| x.0)
     }
 }
 
@@ -295,10 +338,12 @@ pub fn start_midi_thread(
     let input_port = &in_ports[in_port_index];
 
     // These are the channels that signal from reader -> store and store -> writer
-    let (midi_reader_prod, midi_reader_consumer) = bounded::<MidiMessage>(capacity);
-    let (midi_writer_prod, midi_writer_consumer) = bounded::<MidiMessage>(capacity);
+    let (midi_reader_prod, midi_reader_consumer) = bounded::<(MidiMessage, Instant)>(capacity);
+    let (midi_writer_prod, midi_writer_consumer) = bounded::<(MidiMessage, Instant)>(capacity);
 
     let mut midi_listener = MidiListener::new(midi_reader_prod);
+
+    let mut midi_offset: Option<MidiOffsetStore> = None;
 
     // The input connection thread
     let reader_handle = input
@@ -306,9 +351,15 @@ pub fn start_midi_thread(
             &input_port,
             port_name,
             move |timestamp, message, _| {
-                if let Ok(msg) = parse_midi(message, timestamp) {
+                if midi_offset.is_none() {
+                    midi_offset = Some(MidiOffsetStore::new(timestamp));
+                }
+                let instant = midi_offset.as_ref().unwrap().to_instant(timestamp);
+
+                if let Ok(msg) = parse_midi(message, instant) {
+                    // Init midi offset if not yet set
                     // TODO: Proper app wide error handling
-                    let _ = midi_listener.send_to_store(msg);
+                    let _ = midi_listener.send_to_store(msg, instant);
                 }
             },
             (),
@@ -364,7 +415,7 @@ pub struct EncodedMidi {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MidiMessage {
     pub data: MidiMessageKind,
-    pub timestamp: u64,
+    pub instant: Instant,
     pub channel_idx: u8,
 }
 
@@ -458,7 +509,7 @@ impl MidiMessage {
     }
 }
 
-pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiError> {
+pub fn parse_midi(message: &[u8], instant: Instant) -> Result<MidiMessage, MidiError> {
     if message.len() < 1 {
         return Err(MidiError::CouldNotParse);
     }
@@ -477,7 +528,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 channel_idx: message_channel_index,
-                timestamp,
+                instant,
                 data,
             })
         }
@@ -488,7 +539,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 channel_idx: message_channel_index,
-                timestamp,
+                instant,
                 data,
             })
         }
@@ -502,7 +553,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 data,
-                timestamp,
+                instant,
                 channel_idx: message_channel_index,
             })
         }
@@ -517,7 +568,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 data,
-                timestamp,
+                instant,
                 channel_idx: message_channel_index,
             })
         }
@@ -527,7 +578,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 data,
-                timestamp,
+                instant,
                 channel_idx: message_channel_index,
             })
         }
@@ -539,7 +590,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 data,
-                timestamp,
+                instant,
                 channel_idx: message_channel_index,
             })
         }
@@ -562,7 +613,7 @@ pub fn parse_midi(message: &[u8], timestamp: u64) -> Result<MidiMessage, MidiErr
 
             Ok(MidiMessage {
                 data,
-                timestamp,
+                instant,
                 channel_idx: 0,
             })
         }
@@ -622,9 +673,10 @@ mod tests {
     /// Small helper to just encode, re-encode, and assert that they are the same
     fn assert_can_reconstruct(msg: MidiMessage) {
         let encoded = msg.encode();
-        let decoded = parse_midi(&encoded.data[..encoded.len as usize], 0)
+        let decoded = parse_midi(&encoded.data[..encoded.len as usize], Instant::now())
             .expect("Failed to decode message!");
-        assert_eq!(msg, decoded);
+        assert_eq!(msg.data, decoded.data);
+        assert_eq!(msg.channel_idx, decoded.channel_idx);
     }
 
     #[test]
@@ -632,7 +684,7 @@ mod tests {
         for channel in 0..16 {
             let note_on = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::NoteOn {
                     note: 60,
                     velocity: 100,
@@ -642,7 +694,7 @@ mod tests {
 
             let note_off = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::NoteOff {
                     note: 60,
                     velocity: 50,
@@ -657,7 +709,7 @@ mod tests {
         for channel in 0..16 {
             let msg = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::Control {
                     control_number: 10,
                     value: 127,
@@ -672,7 +724,7 @@ mod tests {
         for channel in 0..16 {
             let msg = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(8192),
                 },
@@ -681,7 +733,7 @@ mod tests {
 
             let msg_low = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(0),
                 },
@@ -690,7 +742,7 @@ mod tests {
 
             let msg_high = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::PitchWheel {
                     shift: PitchBend(16383),
                 },
@@ -704,14 +756,14 @@ mod tests {
         for channel in 0..16 {
             let channel_at = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::ChannelAftertouch { amount: 64 },
             };
             assert_can_reconstruct(channel_at);
 
             let poly_at = MidiMessage {
                 channel_idx: channel,
-                timestamp: 0,
+                instant: Instant::now(),
                 data: MidiMessageKind::PolyphonicAftertouch {
                     note: 60,
                     amount: 127,
@@ -725,35 +777,35 @@ mod tests {
     fn test_system_messages() {
         let start = MidiMessage {
             channel_idx: 0,
-            timestamp: 0,
+            instant: Instant::now(),
             data: MidiMessageKind::Start,
         };
         assert_can_reconstruct(start);
 
         let continue_msg = MidiMessage {
             channel_idx: 0,
-            timestamp: 0,
+            instant: Instant::now(),
             data: MidiMessageKind::Continue,
         };
         assert_can_reconstruct(continue_msg);
 
         let stop = MidiMessage {
             channel_idx: 0,
-            timestamp: 0,
+            instant: Instant::now(),
             data: MidiMessageKind::Stop,
         };
         assert_can_reconstruct(stop);
 
         let clock = MidiMessage {
             channel_idx: 0,
-            timestamp: 0,
+            instant: Instant::now(),
             data: MidiMessageKind::Clock,
         };
         assert_can_reconstruct(clock);
 
         let spp = MidiMessage {
             channel_idx: 0,
-            timestamp: 0,
+            instant: Instant::now(),
             data: MidiMessageKind::SongPositionPointer { value: 0x1234 },
         };
         assert_can_reconstruct(spp);
@@ -762,11 +814,11 @@ mod tests {
     #[test]
     fn test_invalid_parse() {
         let empty: &[u8] = &[];
-        assert!(parse_midi(empty, 0).is_err());
+        assert!(parse_midi(empty, Instant::now()).is_err());
 
         let unknown: &[u8] = &[0xFF];
         assert!(matches!(
-            parse_midi(unknown, 0),
+            parse_midi(unknown, Instant::now()),
             Err(MidiError::NotImplemented)
         ));
     }
