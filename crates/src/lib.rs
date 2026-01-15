@@ -7,7 +7,7 @@ use heapless::spsc::{Consumer, Producer};
 use crate::{
     builder::ValidationError,
     config::Config,
-    midi::{MidiMessage, MidiMessageKind, MidiRuntimeFrontend},
+    midi::MidiRuntimeFrontend,
     msg::LegatoMsg,
     node::{Channels, Inputs},
     params::{ParamError, ParamKey, ParamStoreFrontend},

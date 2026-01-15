@@ -9,7 +9,7 @@ use arc_swap::ArcSwapOption;
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     ast::{DSLParams, PortConnectionType, Value, build_ast},
-    config::{self, Config},
+    config::Config,
     graph::{Connection, ConnectionEntry},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
