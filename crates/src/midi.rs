@@ -157,6 +157,11 @@ impl MidiOffsetStore {
         }
     }
 
+    pub fn update(&mut self, midi_micros: u64) {
+        self.sync_point.0 = Instant::now();
+        self.sync_point.1 = midi_micros;
+    }
+
     /// Get the instant value from the midi message
     pub fn to_instant(&self, midi_micros: u64) -> Instant {
         let (anchor_inst, anchor_micros) = self.sync_point;
@@ -229,7 +234,6 @@ impl MidiStore {
 
     #[inline(always)]
     pub fn insert(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
-        dbg!(&msg);
         let chan = msg.channel_idx as usize;
         match msg.data {
             // Channel messages
@@ -343,23 +347,20 @@ pub fn start_midi_thread(
 
     let mut midi_listener = MidiListener::new(midi_reader_prod);
 
-    let mut midi_offset: Option<MidiOffsetStore> = None;
-
     // The input connection thread
     let reader_handle = input
         .connect(
             &input_port,
             port_name,
-            move |timestamp, message, _| {
-                if midi_offset.is_none() {
-                    midi_offset = Some(MidiOffsetStore::new(timestamp));
-                }
-                let instant = midi_offset.as_ref().unwrap().to_instant(timestamp);
+            move |_, message, _| {
+                let instant = Instant::now();
 
                 if let Ok(msg) = parse_midi(message, instant) {
                     // Init midi offset if not yet set
                     // TODO: Proper app wide error handling
-                    let _ = midi_listener.send_to_store(msg, instant);
+                    if let Err(_) = midi_listener.send_to_store(msg, instant) {
+                        eprintln!("MIDI DROP");
+                    }
                 }
             },
             (),

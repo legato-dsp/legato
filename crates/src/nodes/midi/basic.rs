@@ -40,15 +40,15 @@ impl Node for Voice {
 
         if let Some(store) = ctx.get_midi_store() {
             let res = store.get_channel(self.midi_channel);
+
             for item in res {
                 if item.data == MidiMessageKind::Dummy {
                     continue;
                 }
 
-                let offset_duration = block_start.saturating_duration_since(item.instant);
-                let idx = (offset_duration.as_secs_f32() * fs) as usize;
+                let offset_duration = block_start - item.instant;
 
-                dbg!(idx);
+                let idx = (offset_duration.as_secs_f32() * fs) as usize;
 
                 let end_sample = idx.min(block_size);
 
