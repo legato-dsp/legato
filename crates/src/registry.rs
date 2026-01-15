@@ -18,7 +18,7 @@ use crate::{
             sweep::Sweep,
         },
         control::{map::Map, signal::Signal},
-        midi::basic::Voice,
+        midi::voice::Voice,
     },
     params::ParamMeta,
     spec::{NodeFactory, NodeSpec},
