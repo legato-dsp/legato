@@ -90,3 +90,44 @@ impl Node for Voice {
 fn mtof(note: u8) -> f32 {
     440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
 }
+
+#[derive(Default, Clone, PartialEq)]
+enum VoiceStateKind {
+    #[default]
+    Idle,
+    Active,
+}
+
+#[derive(Default, Clone, PartialEq)]
+struct VoiceState {
+    kind: VoiceStateKind,
+    pitch: f32,
+    velocity: f32,
+}
+
+struct VoiceAllocator {
+    voices: Box<[VoiceState]>,
+}
+
+impl VoiceAllocator {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            voices: vec![VoiceState::default(); capacity].into(),
+        }
+    }
+    pub fn steal_voice(&mut self) -> Option<&mut VoiceState> {
+        self.voices.iter_mut().fold(None, |candidate, voice| {
+            if voice.kind == VoiceStateKind::Idle {
+                return Some(voice); // immediately return idle
+            }
+            match candidate {
+                Some(v) => Some(if voice.velocity < v.velocity {
+                    voice
+                } else {
+                    v
+                }),
+                None => Some(voice),
+            }
+        })
+    }
+}
