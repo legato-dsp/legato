@@ -18,7 +18,7 @@ use crate::{
             sweep::Sweep,
         },
         control::{map::Map, signal::Signal},
-        midi::voice::Voice,
+        midi::voice::{PolyVoice, Voice},
     },
     params::ParamMeta,
     spec::{NodeFactory, NodeSpec},
@@ -314,17 +314,39 @@ pub fn control_registry_factory() -> NodeRegistry {
 
 pub fn midi_registry_factory() -> NodeRegistry {
     let mut data = HashMap::new();
-    data.extend([node_spec!(
-        "voice".into(),
-        required = ["chan"],
-        optional = [],
-        build = |_, p| {
-            let channel = p
-                .get_usize("chan")
-                .expect("Must provide midi channel (chan) (0-15) to voice!");
-            assert!(channel <= 15);
-            Ok(Box::new(Voice::new(channel)))
-        }
-    )]);
+    data.extend([
+        node_spec!(
+            "voice".into(),
+            required = ["chan"],
+            optional = [],
+            build = |_, p| {
+                let channel = p
+                    .get_usize("chan")
+                    .expect("Must provide midi channel (chan) (0-15) to voice!");
+                assert!(channel <= 15);
+                Ok(Box::new(Voice::new(channel)))
+            }
+        ),
+        node_spec!(
+            "poly_voice".into(),
+            required = ["voices", "chan"],
+            optional = [],
+            build = |_, p| {
+                let channel = p
+                    .get_usize("chan")
+                    .expect("Must provide midi channel (chan) (0-15) to voice!");
+                let voices = p
+                    .get_usize("voices")
+                    .expect("Must provide number of voices to poly voice!");
+
+                assert!(channel <= 15);
+                assert!(
+                    voices < 10,
+                    "Currently, a maximum of 32 tracks is supported."
+                );
+                Ok(Box::new(PolyVoice::new(voices, channel)))
+            }
+        ),
+    ]);
     NodeRegistry { data }
 }
