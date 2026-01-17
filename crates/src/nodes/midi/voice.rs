@@ -92,14 +92,14 @@ fn mtof(note: u8) -> f32 {
     440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq, Debug)]
 enum VoiceStateKind {
     #[default]
     Idle,
     Active,
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq, Debug)]
 struct VoiceState {
     kind: VoiceStateKind,
     note: u8,
@@ -120,23 +120,22 @@ impl VoiceAllocator {
     }
 
     fn steal_voice(&mut self) -> Option<(usize, &mut VoiceState)> {
+        // Find the first available free voice
+        if let Some((i, _)) = self
+            .voices
+            .iter()
+            .enumerate()
+            .find(|(_, x)| x.kind == VoiceStateKind::Idle)
+        {
+            let inner = &mut self.voices[i];
+            return Some((i, inner));
+        }
+
+        // Otherwise, find the lowest velocity
         self.voices
             .iter_mut()
             .enumerate()
-            .fold(None, |candidate, (i, voice)| {
-                // If we just have an available voice take it
-                if voice.kind == VoiceStateKind::Idle {
-                    return Some((i, voice));
-                }
-                match candidate {
-                    Some(v) => Some(if voice.velocity < v.1.velocity {
-                        (i, voice)
-                    } else {
-                        v
-                    }),
-                    None => Some((i, voice)),
-                }
-            })
+            .min_by_key(|(_, x)| x.velocity)
     }
 
     fn on_note_off(&mut self, note: u8, velocity: u8) -> Option<usize> {
@@ -157,7 +156,20 @@ impl VoiceAllocator {
     }
 
     fn on_note_on(&mut self, note: u8, velocity: u8) -> Option<usize> {
+        // If the note is already playing, update that velocity
+        if let Some((i, voice)) = self
+            .voices
+            .iter_mut()
+            .enumerate()
+            .find(|(_, x)| x.note == note)
+        {
+            voice.velocity = velocity;
+            return Some(i);
+        }
+
+        // Otherwise, steal the next available voice. Fow now, we just use the lowest velocity note.
         let voice = self.steal_voice();
+        dbg!(&voice);
         if let Some((i, inner)) = voice {
             inner.note = note;
             inner.velocity = velocity;
@@ -183,7 +195,7 @@ struct NodePortCached {
 pub struct PolyVoice {
     voice_allocator: VoiceAllocator,
     port_caches: Vec<NodePortCached>,
-    last_sample_buffers: Box<[usize]>,
+    last_index_buffers: Box<[usize]>,
     midi_channel: usize,
     ports: Ports,
 }
@@ -193,7 +205,7 @@ impl PolyVoice {
         Self {
             voice_allocator: VoiceAllocator::with_capacity(voices),
             port_caches: vec![NodePortCached::default(); voices],
-            last_sample_buffers: vec![0_usize; voices].into(),
+            last_index_buffers: vec![0_usize; voices].into(),
             midi_channel,
             ports: PortBuilder::default()
                 .audio_out(voices * PER_VOICE_CHANS)
@@ -211,7 +223,7 @@ impl Node for PolyVoice {
         let fs = cfg.sample_rate as f32;
 
         // Reset last sample buffer. This buffer helps create the slices.
-        for idx in self.last_sample_buffers.iter_mut() {
+        for idx in self.last_index_buffers.iter_mut() {
             *idx = 0;
         }
 
@@ -239,21 +251,20 @@ impl Node for PolyVoice {
                 if let Some(chan_idx) = chan_option {
                     let offset_duration = block_start - item.instant;
 
-                    let idx = (offset_duration.as_secs_f32() * fs) as usize;
-
-                    let end_sample = idx.min(block_size);
-
-                    let last_sample = &mut self.last_sample_buffers[chan_idx];
-
-                    let state = &mut self.port_caches[chan_idx];
+                    let idx =
+                        (offset_duration.as_secs_f32() * fs).clamp(0.0, block_size as f32) as usize;
 
                     let start = chan_idx * PER_VOICE_CHANS;
 
+                    let last_index = &mut self.last_index_buffers[chan_idx];
+
+                    let state = &mut self.port_caches[chan_idx];
+
                     // Update state from past to now
-                    if end_sample > *last_sample {
-                        outputs[start][*last_sample..end_sample].fill(state.gate);
-                        outputs[start + 1][*last_sample..end_sample].fill(state.freq);
-                        outputs[start + 2][*last_sample..end_sample].fill(state.vel);
+                    if idx > *last_index {
+                        outputs[start][*last_index..idx].fill(state.gate);
+                        outputs[start + 1][*last_index..idx].fill(state.freq);
+                        outputs[start + 2][*last_index..idx].fill(state.vel);
                     }
 
                     match item.data {
@@ -270,14 +281,14 @@ impl Node for PolyVoice {
                         _ => {}
                     }
 
-                    *last_sample = end_sample;
+                    *last_index = idx;
                 }
             }
 
             // Finish the slices to the end of the buffer with the current state
 
             for (i, state) in self.port_caches.iter().enumerate() {
-                let last_sample = self.last_sample_buffers[i];
+                let last_sample = self.last_index_buffers[i];
 
                 let start = i * PER_VOICE_CHANS;
 

@@ -14,16 +14,32 @@ fn main() {
         r#"
 
         audio {
-            sine { freq: 440.0, chans: 2 }
+            sine: sine_one { freq: 440.0, chans: 2 },
+            sine: sine_two { freq: 440.0, chans: 2 },
+            sine: sine_three { freq: 440.0, chans: 2 },
+            sine: sine_four { freq: 440.0, chans: 2 },
+            sine: sine_five{ freq: 440.0, chans: 2 },
+
+            track_mixer { tracks: 5, chans_per_track: 2, gain: [0.3, 0.3, 0.3, 0.3, 0.3] }
         }
 
         midi { 
-            voice { chan: 0 }
+            poly_voice { chan: 0, voices: 5 }
         }
 
-        voice.freq >> sine
+        poly_voice[1] >> sine_one.freq
+        poly_voice[4] >> sine_two.freq
+        poly_voice[7] >> sine_three.freq
+        poly_voice[10] >> sine_four.freq
+        poly_voice[13] >> sine_five.freq
 
-        { sine }
+        sine_one >> track_mixer[0..2]
+        sine_two >> track_mixer[2..4]
+        sine_three >> track_mixer[4..6]
+        sine_four >> track_mixer[6..8]
+        sine_five >> track_mixer[8..10]
+
+        { track_mixer }
     "#,
     );
 
@@ -55,8 +71,6 @@ fn main() {
         2,
         config.sample_rate as u32,
     );
-
-    dbg!(&app);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
