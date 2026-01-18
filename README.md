@@ -72,3 +72,6 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
 - Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
 - One continous buffer for work executor redesign 
 - Bitflags or something similar for user defined params rather than static string comparison?
+- Unify node and spec construction
+- Chans sometimes means different things in different contexts for node definition. There needs to be a consistent way
+    to say, hey, this node takes n + m chans in, o chans out
