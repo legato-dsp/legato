@@ -10,39 +10,6 @@ use legato::{
 };
 
 fn main() {
-    // let graph = String::from(
-    //     r#"
-
-    //     audio {
-    //         sine: sine_one { freq: 440.0, chans: 2 },
-    //         sine: sine_two { freq: 440.0, chans: 2 },
-    //         sine: sine_three { freq: 440.0, chans: 2 },
-    //         sine: sine_four { freq: 440.0, chans: 2 },
-    //         sine: sine_five{ freq: 440.0, chans: 2 },
-
-    //         track_mixer { tracks: 5, chans_per_track: 2, gain: [0.3, 0.3, 0.3, 0.3, 0.3] }
-    //     }
-
-    //     midi {
-    //         poly_voice { chan: 0, voices: 5 }
-    //     }
-
-    //     poly_voice[1] >> sine_one.freq
-    //     poly_voice[4] >> sine_two.freq
-    //     poly_voice[7] >> sine_three.freq
-    //     poly_voice[10] >> sine_four.freq
-    //     poly_voice[13] >> sine_five.freq
-
-    //     sine_one >> track_mixer[0..2]
-    //     sine_two >> track_mixer[2..4]
-    //     sine_three >> track_mixer[4..6]
-    //     sine_four >> track_mixer[6..8]
-    //     sine_five >> track_mixer[8..10]
-
-    //     { track_mixer }
-    // "#,
-    // );
-
     // Note: In reality, you would not do this. A custom node or subgraph is preferable.
 
     let graph = String::from(
@@ -55,14 +22,21 @@ fn main() {
             sine: sine_four { freq: 440.0, chans: 1 },
             sine: sine_five { freq: 440.0, chans: 1 },
 
-            adsr: adsr_one { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
-            adsr: adsr_two { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
-            adsr: adsr_three { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
-            adsr: adsr_four { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
-            adsr: adsr_five { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+            adsr: adsr_one { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
+            adsr: adsr_two { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
+            adsr: adsr_three { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
+            adsr: adsr_four { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
+            adsr: adsr_five { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
 
             track_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
-            mono_fan_out { chans: 2 }
+            mono_fan_out { chans: 2 },
+
+            delay_write: dw1 { delay_name: "d_one", chans: 2 },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 600, 731 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 459, 643 ] },
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [1.0, 0.3, 0.2] },
+            
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
         }
 
         midi { 
@@ -98,7 +72,21 @@ fn main() {
 
         track_mixer >> mono_fan_out
 
-        { mono_fan_out }
+        mono_fan_out >> master[0..2]
+        mono_fan_out >> dw1[0..2]
+
+    
+        dr1[0..2] >> master[2..4]
+
+        // feedback    
+        dr1 >> feedback[0..2]
+        dr2 >> feedback[2..4]
+
+        feedback >> dw1
+
+        dr2[0] >> master[4..6]
+
+        { master }
     "#,
     );
 
