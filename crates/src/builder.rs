@@ -285,6 +285,7 @@ where
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
+                dbg!(&ports);
                 let index = ports
                     .audio_out
                     .iter()

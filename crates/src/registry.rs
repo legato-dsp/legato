@@ -5,13 +5,13 @@ use std::{collections::HashMap, time::Duration};
 use crate::{
     ast::DSLParams,
     builder::{ResourceBuilderView, ValidationError},
-    node::DynNode,
+    node::{self, DynNode},
     node_spec,
     nodes::{
         audio::{
             adsr::Adsr,
             delay::{DelayLine, DelayRead, DelayWrite},
-            mixer::TrackMixer,
+            mixer::{MonoFanOut, TrackMixer},
             ops::{ApplyOpKind, mult_node_factory},
             sampler::Sampler,
             sine::Sine,
@@ -244,6 +244,17 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let sr = rb.config.sample_rate as f32;
                 let node = Svf::new(sr, filter_type, cutoff, gain, q, chans);
+
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "mono_fan_out".into(),
+            required = [],
+            optional = ["chans"],
+            build = |_, p| {
+                let chans = p.get_usize("chans").unwrap_or(2);
+                let node = MonoFanOut::new(chans);
 
                 Ok(Box::new(node))
             }

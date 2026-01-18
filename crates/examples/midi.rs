@@ -43,23 +43,62 @@ fn main() {
     // "#,
     // );
 
+    // Note: In reality, you would not do this. A custom node or subgraph is preferable.
+
     let graph = String::from(
         r#"
 
         audio {
-            sine: sine_one { freq: 440.0, chans: 2 },
-            adsr { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 2 }
+            sine: sine_one { freq: 440.0, chans: 1 },
+            sine: sine_two { freq: 440.0, chans: 1 },
+            sine: sine_three { freq: 440.0, chans: 1 },
+            sine: sine_four { freq: 440.0, chans: 1 },
+            sine: sine_five { freq: 440.0, chans: 1 },
+
+            adsr: adsr_one { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+            adsr: adsr_two { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+            adsr: adsr_three { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+            adsr: adsr_four { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+            adsr: adsr_five { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 1 },
+
+            track_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            mono_fan_out { chans: 2 }
         }
 
         midi { 
             poly_voice { chan: 0, voices: 5 }
         }
 
-        sine_one[0..2] >> adsr[1..3]
-        poly_voice[0] >> adsr.gate
-        poly_voice[1] >> sine_one.freq
+        // sine waves
+        sine_one >> adsr_one[1]
+        sine_two >> adsr_two[1]
+        sine_three >> adsr_three[1]
+        sine_four >> adsr_four[1]
+        sine_five >> adsr_five[1]
 
-        { adsr }
+        // gate
+        poly_voice[0] >> adsr_one.gate
+        poly_voice[3] >> adsr_two.gate
+        poly_voice[6] >> adsr_three.gate
+        poly_voice[9] >> adsr_four.gate
+        poly_voice[12] >> adsr_five.gate
+
+        // freq
+        poly_voice[1] >> sine_one.freq
+        poly_voice[4] >> sine_two.freq
+        poly_voice[7] >> sine_three.freq
+        poly_voice[10] >> sine_four.freq
+        poly_voice[13] >> sine_five.freq
+
+        adsr_one >> track_mixer[0]
+        adsr_two >> track_mixer[1]
+        adsr_three >> track_mixer[2]
+        adsr_four >> track_mixer[3]
+        adsr_five >> track_mixer[4]
+
+        track_mixer >> mono_fan_out
+
+        { mono_fan_out }
     "#,
     );
 
