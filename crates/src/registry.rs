@@ -5,7 +5,7 @@ use std::{collections::HashMap, time::Duration};
 use crate::{
     ast::DSLParams,
     builder::{ResourceBuilderView, ValidationError},
-    node::{self, DynNode},
+    node::DynNode,
     node_spec,
     nodes::{
         audio::{
@@ -179,12 +179,47 @@ pub fn audio_registry_factory() -> NodeRegistry {
         node_spec!(
             "mult".into(),
             required = ["val"],
-            optional = ["chans"],
+            optional = [],
             build = |_, p| {
-                let chans = p.get_usize("chans").unwrap_or(2);
                 let val = p.get_f32("val").unwrap_or(1.0);
 
-                let node = mult_node_factory(val, chans, ApplyOpKind::Mult);
+                let node = mult_node_factory(val, 1, ApplyOpKind::Mult);
+
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "add".into(),
+            required = ["val"],
+            optional = [],
+            build = |_, p| {
+                let val = p.get_f32("val").unwrap_or(0.0);
+
+                let node = mult_node_factory(val, 1, ApplyOpKind::Add);
+
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "sub".into(),
+            required = ["val"],
+            optional = [],
+            build = |_, p| {
+                let val = p.get_f32("val").unwrap_or(0.0);
+
+                let node = mult_node_factory(val, 1, ApplyOpKind::Subtract);
+
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "div".into(),
+            required = ["val"],
+            optional = [],
+            build = |_, p| {
+                let val = p.get_f32("val").unwrap_or(0.0);
+
+                let node = mult_node_factory(val, 1, ApplyOpKind::Div);
 
                 Ok(Box::new(node))
             }
