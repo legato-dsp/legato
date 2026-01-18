@@ -9,6 +9,7 @@ use crate::{
     node_spec,
     nodes::{
         audio::{
+            adsr::Adsr,
             delay::{DelayLine, DelayRead, DelayWrite},
             mixer::TrackMixer,
             ops::{ApplyOpKind, mult_node_factory},
@@ -197,6 +198,22 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let val = p.get_f32("val").unwrap_or(1.0);
 
                 let node = mult_node_factory(val, chans, ApplyOpKind::Gain);
+
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "adsr".into(),
+            required = ["attack", "decay", "sustain", "release", "chans"],
+            optional = [],
+            build = |_, p| {
+                let attack = p.get_f32("attack").expect("Must provide attack to ADSR");
+                let decay = p.get_f32("decay").expect("Must provide decay to ADSR");
+                let sustain = p.get_f32("sustain").expect("Must provide sustain to ADSR");
+                let release = p.get_f32("release").expect("Must provide release to ADSR");
+                let chans = p.get_usize("chans").expect("Must provide chans to ADSR");
+
+                let node = Adsr::new(chans, attack, decay, sustain, release);
 
                 Ok(Box::new(node))
             }

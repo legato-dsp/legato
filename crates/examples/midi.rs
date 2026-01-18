@@ -10,36 +10,56 @@ use legato::{
 };
 
 fn main() {
+    // let graph = String::from(
+    //     r#"
+
+    //     audio {
+    //         sine: sine_one { freq: 440.0, chans: 2 },
+    //         sine: sine_two { freq: 440.0, chans: 2 },
+    //         sine: sine_three { freq: 440.0, chans: 2 },
+    //         sine: sine_four { freq: 440.0, chans: 2 },
+    //         sine: sine_five{ freq: 440.0, chans: 2 },
+
+    //         track_mixer { tracks: 5, chans_per_track: 2, gain: [0.3, 0.3, 0.3, 0.3, 0.3] }
+    //     }
+
+    //     midi {
+    //         poly_voice { chan: 0, voices: 5 }
+    //     }
+
+    //     poly_voice[1] >> sine_one.freq
+    //     poly_voice[4] >> sine_two.freq
+    //     poly_voice[7] >> sine_three.freq
+    //     poly_voice[10] >> sine_four.freq
+    //     poly_voice[13] >> sine_five.freq
+
+    //     sine_one >> track_mixer[0..2]
+    //     sine_two >> track_mixer[2..4]
+    //     sine_three >> track_mixer[4..6]
+    //     sine_four >> track_mixer[6..8]
+    //     sine_five >> track_mixer[8..10]
+
+    //     { track_mixer }
+    // "#,
+    // );
+
     let graph = String::from(
         r#"
 
         audio {
             sine: sine_one { freq: 440.0, chans: 2 },
-            sine: sine_two { freq: 440.0, chans: 2 },
-            sine: sine_three { freq: 440.0, chans: 2 },
-            sine: sine_four { freq: 440.0, chans: 2 },
-            sine: sine_five{ freq: 440.0, chans: 2 },
-
-            track_mixer { tracks: 5, chans_per_track: 2, gain: [0.3, 0.3, 0.3, 0.3, 0.3] }
+            adsr { attack: 500.0, decay: 700.0, sustain: 0.3, release: 1200.0, chans: 2 }
         }
 
         midi { 
             poly_voice { chan: 0, voices: 5 }
         }
 
+        sine_one[0..2] >> adsr[1..3]
+        poly_voice[0] >> adsr.gate
         poly_voice[1] >> sine_one.freq
-        poly_voice[4] >> sine_two.freq
-        poly_voice[7] >> sine_three.freq
-        poly_voice[10] >> sine_four.freq
-        poly_voice[13] >> sine_five.freq
 
-        sine_one >> track_mixer[0..2]
-        sine_two >> track_mixer[2..4]
-        sine_three >> track_mixer[4..6]
-        sine_four >> track_mixer[6..8]
-        sine_five >> track_mixer[8..10]
-
-        { track_mixer }
+        { adsr }
     "#,
     );
 
