@@ -175,7 +175,6 @@ fn parse_pipe<'i>(pair: Pair<'i, Rule>) -> Result<ASTPipe, BuildAstError> {
 }
 
 fn parse_connection<'i>(pair: Pair<'i, Rule>) -> Result<Vec<AstNodeConnection>, BuildAstError> {
-    // Collect all nodes in the chain: A, B, C, ...
     let mut nodes: Vec<(String, PortConnectionType)> = Vec::new();
 
     for inner in pair.into_inner() {
@@ -189,7 +188,7 @@ fn parse_connection<'i>(pair: Pair<'i, Rule>) -> Result<Vec<AstNodeConnection>, 
         ));
     }
 
-    // Turn [A, B, C, D] into edges: A→B, B→C, C→D
+    // [A, B, C, D] into A -> B, B -> C, etc.
     let mut connections = Vec::new();
 
     for i in 0..nodes.len() - 1 {

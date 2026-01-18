@@ -12,8 +12,8 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
-            sine: lfo { freq: 6.0, chans: 1 },
-            sine { freq: 440.0, chans: 2 }
+            sine: carrier { freq: 440.0, chans: 2 },
+            sine: mod { freq: 550.0, chans: 2 }
         }
 
         control {

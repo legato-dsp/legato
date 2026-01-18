@@ -11,6 +11,7 @@ use crate::{
     ast::{DSLParams, PortConnectionType, Value, build_ast},
     config::Config,
     graph::{Connection, ConnectionEntry},
+    midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::{
         delay::DelayLine,
@@ -20,7 +21,9 @@ use crate::{
     parse::parse_legato_file,
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
-    registry::{NodeRegistry, audio_registry_factory, control_registry_factory},
+    registry::{
+        NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
+    },
     resources::{DelayLineKey, ResourceBuilder, SampleKey},
     runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
     sample::{AudioSampleFrontend, AudioSampleHandle},
@@ -59,11 +62,18 @@ pub trait CanApplyPipe {}
 pub trait CanSetSink {}
 pub trait CanBuild {}
 
+pub trait CanAddMidiRuntime {}
+
 // Setting up "permissions" for different structs. May be too complicated but also easy to add more states with overlapping permissiosn
 
 impl CanRegister for Unconfigured {}
 impl CanRegister for Configured {}
 impl CanRegister for ContainsNodes {}
+
+impl CanAddMidiRuntime for Configured {}
+impl CanAddMidiRuntime for ContainsNodes {}
+impl CanAddMidiRuntime for Connected {}
+impl CanAddMidiRuntime for ReadyToBuild {}
 
 impl CanAddNode for Configured {}
 impl CanAddNode for ContainsNodes {}
@@ -101,6 +111,7 @@ impl<S> LegatoBuilder<S> {
             sample_name_to_key: self.sample_name_to_key,
             pipe_lookup: self.pipe_lookup,
             last_selection: self.last_selection,
+            midi_runtime_frontend: self.midi_runtime_frontend,
             _state: PhantomData,
         }
     }
@@ -122,6 +133,8 @@ pub struct LegatoBuilder<State> {
     sample_frontends: HashMap<String, AudioSampleFrontend>,
     // When adding a node or piping, this tracks and sets the node key for pipes
     last_selection: Option<SelectionKind>,
+    // The midi runtime that can be added to the runtime
+    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     _state: PhantomData<State>,
 }
 
@@ -130,9 +143,11 @@ impl LegatoBuilder<Unconfigured> {
         let mut namespaces = HashMap::new();
         let audio_registry = audio_registry_factory();
         let control_registry = control_registry_factory();
+        let midi_registry = midi_registry_factory();
 
         namespaces.insert("audio".into(), audio_registry);
         namespaces.insert("control".into(), control_registry);
+        namespaces.insert("midi".into(), midi_registry);
 
         namespaces.insert("user".into(), NodeRegistry::new());
 
@@ -148,6 +163,7 @@ impl LegatoBuilder<Unconfigured> {
             working_name_lookup: HashMap::new(),
             pipe_lookup: PipeRegistry::default(),
             last_selection: None,
+            midi_runtime_frontend: None,
             _state: std::marker::PhantomData,
         }
     }
@@ -180,6 +196,16 @@ where
     /// Register a custom pipe for transforming nodes
     pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) -> Self {
         self.pipe_lookup.insert(name.into(), pipe);
+        self
+    }
+}
+
+impl<S> LegatoBuilder<S>
+where
+    S: CanAddMidiRuntime,
+{
+    pub fn set_midi_runtime(mut self, rt: MidiRuntimeFrontend) -> Self {
+        self.midi_runtime_frontend = Some(rt);
         self
     }
 }
@@ -259,6 +285,7 @@ where
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
+                dbg!(&ports);
                 let index = ports
                     .audio_out
                     .iter()
@@ -396,12 +423,21 @@ where
 
         runtime.set_resources(resources);
 
+        if self.midi_runtime_frontend.is_some() {
+            let ctx = runtime.get_context_mut();
+            ctx.set_midi_store(MidiStore::new(256));
+        }
+
         // TODO: Perhaps a different crate here instead of leaking
         let queue = Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 512>::new()));
 
         let (producer, consumer) = queue.split();
 
-        let app = LegatoApp::new(runtime, consumer);
+        let mut app = LegatoApp::new(runtime, consumer);
+
+        if let Some(midi_rt) = self.midi_runtime_frontend {
+            app.set_midi_runtime(midi_rt);
+        }
 
         let rt_frontend = RuntimeFrontend::new(self.sample_frontends);
 

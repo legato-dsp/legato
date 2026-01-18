@@ -193,6 +193,8 @@ impl Runtime {
             node.process(&mut self.context, &inputs[0..audio_inputs_size], output);
         }
 
+        self.context.set_instant();
+
         let sink_key = self.sink_key.expect("Sink node must be provided");
         self.port_sources
             .get(sink_key)

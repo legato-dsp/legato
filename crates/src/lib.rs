@@ -7,6 +7,7 @@ use heapless::spsc::{Consumer, Producer};
 use crate::{
     builder::ValidationError,
     config::Config,
+    midi::MidiRuntimeFrontend,
     msg::LegatoMsg,
     node::{Channels, Inputs},
     params::{ParamError, ParamKey, ParamStoreFrontend},
@@ -21,6 +22,7 @@ pub mod context;
 pub mod graph;
 pub mod harness;
 pub mod math;
+pub mod midi;
 pub mod msg;
 pub mod node;
 pub mod out;
@@ -46,6 +48,7 @@ pub enum LegatoError {
 
 pub struct LegatoApp {
     runtime: Runtime,
+    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     consumer: Consumer<'static, LegatoMsg>,
 }
 
@@ -53,6 +56,7 @@ impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
         Self {
             runtime,
+            midi_runtime_frontend: None,
             consumer: receiver,
         }
     }
@@ -63,11 +67,27 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
+        // If we have a midi runtime, drain it.
+        if let Some(midi_runtime) = &self.midi_runtime_frontend {
+            let ctx = self.runtime.get_context_mut();
+            // Clear our old messages
+            ctx.clear_midi();
+            while let Some(msg) = midi_runtime.recv() {
+                // TOOD: Realtime logging with channel maybe?
+                if let Err(e) = ctx.insert_midi_msg(msg) {
+                    eprintln!("{:?}", e);
+                }
+            }
+        }
         // Handle messages from the LegatoFrontend
         while let Some(msg) = self.consumer.dequeue() {
             self.runtime.handle_msg(msg);
         }
         self.runtime.next_block(external_inputs)
+    }
+
+    pub fn set_midi_runtime(&mut self, rt: MidiRuntimeFrontend) {
+        self.midi_runtime_frontend = Some(rt);
     }
 
     pub fn get_config(&self) -> Config {

@@ -1,3 +1,4 @@
+pub mod adsr;
 pub mod delay;
 pub mod fir;
 pub mod mixer;

@@ -2,7 +2,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use legato::{
     builder::LegatoBuilder,
     config::Config,
-    harness::get_node_test_harness,
+    harness::get_node_test_harness_stereo_4096,
     nodes::audio::{
         fir::FirFilter,
         sine::Sine,
@@ -13,7 +13,7 @@ use legato::{
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
-    let mut graph = get_node_test_harness(Box::new(Sine::new(440.0, 2)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0, 2)));
 
     c.bench_function("Sine", |b| {
         b.iter(|| {
@@ -104,7 +104,7 @@ fn bench_fir(c: &mut Criterion) {
         0.0,
     ];
 
-    let mut graph = get_node_test_harness(Box::new(FirFilter::new(coeffs, 2)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(FirFilter::new(coeffs, 2)));
 
     c.bench_function("fir", |b| {
         b.iter(|| {
@@ -157,7 +157,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
 }
 
 fn bench_svf(c: &mut Criterion) {
-    let mut graph = get_node_test_harness(Box::new(Svf::new(
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Svf::new(
         48_000.0,
         FilterType::LowPass,
         5400.0,
@@ -166,9 +166,17 @@ fn bench_svf(c: &mut Criterion) {
         2,
     )));
 
+    let ai: &[Box<[f32]>] = &[vec![0.0; 4096].into(), vec![0.0; 4096].into()];
+
+    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+    for (i, x) in ai.iter().enumerate() {
+        inputs[i] = Some(&x)
+    }
+
     c.bench_function("SVF", |b| {
         b.iter(|| {
-            let out = graph.next_block(None);
+            let out = graph.next_block(Some(&inputs));
             black_box(out);
         })
     });

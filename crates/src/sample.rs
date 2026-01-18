@@ -2,14 +2,8 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 use arc_swap::ArcSwapOption;
 
-// TODO: Should any of these just be weak pointers?
-
 /// For now, we assume that all audio samples
 /// were loaded with FFMPEG with the same rate.
-///
-/// However, channels can change, but we want to
-/// store channels in a type-erased way, so that
-/// samples can live on the audio context
 #[derive(Debug, Clone)]
 pub struct AudioSample {
     chans: usize,
@@ -89,6 +83,7 @@ use std::{
     io::{BufReader, Read},
     process::{Command, Stdio},
 };
+
 // For the time being, we're just using FFMPEG for loading samples.
 // We can do something better in the future if required, i.e streaming.
 pub fn decode_with_ffmpeg(path: &str, chans: usize, sr: u32) -> std::io::Result<AudioSample> {
