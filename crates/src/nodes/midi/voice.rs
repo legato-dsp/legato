@@ -169,7 +169,6 @@ impl VoiceAllocator {
 
         // Otherwise, steal the next available voice. Fow now, we just use the lowest velocity note.
         let voice = self.steal_voice();
-        dbg!(&voice);
         if let Some((i, inner)) = voice {
             inner.note = note;
             inner.velocity = velocity;
@@ -274,8 +273,9 @@ impl Node for PolyVoice {
                             state.vel = velocity as f32 / 127.0;
                         }
                         // TODO: Keep velocity and frequency here, as there may be a synth with aftertouch logic
-                        MidiMessageKind::NoteOff { .. } => {
+                        MidiMessageKind::NoteOff { note: _, velocity } => {
                             state.gate = 0.0;
+                            state.vel = velocity as f32 / 127.0;
                         }
                         // TODO: Pitch bend? Aftertouch logic
                         _ => {}

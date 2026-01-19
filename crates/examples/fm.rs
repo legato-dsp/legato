@@ -1,9 +1,9 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
-    config::Config,
+    config::{BlockSize, Config},
     out::start_application_audio_thread,
     ports::PortBuilder,
 };
@@ -12,26 +12,46 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
-            sine: carrier { freq: 440.0, chans: 2 },
-            sine: mod { freq: 550.0, chans: 2 }
+            // Carrier and mod waves
+            sine: carrier { freq: 440.0, chans: 1 },
+            sine: mod { freq: 550.0, chans: 1 },
+            
+            // The FM ratio, just 1.5 for now
+            mult: fm_freq { val: 1.5 },
+
+            // The FM gain
+            mult: fm_gain { val: 1000.0, chans: 1 },
+
+            // One output chan, another control chan
+            add: fm_add,
+
+            mono_fan_out: master { chans: 2 },
         }
 
         control {
-            map { range: [-1.0, 1.0], new_range: [432.0, 448.0] }
+            // The carrier frequency
+            signal: freq { name: "freq", min: 40.0, max: 22000.0, default: 440.0 },
         }
 
-        lfo >> map >> sine[0]
+        freq >> fm_freq
 
-        { sine }
+        fm_freq >> mod.freq
+
+        mod >> fm_gain[0]
+
+        fm_gain >> fm_add[1]
+
+        freq >> fm_add[0]
+
+        fm_add >> carrier.freq
+
+        carrier >> master
+
+        { master }
     "#,
     );
 
-    let config = Config {
-        sample_rate: 44_100,
-        block_size: 4096,
-        channels: 2,
-        initial_graph_capacity: 4,
-    };
+    let config = Config::new(48_000, BlockSize::Block4096, 2, 6);
 
     let ports = PortBuilder::default().audio_out(2).build();
 
