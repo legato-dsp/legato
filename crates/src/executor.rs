@@ -1,11 +1,11 @@
-use std::{default, mem::MaybeUninit};
+use std::mem::MaybeUninit;
 
 use slotmap::SecondaryMap;
 
 use crate::{
     context::AudioContext,
-    graph::{self, AudioGraph, GraphError},
-    node::{Inputs, LegatoNode},
+    graph::{AudioGraph, GraphError},
+    node::Inputs,
     runtime::NodeKey,
 };
 

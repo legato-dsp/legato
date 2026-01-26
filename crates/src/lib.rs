@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     midi::MidiRuntimeFrontend,
     msg::LegatoMsg,
-    node::{Channels, Inputs},
+    node::Inputs,
     params::{ParamError, ParamKey, ParamStoreFrontend},
     runtime::{Runtime, RuntimeFrontend},
 };

@@ -4,7 +4,7 @@ use assert_no_alloc::permit_alloc;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::SampleKey,
     sample::AudioSample,

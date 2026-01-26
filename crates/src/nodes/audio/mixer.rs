@@ -1,7 +1,7 @@
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };

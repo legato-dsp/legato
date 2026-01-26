@@ -1,6 +1,6 @@
 use crate::{
     context::AudioContext,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     params::ParamKey,
     ports::{PortBuilder, Ports},
 };

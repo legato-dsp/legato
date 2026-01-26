@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use crate::{
     context::AudioContext,
-    node::{Inputs, Node, Outputs},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
 };
 

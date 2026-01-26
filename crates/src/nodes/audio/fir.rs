@@ -2,7 +2,7 @@ use std::simd::{StdFloat, num::SimdFloat};
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
     simd::{LANES, Vf32},

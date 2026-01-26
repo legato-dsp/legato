@@ -1,7 +1,7 @@
 use crate::{
     context::AudioContext,
     midi::MidiMessageKind,
-    node::{Inputs, Node, Outputs},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
 };
 
