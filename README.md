@@ -54,6 +54,14 @@ There are also some developer utilities like a spectrogram or example FIR filter
 nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.png
 ```
 
+### A Note On Safety
+
+Experimenting with audio software can be dangerous at times. Use at your own risk. 
+
+Exercise extra risk when working with any feedback delay networks, gain, wavefolding, etc. 
+
+It may be wise to simply use laptop speakers at low volume when developing, and to clamp gain to a specific amount in order to prevent any hardware damage.
+
 ## Roadmap
 
 ### Planned Features For 0.1.0
@@ -74,6 +82,5 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
 
 - Single tap delay node for delay compensation
 - Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
-- One continous buffer for work executor redesign
 - Bitflags or something similar for user defined params rather than static string comparison?
 - Unify node creation spec and node logic
