@@ -107,7 +107,7 @@ impl Executor {
     pub(crate) fn process(
         &mut self,
         mut ctx: &mut AudioContext,
-        _external_inputs: Option<&Inputs>,
+        external_inputs: Option<&Inputs>,
     ) -> &[&[f32]] {
         assert!(self.state == ExecutorState::Prepared);
 
@@ -130,29 +130,46 @@ impl Executor {
 
             // TODO: External inputs
 
-            let incoming = incoming
-                .get(*node_key)
-                .expect("Invalid connection in executor!");
+            let valid_inputs = self.source_key.is_some()
+                && self.source_key.unwrap() == *node_key
+                && external_inputs.as_ref().is_some();
 
-            for conn in incoming {
-                let base_offset = self
-                    .node_offsets
-                    .get(conn.source.node_key)
-                    .expect("Could not find offset for node!");
+            if valid_inputs {
+                let ai = external_inputs.unwrap();
 
-                let offset = (conn.source.port_index * block_size) + base_offset;
-                let end = offset + block_size;
+                for (c, chan) in ai.iter().flat_map(|x| *x).enumerate() {
+                    let start = c * block_size;
+                    let end = start + block_size;
 
-                let buffer = &self.data[offset..end];
+                    assert_eq!(chan.len(), block_size);
 
-                has_inputs[conn.sink.port_index] = true;
+                    self.scratch[start..end].copy_from_slice(chan);
+                }
+            } else {
+                let incoming = incoming
+                    .get(*node_key)
+                    .expect("Invalid connection in executor!");
 
-                // TODO: Zero copy for only one dependency?
+                for conn in incoming {
+                    let base_offset = self
+                        .node_offsets
+                        .get(conn.source.node_key)
+                        .expect("Could not find offset for node!");
 
-                let scratch_start = conn.sink.port_index * block_size;
-                let scratch_end = scratch_start + block_size;
+                    let offset = (conn.source.port_index * block_size) + base_offset;
+                    let end = offset + block_size;
 
-                self.scratch[scratch_start..scratch_end].copy_from_slice(buffer);
+                    let buffer = &self.data[offset..end];
+
+                    has_inputs[conn.sink.port_index] = true;
+
+                    // TODO: Zero copy for only one dependency?
+
+                    let scratch_start = conn.sink.port_index * block_size;
+                    let scratch_end = scratch_start + block_size;
+
+                    self.scratch[scratch_start..scratch_end].copy_from_slice(buffer);
+                }
             }
 
             for i in 0..audio_inputs_size {
