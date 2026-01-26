@@ -34,7 +34,7 @@ impl Sampler {
 }
 
 impl Node for Sampler {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
         let resources = ctx.get_resources();
         // Check for sample update by seeing if the handle and local version match
         // This is all done rather than directly using the swap option, because Arc has a small allocation.

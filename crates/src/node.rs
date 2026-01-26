@@ -17,7 +17,7 @@ pub type Outputs<'a> = Channels<'a>;
 /// For the time being, this should not be mutated or invalidated at runtime.
 pub trait Node {
     /// The process function for your node. They operate on slices of Box<[f32]>.
-    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Channels);
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]);
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}
     // Get the port information for your node. This should not change after contruction.

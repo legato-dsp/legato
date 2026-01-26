@@ -35,7 +35,7 @@ impl Node for Map {
         &mut self,
         _: &mut crate::context::AudioContext,
         inputs: &crate::node::Inputs,
-        outputs: &mut crate::node::Outputs,
+        outputs: &mut [&mut [f32]],
     ) {
         debug_assert!(self.max >= self.min);
         debug_assert!(self.mapped_max >= self.mapped_min);

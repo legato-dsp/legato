@@ -44,8 +44,6 @@ fn main() {
         config.sample_rate as u32,
     );
 
-    dbg!(&app);
-
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
 

@@ -1,15 +1,15 @@
 use crate::config::Config;
 use crate::context::AudioContext;
-use crate::graph::{AudioGraph, Connection, GraphError};
+use crate::executor::Executor;
+use crate::graph::{Connection, GraphError};
 use crate::msg::{self, LegatoMsg};
-use crate::node::{Channels, Inputs, LegatoNode, Node};
+use crate::node::{Inputs, LegatoNode, Node};
 use crate::ports::Ports;
 use crate::resources::Resources;
 use crate::sample::{AudioSampleError, AudioSampleFrontend};
 use std::fmt::Debug;
-use std::vec;
 
-use slotmap::{SecondaryMap, new_key_type};
+use slotmap::new_key_type;
 
 // Arbitrary max init. inputs
 pub const MAX_INPUTS: usize = 32;
@@ -23,81 +23,41 @@ new_key_type! {
 pub struct Runtime {
     // Audio context containing sample rate, control rate, etc.
     context: AudioContext,
-    graph: AudioGraph,
-    // Where the nodes write their output to, so node sinks / port sources
-    port_sources: SecondaryMap<NodeKey, Vec<Box<[f32]>>>,
-    // Preallocated buffers for delivering samples
-    scratch_buffers: Vec<Box<[f32]>>,
-    // A sink key for pulling the final processed buffer. Optional for graph construction, but required at runtime
-    sink_key: Option<NodeKey>,
-    source_key: Option<NodeKey>,
+    executor: Executor,
     ports: Ports,
 }
 impl Runtime {
-    pub fn new(context: AudioContext, graph: AudioGraph, ports: Ports) -> Self {
-        let audio_sources = SecondaryMap::with_capacity(graph.len());
-
-        let config = context.get_config();
-        let audio_block_size = config.block_size;
+    pub fn new(context: AudioContext, ports: Ports) -> Self {
+        let executor = Executor::default();
 
         Self {
             context,
-            graph,
-            port_sources: audio_sources,
-            scratch_buffers: vec![vec![0.0; audio_block_size].into(); MAX_INPUTS],
-            sink_key: None,
-            source_key: None,
+            executor,
             ports,
         }
     }
     pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
-        let ports = node.get_node().ports();
-
-        let audio_chan_size = ports.audio_out.iter().len();
-
-        let node_key = self.graph.add_node(node);
-
-        let config = self.context.get_config();
-
-        self.port_sources.insert(
-            node_key,
-            vec![vec![0.0; config.block_size].into(); audio_chan_size],
-        );
-
-        node_key
+        self.executor.graph.add_node(node)
     }
-    pub fn remove_node(&mut self, key: NodeKey) {
-        self.graph.remove_node(key);
-        self.port_sources.remove(key);
+    pub fn remove_node(&mut self, key: NodeKey) -> Option<LegatoNode> {
+        self.executor.graph.remove_node(key)
     }
 
     pub fn replace_node(&mut self, key: NodeKey, node: LegatoNode) {
-        self.graph.replace(key, node);
+        self.executor.graph.replace(key, node);
     }
 
     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
-        self.graph.add_edge(connection)
+        self.executor.graph.add_edge(connection)
     }
     pub fn remove_edge(&mut self, connection: Connection) -> Result<(), GraphError> {
-        self.graph.remove_edge(connection)
+        self.executor.graph.remove_edge(connection)
     }
     pub fn set_sink_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
-        match self.graph.exists(key) {
-            true => {
-                self.sink_key = Some(key);
-                Ok(())
-            }
-            false => Err(GraphError::NodeDoesNotExist),
-        }
+        self.executor.set_sink(key)
     }
     pub fn set_source_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
-        match self.graph.exists(key) {
-            true => {
-                self.sink_key = Some(key);
-                Ok(())
-            }
-            false => Err(GraphError::NodeDoesNotExist),
-        }
+        self.executor.set_source(key)
     }
     pub fn set_resources(&mut self, resources: Resources) {
         self.context.set_resources(resources);
@@ -110,6 +70,13 @@ impl Runtime {
     }
     pub fn get_config(&self) -> Config {
         self.context.get_config()
+    }
+    /// Prepare and allocate all of the information needed for the audio execution plan
+    pub fn prepare(&mut self) {
+        let block_size = self.context.get_config().block_size;
+        assert!(block_size != 0 && block_size % 2 == 0);
+
+        self.executor.prepare(block_size);
     }
     /// Handle the message from the LegatoFrontend
     ///
@@ -131,79 +98,28 @@ impl Runtime {
     }
     pub fn get_node_ports(&self, key: &NodeKey) -> &Ports {
         // Unwrapping becuase for now this is only used during application creation
-        self.graph.get_node(*key).unwrap().get_node().ports()
+        self.executor
+            .graph
+            .get_node(*key)
+            .unwrap()
+            .get_node()
+            .ports()
     }
     pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
-        self.graph.get_node(*key)
+        self.executor.graph.get_node(*key)
     }
     pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
-        self.graph.get_node_mut(*key)
+        self.executor.graph.get_node_mut(*key)
     }
-    // TODO: Try a zero-copy, flat [L L L, R R R] approach for better performance
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
-        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
 
-        for (_i, node_key) in sorted_order.iter().enumerate() {
-            let ports = nodes[*node_key].get_node().ports();
-            let audio_inputs_size = ports.audio_in.len();
-
-            self.scratch_buffers[..audio_inputs_size]
-                .iter_mut()
-                .for_each(|buf| buf.fill(0.0));
-
-            let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-
-            let mut has_inputs: [bool; MAX_INPUTS] = [false; MAX_INPUTS];
-
-            // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
-            if self.source_key.is_some()
-                && self.source_key.unwrap() == *node_key
-                && external_inputs.as_ref().is_some()
-            {
-                let ai = external_inputs.unwrap();
-                for (c, ai_chan) in ai.iter().enumerate() {
-                    inputs[c] = Some(ai_chan.unwrap());
-                }
-            } else {
-                let incoming = incoming.get(*node_key).expect("Invalid connection!");
-                for conn in incoming {
-                    let buffer = &self.port_sources[conn.source.node_key][conn.source.port_index];
-
-                    has_inputs[conn.sink.port_index] = true;
-
-                    for (n, sample) in buffer.iter().enumerate() {
-                        self.scratch_buffers[conn.sink.port_index][n] += sample;
-                    }
-                }
-
-                for i in 0..audio_inputs_size {
-                    if has_inputs[i] {
-                        inputs[i] = Some(&self.scratch_buffers[i]);
-                    }
-                }
-            }
-
-            let node = nodes
-                .get_mut(*node_key)
-                .expect("Could not find node at index {node_index:?}")
-                .get_node_mut();
-
-            let output = &mut self.port_sources[*node_key];
-
-            node.process(&mut self.context, &inputs[0..audio_inputs_size], output);
-        }
-
-        self.context.set_instant();
-
-        let sink_key = self.sink_key.expect("Sink node must be provided");
-        self.port_sources
-            .get(sink_key)
-            .expect("Invalid output port!")
+    // Execute the audio plan and return the next block
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
+        &self.executor.process(&mut self.context, external_inputs)
     }
 }
 
 impl Node for Runtime {
-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let outputs = self.next_block(Some(ai));
 
         debug_assert_eq!(ai.len(), ao.len());
@@ -259,10 +175,9 @@ impl RuntimeFrontend {
 }
 
 pub fn build_runtime(config: Config, ports: Ports) -> Runtime {
-    let graph = AudioGraph::with_capacity(config.initial_graph_capacity);
     let context = AudioContext::new(config);
 
-    Runtime::new(context, graph, ports)
+    Runtime::new(context, ports)
 }
 
 impl Debug for Runtime {
@@ -270,9 +185,9 @@ impl Debug for Runtime {
         f.debug_map()
             .entry(&"config", &self.context.get_config())
             .key(&"graph")
-            .value(&self.graph)
+            .value(&self.executor.graph)
             .entry(&"graph_ports", &self.ports)
-            .entry(&"sink_key", &self.sink_key)
+            .entry(&"sink_key", self.executor.sink())
             .finish()
     }
 }

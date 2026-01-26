@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::DelayLineKey,
     ring::RingBuffer,
@@ -83,7 +83,7 @@ impl DelayWrite {
 }
 
 impl Node for DelayWrite {
-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
         let resources = ctx.get_resources_mut();
         resources.delay_write_block(self.delay_line_key, ai);
@@ -115,7 +115,7 @@ impl DelayRead {
 }
 
 impl Node for DelayRead {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
 
         let block_size = config.block_size;
@@ -209,16 +209,15 @@ mod test_delay_simd_equivalence {
         let mut rb_scalar = RingBuffer::new(CAP);
         let mut rb_simd = RingBuffer::new(CAP);
 
-        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
-
-        let input: &mut Channels = &mut inputs_raw;
+        let mut inputs_raw = [[0.0; BLOCK]; CHANS];
 
         let mut rng = rand::rng();
-        for s in &mut input[0] {
+
+        for s in &mut inputs_raw[0] {
             *s = rng.random::<f32>();
         }
 
-        let buf = &input[0];
+        let buf = &inputs_raw[0];
 
         for n in 0..BLOCK {
             rb_scalar.push(buf[n]);

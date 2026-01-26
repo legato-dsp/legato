@@ -29,7 +29,7 @@ impl Voice {
 }
 
 impl Node for Voice {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut Outputs) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
         let block_start = ctx.get_instant();
 
         let cfg = ctx.get_config();
@@ -214,7 +214,7 @@ impl PolyVoice {
 }
 
 impl Node for PolyVoice {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut Outputs) {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
         let block_start = ctx.get_instant();
 
         let cfg = ctx.get_config();

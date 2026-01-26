@@ -34,7 +34,7 @@ impl TrackMixer {
 }
 
 impl Node for TrackMixer {
-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
         for buffer in ao.iter_mut() {
             buffer.fill(0.0);
@@ -84,7 +84,7 @@ impl MonoFanOut {
 }
 
 impl Node for MonoFanOut {
-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // TODO: Chunks + SIMD
         let chans_out = self.ports.audio_out.len();
         let gain = 1.0 / f32::sqrt(chans_out as f32);

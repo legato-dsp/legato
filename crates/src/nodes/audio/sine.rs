@@ -60,7 +60,12 @@ impl Sine {
                 .build(),
         }
     }
-    fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels) {
+    fn process_external_freq(
+        &mut self,
+        ctx: &mut AudioContext,
+        fm_in: &[f32],
+        ao: &mut [&mut [f32]],
+    ) {
         let config = ctx.get_config();
 
         let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
@@ -89,7 +94,7 @@ impl Sine {
         }
     }
 
-    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut Channels) {
+    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let freq = Vf32::splat(self.freq);
 
@@ -121,7 +126,7 @@ impl Sine {
 }
 
 impl Node for Sine {
-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         if let Some(fm_in) = ai[0] {
             self.process_external_freq(ctx, fm_in, ao);
         } else {

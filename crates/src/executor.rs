@@ -1,24 +1,30 @@
-use std::mem::MaybeUninit;
+use std::{default, mem::MaybeUninit};
 
 use slotmap::SecondaryMap;
 
-use crate::{context::AudioContext, graph::AudioGraph, node::Inputs, runtime::NodeKey};
+use crate::{
+    context::AudioContext,
+    graph::{self, AudioGraph, GraphError},
+    node::{Inputs, LegatoNode},
+    runtime::NodeKey,
+};
 
-pub const MAX_ARITY: usize = 32;
+pub(crate) const MAX_ARITY: usize = 32;
 
 /// For the time being, we just check if it has been prepared or not,
 /// but in the future we might pause, stop, etc.
-#[derive(Clone, Debug, PartialEq)]
-pub enum ExecutorState {
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) enum ExecutorState {
     Prepared,
+    #[default]
     Unprepared,
 }
 
-#[derive(Clone, Debug)]
-pub struct Executor {
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Executor {
     data: Box<[f32]>,
     scratch: Box<[f32]>,
-    graph: AudioGraph,
+    pub(crate) graph: AudioGraph,
     node_offsets: SecondaryMap<NodeKey, usize>,
     // Keys for inputs/output nodes
     source_key: Option<NodeKey>,
@@ -27,10 +33,36 @@ pub struct Executor {
 }
 
 impl Executor {
+    /// Set the sink key for the runtime
+    pub(crate) fn set_sink(&mut self, key: NodeKey) -> Result<(), GraphError> {
+        match self.graph.exists(key) {
+            true => {
+                self.sink_key = Some(key);
+                Ok(())
+            }
+            false => Err(GraphError::NodeDoesNotExist),
+        }
+    }
+
+    /// Set the source key for the runtime
+    pub(crate) fn set_source(&mut self, key: NodeKey) -> Result<(), GraphError> {
+        match self.graph.exists(key) {
+            true => {
+                self.source_key = Some(key);
+                Ok(())
+            }
+            false => Err(GraphError::NodeDoesNotExist),
+        }
+    }
+
+    pub fn sink(&self) -> &Option<NodeKey> {
+        &self.sink_key
+    }
+
     /// Prepare the flat buffer allocation for the graph, as well as the node offsets.
     ///
     /// NOTE: This is not realtime safe!
-    pub fn prepare(&mut self, block_size: usize) {
+    pub(crate) fn prepare(&mut self, block_size: usize) {
         // Allocate flat buffer
         let num_ports = self.graph.total_ports();
         let buffer_size = num_ports * block_size;
@@ -38,7 +70,10 @@ impl Executor {
         self.data = vec![0.0; buffer_size].into();
 
         // Scratch buffer that gets passed for node inputs
-        self.scratch = vec![0.0; buffer_size * MAX_ARITY].into();
+
+        let scratch_len = block_size * MAX_ARITY;
+
+        self.scratch = vec![0.0; scratch_len].into();
 
         // Now, we get all the keys from the topo sorted order, so we can give each node an offset into the flat buffer.
         let keys = self
@@ -48,9 +83,10 @@ impl Executor {
 
         let mut total_ports = 0_usize;
 
+        self.node_offsets.clear();
+
         for key in keys {
-            let node_offset = self.node_offsets.get_mut(key).unwrap();
-            *node_offset = total_ports * block_size;
+            self.node_offsets.insert(key, total_ports * block_size);
 
             let arity = self
                 .graph
@@ -61,14 +97,14 @@ impl Executor {
                 .audio_out
                 .len();
 
-            total_ports += arity
+            total_ports += arity;
         }
 
         self.state = ExecutorState::Prepared;
     }
 
     #[inline(always)]
-    pub fn process(
+    pub(crate) fn process(
         &mut self,
         mut ctx: &mut AudioContext,
         _external_inputs: Option<&Inputs>,

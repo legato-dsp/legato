@@ -159,7 +159,7 @@ mod tests {
             let inputs = [Some(&in_0[..]), Some(&in_1[..]), None];
             let mut outputs = [&mut out_0[..], &mut out_1[..]];
 
-            node.process(&mut ctx, &inputs, &mut outputs);
+            node.process(&mut ctx, &inputs, &mut [&mut [f32]]);
         }
 
         // 4. Assertions

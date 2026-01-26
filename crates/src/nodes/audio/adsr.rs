@@ -111,7 +111,7 @@ impl Node for Adsr {
         &mut self,
         ctx: &mut crate::context::AudioContext,
         inputs: &crate::node::Inputs,
-        outputs: &mut crate::node::Outputs,
+        outputs: &mut [&mut [f32]],
     ) {
         let config = ctx.get_config();
         let sr = config.sample_rate;
