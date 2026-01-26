@@ -89,6 +89,15 @@ impl AudioGraph {
         self.nodes.len() == 0
     }
 
+    /// This function is used to grab the total ports in the graph.
+    ///
+    /// This is useful for runtime allocations.
+    pub fn total_ports(&self) -> usize {
+        self.nodes
+            .values()
+            .fold(0, |acc, x| acc + x.get_node().ports().audio_out.len())
+    }
+
     pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
     ) -> (&Vec<NodeKey>, &mut SlotMap<NodeKey, LegatoNode>, &EdgeMap) {

@@ -19,6 +19,7 @@ pub mod builder;
 pub mod config;
 pub mod connection;
 pub mod context;
+pub mod executor;
 pub mod graph;
 pub mod harness;
 pub mod math;
