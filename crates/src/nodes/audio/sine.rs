@@ -141,6 +141,7 @@ impl Node for Sine {
                 ("freq", RtValue::F32(val)) => self.freq = val,
                 _ => unreachable!("Invalid parameter and value passed"),
             },
+            _ => (),
         }
     }
 

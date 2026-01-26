@@ -137,6 +137,7 @@ impl Node for Runtime {
             msg::NodeMessage::SetParam(_) => {
                 unimplemented!("Runtime subgraph messaging not yet setup")
             }
+            _ => (),
         }
     }
 }

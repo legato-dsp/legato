@@ -24,4 +24,5 @@ pub enum LegatoMsg {
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeMessage {
     SetParam(ParamPayload),
+    Dummy(),
 }

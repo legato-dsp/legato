@@ -280,7 +280,7 @@ mod test {
     use crate::{
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
-        node::{Channels, Inputs, Node},
+        node::{Inputs, Node},
         ports::{PortMeta, Ports},
     };
 
