@@ -1,0 +1,1889 @@
+diff --git a/README.md b/README.md
+index 2f9ea79..73d6805 100644
+--- a/README.md
++++ b/README.md
+@@ -54,6 +54,14 @@ There are also some developer utilities like a spectrogram or example FIR filter
+ nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.png
+ ```
+ 
++### A Note On Safety
++
++Experimenting with audio software can be dangerous at times. Use at your own risk. 
++
++Exercise extra risk when working with any feedback delay networks, gain, wavefolding, etc. 
++
++It may be wise to simply use laptop speakers at low volume when developing, and to clamp gain to a specific amount in order to prevent any hardware damage.
++
+ ## Roadmap
+ 
+ ### Planned Features For 0.1.0
+@@ -74,6 +82,5 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
+ 
+ - Single tap delay node for delay compensation
+ - Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
+-- One continous buffer for work executor redesign
+ - Bitflags or something similar for user defined params rather than static string comparison?
+ - Unify node creation spec and node logic
+diff --git a/crates/examples/control.rs b/crates/examples/control.rs
+index 06e32c7..fb26400 100644
+--- a/crates/examples/control.rs
++++ b/crates/examples/control.rs
+@@ -1,4 +1,4 @@
+-use std::{path::Path, time::Duration};
++use std::path::Path;
+ 
+ use cpal::{SampleRate, StreamConfig, traits::HostTrait};
+ use legato::{
+@@ -44,8 +44,6 @@ fn main() {
+         config.sample_rate as u32,
+     );
+ 
+-    dbg!(&app);
+-
+     #[cfg(target_os = "macos")]
+     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
+ 
+diff --git a/crates/examples/poly.rs b/crates/examples/poly.rs
+index aeb020e..f00b16a 100644
+--- a/crates/examples/poly.rs
++++ b/crates/examples/poly.rs
+@@ -159,7 +159,7 @@ mod tests {
+             let inputs = [Some(&in_0[..]), Some(&in_1[..]), None];
+             let mut outputs = [&mut out_0[..], &mut out_1[..]];
+ 
+-            node.process(&mut ctx, &inputs, &mut outputs);
++            node.process(&mut ctx, &inputs, &mut [&mut [f32]]);
+         }
+ 
+         // 4. Assertions
+diff --git a/crates/src/builder.rs b/crates/src/builder.rs
+index 43923c8..70b0483 100644
+--- a/crates/src/builder.rs
++++ b/crates/src/builder.rs
+@@ -285,7 +285,6 @@ where
+             PortConnectionType::Indexed { port } => vec![port],
+             PortConnectionType::Named { ref port } => {
+                 let ports = self.runtime.get_node_ports(&connection.source);
+-                dbg!(&ports);
+                 let index = ports
+                     .audio_out
+                     .iter()
+@@ -423,6 +422,9 @@ where
+ 
+         runtime.set_resources(resources);
+ 
++        // Allocate all of the audio buffers needed at runtime
++        runtime.prepare();
++
+         if self.midi_runtime_frontend.is_some() {
+             let ctx = runtime.get_context_mut();
+             ctx.set_midi_store(MidiStore::new(256));
+diff --git a/crates/src/executor.rs b/crates/src/executor.rs
+new file mode 100644
+index 0000000..d58c099
+--- /dev/null
++++ b/crates/src/executor.rs
+@@ -0,0 +1,261 @@
++use std::mem::MaybeUninit;
++
++use slotmap::SecondaryMap;
++
++use crate::{
++    context::AudioContext,
++    graph::{AudioGraph, GraphError},
++    node::Inputs,
++    runtime::NodeKey,
++};
++
++pub(crate) const MAX_ARITY: usize = 32;
++
++/// For the time being, we just check if it has been prepared or not,
++/// but in the future we might pause, stop, etc.
++#[derive(Clone, Debug, PartialEq, Default)]
++pub(crate) enum ExecutorState {
++    Prepared,
++    #[default]
++    Unprepared,
++}
++
++#[derive(Clone, Debug, Default)]
++pub(crate) struct Executor {
++    data: Box<[f32]>,
++    scratch: Box<[f32]>,
++    pub(crate) graph: AudioGraph,
++    node_offsets: SecondaryMap<NodeKey, usize>,
++    // Keys for inputs/output nodes
++    source_key: Option<NodeKey>,
++    sink_key: Option<NodeKey>,
++    state: ExecutorState,
++}
++
++impl Executor {
++    /// Set the sink key for the runtime
++    pub(crate) fn set_sink(&mut self, key: NodeKey) -> Result<(), GraphError> {
++        match self.graph.exists(key) {
++            true => {
++                self.sink_key = Some(key);
++                Ok(())
++            }
++            false => Err(GraphError::NodeDoesNotExist),
++        }
++    }
++
++    /// Set the source key for the runtime
++    pub(crate) fn set_source(&mut self, key: NodeKey) -> Result<(), GraphError> {
++        match self.graph.exists(key) {
++            true => {
++                self.source_key = Some(key);
++                Ok(())
++            }
++            false => Err(GraphError::NodeDoesNotExist),
++        }
++    }
++
++    pub fn sink(&self) -> &Option<NodeKey> {
++        &self.sink_key
++    }
++
++    /// Prepare the flat buffer allocation for the graph, as well as the node offsets.
++    ///
++    /// NOTE: This is not realtime safe!
++    pub(crate) fn prepare(&mut self, block_size: usize) {
++        // Allocate flat buffer
++        let num_ports = self.graph.total_ports();
++        let buffer_size = num_ports * block_size;
++
++        self.data = vec![0.0; buffer_size].into();
++
++        // Scratch buffer that gets passed for node inputs
++
++        let scratch_len = block_size * MAX_ARITY;
++
++        self.scratch = vec![0.0; scratch_len].into();
++
++        // Now, we get all the keys from the topo sorted order, so we can give each node an offset into the flat buffer.
++        let keys = self
++            .graph
++            .invalidate_topo_sort()
++            .expect("Invalid graph topology found in prepare!");
++
++        let mut total_ports = 0_usize;
++
++        self.node_offsets.clear();
++
++        for key in keys {
++            self.node_offsets.insert(key, total_ports * block_size);
++
++            let arity = self
++                .graph
++                .get_node(key)
++                .unwrap()
++                .get_node()
++                .ports()
++                .audio_out
++                .len();
++
++            total_ports += arity;
++        }
++
++        self.state = ExecutorState::Prepared;
++    }
++
++    #[inline(always)]
++    pub(crate) fn process(
++        &mut self,
++        mut ctx: &mut AudioContext,
++        external_inputs: Option<&Inputs>,
++    ) -> &[&[f32]] {
++        assert!(self.state == ExecutorState::Prepared);
++
++        let block_size = ctx.get_config().block_size;
++
++        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
++
++        for node_key in sorted_order {
++            let ports = nodes[*node_key].get_node().ports();
++
++            let audio_inputs_size = ports.audio_in.len();
++            let audio_outputs_size = ports.audio_out.len();
++
++            // Fill the scratch buffer for the first N channels
++            self.scratch[..audio_inputs_size * block_size].fill(0.0);
++
++            let mut inputs: [Option<&[f32]>; MAX_ARITY] = [None; MAX_ARITY];
++
++            let mut has_inputs: [bool; MAX_ARITY] = [false; MAX_ARITY];
++
++            // TODO: External inputs
++
++            let incoming = incoming
++                .get(*node_key)
++                .expect("Invalid connection in executor!");
++
++            for conn in incoming {
++                let base_offset = self
++                    .node_offsets
++                    .get(conn.source.node_key)
++                    .expect("Could not find offset for node!");
++
++                let offset = (conn.source.port_index * block_size) + base_offset;
++                let end = offset + block_size;
++
++                let buffer = &self.data[offset..end];
++
++                has_inputs[conn.sink.port_index] = true;
++
++                // TODO: Zero copy for only one dependency?
++
++                let scratch_start = conn.sink.port_index * block_size;
++                let scratch_end = scratch_start + block_size;
++
++                self.scratch[scratch_start..scratch_end].copy_from_slice(buffer);
++            }
++
++            for i in 0..audio_inputs_size {
++                if has_inputs[i] {
++                    // Pass references to each slice to the inputs now
++                    let start = i * block_size;
++                    let end = start + block_size;
++                    inputs[i] = Some(&self.scratch[start..end]);
++                }
++            }
++
++            let node = nodes
++                .get_mut(*node_key)
++                .expect("Could not find node at index {node_index:?}")
++                .get_node_mut();
++
++            let node_start = *self.node_offsets.get(*node_key).unwrap();
++
++            let outputs =
++                slice_node_ports_mut(&mut self.data, node_start, block_size, audio_outputs_size);
++
++            node.process(&mut ctx, &inputs[0..audio_inputs_size], outputs);
++        }
++
++        ctx.set_instant();
++
++        let sink_key = self.sink_key.expect("Sink node must be provided");
++
++        let node_offset = self
++            .node_offsets
++            .get(sink_key)
++            .expect("Could not find sink");
++
++        let node_arity = self
++            .graph
++            .get_node(sink_key)
++            .expect("Could not find sink")
++            .get_node()
++            .ports()
++            .audio_out
++            .len();
++
++        let final_outputs = slice_node_ports(&self.data, *node_offset, block_size, node_arity);
++
++        final_outputs
++    }
++}
++
++#[inline(always)]
++fn slice_node_ports_mut<'a>(
++    buffer: &'a mut [f32],
++    offset: usize,
++    block_size: usize,
++    chans: usize,
++) -> &'a mut [&'a mut [f32]] {
++    let end = (block_size * chans) + offset;
++
++    let node_buffer = &mut buffer[offset..end];
++
++    let slices = node_buffer.chunks_exact_mut(block_size);
++
++    assert_eq!(slices.len(), chans);
++
++    let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
++        unsafe { MaybeUninit::uninit().assume_init() };
++
++    for (i, slice) in slices.enumerate() {
++        outputs_raw[i] = MaybeUninit::new(slice);
++    }
++
++    // TODO: Evaluate safety!
++    let outputs: &mut [&mut [f32]] = unsafe {
++        &mut *(&mut outputs_raw[..chans] as *mut [MaybeUninit<&mut [f32]>] as *mut [&mut [f32]])
++    };
++
++    outputs
++}
++
++#[inline(always)]
++fn slice_node_ports<'a>(
++    buffer: &'a [f32],
++    offset: usize,
++    block_size: usize,
++    chans: usize,
++) -> &'a [&'a [f32]] {
++    let end = (block_size * chans) + offset;
++
++    let node_buffer = &buffer[offset..end];
++
++    let slices = node_buffer.chunks_exact(block_size);
++
++    assert_eq!(slices.len(), chans);
++
++    let mut outputs_raw: [MaybeUninit<&[f32]>; MAX_ARITY] =
++        unsafe { MaybeUninit::uninit().assume_init() };
++
++    for (i, slice) in slices.enumerate() {
++        outputs_raw[i] = MaybeUninit::new(slice);
++    }
++
++    // TODO: Evaluate safety!
++    let outputs: &[&[f32]] =
++        unsafe { &*(&outputs_raw[..chans] as *const [MaybeUninit<&[f32]>] as *const [&[f32]]) };
++
++    outputs
++}
+diff --git a/crates/src/graph.rs b/crates/src/graph.rs
+index 75cb80d..98019ae 100644
+--- a/crates/src/graph.rs
++++ b/crates/src/graph.rs
+@@ -27,7 +27,7 @@ pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
+ 
+ const INITIAL_INPUTS: usize = 8;
+ /// A DAG for grabbing nodes and their dependencies via topological sort.
+-#[derive(Clone)]
++#[derive(Clone, Default)]
+ pub struct AudioGraph {
+     nodes: SlotMap<NodeKey, LegatoNode>,
+     incoming_edges: EdgeMap,
+@@ -62,7 +62,7 @@ impl AudioGraph {
+         self.outgoing_edges
+             .insert(key, IndexSet::with_capacity(INITIAL_INPUTS));
+ 
+-        let _ = self.invalidate_topo_sort();
++        self.invalidate_topo_sort().unwrap();
+ 
+         key
+     }
+@@ -89,6 +89,19 @@ impl AudioGraph {
+         self.nodes.len() == 0
+     }
+ 
++    /// This function is used to grab the total ports in the graph.
++    ///
++    /// This is useful for runtime allocations.
++    pub fn total_ports(&self) -> usize {
++        self.nodes
++            .values()
++            .fold(0, |acc, x| acc + x.get_node().ports().audio_out.len())
++    }
++
++    pub fn nodes(&self) -> Vec<&LegatoNode> {
++        self.nodes.values().collect()
++    }
++
+     pub fn get_sort_order_nodes_and_runtime_info(
+         &mut self,
+     ) -> (&Vec<NodeKey>, &mut SlotMap<NodeKey, LegatoNode>, &EdgeMap) {
+@@ -267,7 +280,7 @@ mod test {
+     use crate::{
+         context::AudioContext,
+         graph::{AudioGraph, NodeKey},
+-        node::{Channels, Inputs, Node},
++        node::{Inputs, Node},
+         ports::{PortMeta, Ports},
+     };
+ 
+@@ -294,7 +307,7 @@ mod test {
+     }
+ 
+     impl Node for MonoExample {
+-        fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut Channels) {}
++        fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut [&mut [f32]]) {}
+         fn ports(&self) -> &Ports {
+             &self.ports
+         }
+diff --git a/crates/src/harness.rs b/crates/src/harness.rs
+index 79e8494..2eed0b7 100644
+--- a/crates/src/harness.rs
++++ b/crates/src/harness.rs
+@@ -15,11 +15,13 @@ pub fn get_node_test_harness_stereo_4096(node: Box<dyn DynNode>) -> Runtime {
+ 
+     let ports = PortBuilder::default().audio_out(2).build();
+ 
+-    let mut graph = build_runtime(config, ports);
++    let mut runtime = build_runtime(config, ports);
+ 
+-    let id = graph.add_node(LegatoNode::new("test node".into(), "test".into(), node));
++    let id = runtime.add_node(LegatoNode::new("test node".into(), "test".into(), node));
+ 
+-    let _ = graph.set_sink_key(id);
++    let _ = runtime.set_sink_key(id);
+ 
+-    graph
++    runtime.prepare();
++
++    runtime
+ }
+diff --git a/crates/src/lib.rs b/crates/src/lib.rs
+index 1964aff..b830b73 100644
+--- a/crates/src/lib.rs
++++ b/crates/src/lib.rs
+@@ -9,7 +9,7 @@ use crate::{
+     config::Config,
+     midi::MidiRuntimeFrontend,
+     msg::LegatoMsg,
+-    node::{Channels, Inputs},
++    node::Inputs,
+     params::{ParamError, ParamKey, ParamStoreFrontend},
+     runtime::{Runtime, RuntimeFrontend},
+ };
+@@ -19,6 +19,7 @@ pub mod builder;
+ pub mod config;
+ pub mod connection;
+ pub mod context;
++pub mod executor;
+ pub mod graph;
+ pub mod harness;
+ pub mod math;
+@@ -66,7 +67,7 @@ impl LegatoApp {
+     /// This is useful for tests, or compatability with different audio backends.
+     ///
+     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
+-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
++    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
+         // If we have a midi runtime, drain it.
+         if let Some(midi_runtime) = &self.midi_runtime_frontend {
+             let ctx = self.runtime.get_context_mut();
+diff --git a/crates/src/msg.rs b/crates/src/msg.rs
+index eb519a8..9765944 100644
+--- a/crates/src/msg.rs
++++ b/crates/src/msg.rs
+@@ -24,4 +24,5 @@ pub enum LegatoMsg {
+ #[derive(Debug, Clone, PartialEq)]
+ pub enum NodeMessage {
+     SetParam(ParamPayload),
++    Dummy(),
+ }
+diff --git a/crates/src/node.rs b/crates/src/node.rs
+index f9a594f..4d240ec 100644
+--- a/crates/src/node.rs
++++ b/crates/src/node.rs
+@@ -4,8 +4,8 @@ use crate::{context::AudioContext, msg::NodeMessage, ports::Ports};
+ 
+ pub type Inputs<'a> = [Option<&'a [f32]>];
+ 
+-pub type Channels = [Box<[f32]>];
+-pub type Outputs = Channels;
++pub type Channels<'a> = &'a [&'a [f32]];
++pub type Outputs<'a> = Channels<'a>;
+ 
+ /// The node trait that any audio processing nodes must implement.
+ ///
+@@ -17,7 +17,7 @@ pub type Outputs = Channels;
+ /// For the time being, this should not be mutated or invalidated at runtime.
+ pub trait Node {
+     /// The process function for your node. They operate on slices of Box<[f32]>.
+-    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Outputs);
++    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]);
+     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
+     fn handle_msg(&mut self, _msg: NodeMessage) {}
+     // Get the port information for your node. This should not change after contruction.
+diff --git a/crates/src/nodes/audio/adsr.rs b/crates/src/nodes/audio/adsr.rs
+index 9488cf5..da9a8f4 100644
+--- a/crates/src/nodes/audio/adsr.rs
++++ b/crates/src/nodes/audio/adsr.rs
+@@ -111,7 +111,7 @@ impl Node for Adsr {
+         &mut self,
+         ctx: &mut crate::context::AudioContext,
+         inputs: &crate::node::Inputs,
+-        outputs: &mut crate::node::Outputs,
++        outputs: &mut [&mut [f32]],
+     ) {
+         let config = ctx.get_config();
+         let sr = config.sample_rate;
+@@ -147,6 +147,7 @@ impl Node for Adsr {
+         }
+     }
+     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
++        // Leaving this issue here for the time being so that I remember other states
+         if let NodeMessage::SetParam(inner) = msg {
+             match (inner.param_name, inner.value) {
+                 ("attack", RtValue::F32(x)) => self.attack_ms = x,
+diff --git a/crates/src/nodes/audio/delay.rs b/crates/src/nodes/audio/delay.rs
+index ed0ca1f..f4cdf97 100644
+--- a/crates/src/nodes/audio/delay.rs
++++ b/crates/src/nodes/audio/delay.rs
+@@ -2,7 +2,7 @@ use std::time::Duration;
+ 
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     resources::DelayLineKey,
+     ring::RingBuffer,
+@@ -83,7 +83,7 @@ impl DelayWrite {
+ }
+ 
+ impl Node for DelayWrite {
+-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
+         let resources = ctx.get_resources_mut();
+         resources.delay_write_block(self.delay_line_key, ai);
+@@ -115,7 +115,7 @@ impl DelayRead {
+ }
+ 
+ impl Node for DelayRead {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+         let config = ctx.get_config();
+ 
+         let block_size = config.block_size;
+@@ -209,16 +209,15 @@ mod test_delay_simd_equivalence {
+         let mut rb_scalar = RingBuffer::new(CAP);
+         let mut rb_simd = RingBuffer::new(CAP);
+ 
+-        let mut inputs_raw = [vec![0.0; BLOCK].into(); CHANS];
+-
+-        let input: &mut Channels = &mut inputs_raw;
++        let mut inputs_raw = [[0.0; BLOCK]; CHANS];
+ 
+         let mut rng = rand::rng();
+-        for s in &mut input[0] {
++
++        for s in &mut inputs_raw[0] {
+             *s = rng.random::<f32>();
+         }
+ 
+-        let buf = &input[0];
++        let buf = &inputs_raw[0];
+ 
+         for n in 0..BLOCK {
+             rb_scalar.push(buf[n]);
+diff --git a/crates/src/nodes/audio/fir.rs b/crates/src/nodes/audio/fir.rs
+index dfb82ef..7ccd1c3 100644
+--- a/crates/src/nodes/audio/fir.rs
++++ b/crates/src/nodes/audio/fir.rs
+@@ -2,7 +2,7 @@ use std::simd::{StdFloat, num::SimdFloat};
+ 
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     ring::RingBuffer,
+     simd::{LANES, Vf32},
+@@ -35,7 +35,7 @@ impl FirFilter {
+ }
+ 
+ impl Node for FirFilter {
+-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         // These checks are important because we are using this elsewhere for oversampling
+         if let Some(inner) = ai[0] {
+             // Channel alignment
+diff --git a/crates/src/nodes/audio/mixer.rs b/crates/src/nodes/audio/mixer.rs
+index ed00101..34b34af 100644
+--- a/crates/src/nodes/audio/mixer.rs
++++ b/crates/src/nodes/audio/mixer.rs
+@@ -1,7 +1,7 @@
+ use crate::{
+     context::AudioContext,
+     math::fast_tanh_vf32,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     simd::{LANES, Vf32},
+ };
+@@ -34,7 +34,7 @@ impl TrackMixer {
+ }
+ 
+ impl Node for TrackMixer {
+-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
+         for buffer in ao.iter_mut() {
+             buffer.fill(0.0);
+@@ -84,7 +84,7 @@ impl MonoFanOut {
+ }
+ 
+ impl Node for MonoFanOut {
+-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         // TODO: Chunks + SIMD
+         let chans_out = self.ports.audio_out.len();
+         let gain = 1.0 / f32::sqrt(chans_out as f32);
+diff --git a/crates/src/nodes/audio/ops.rs b/crates/src/nodes/audio/ops.rs
+index 5c11261..7b98e2e 100644
+--- a/crates/src/nodes/audio/ops.rs
++++ b/crates/src/nodes/audio/ops.rs
+@@ -1,7 +1,7 @@
+ use crate::{
+     context::AudioContext,
+     math::fast_tanh_vf32,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     simd::{LANES, Vf32},
+ };
+@@ -26,7 +26,7 @@ impl ApplyOp {
+                 .build(),
+         }
+     }
+-    fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut Channels) {
++    fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         let chunk_size = LANES;
+ 
+         let val = Vf32::splat(self.val);
+@@ -42,7 +42,7 @@ impl ApplyOp {
+             }
+         }
+     }
+-    fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut Channels) {
++    fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut [&mut [f32]]) {
+         let chans = self.ports.audio_in.len() - 1; // Remove value channel to see input channels
+ 
+         let audio_inputs = &ai[..chans];
+@@ -63,7 +63,7 @@ impl ApplyOp {
+ }
+ 
+ impl Node for ApplyOp {
+-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         let val_idx = self.ports.audio_in.len() - 1;
+         let val_chan = ai[val_idx];
+ 
+@@ -140,14 +140,12 @@ mod test {
+ 
+         let inputs = [Some(buf_one.as_slice()), Some(buf_two_val.as_slice())];
+ 
+-        let output_one = vec![42.0; BLOCK_SIZE].into();
++        let mut output_one = [42.0; BLOCK_SIZE];
+ 
+-        let mut outputs = [output_one];
++        let mut outputs = [output_one.as_mut_slice()];
+ 
+         node.process(&mut ctx, &inputs, &mut outputs);
+ 
+-        dbg!(&outputs);
+-
+         for chan in outputs.iter() {
+             for sample in chan.iter() {
+                 assert!(sample.abs() < 1e-6);
+diff --git a/crates/src/nodes/audio/oversample.rs b/crates/src/nodes/audio/oversample.rs
+index f768ffc..4a5f189 100644
+--- a/crates/src/nodes/audio/oversample.rs
++++ b/crates/src/nodes/audio/oversample.rs
+@@ -1,298 +1,300 @@
+-// A collection of naive oversamplers. May be worth checking out halfband and polyphase filters in the future
+-
+-use crate::{
+-    context::AudioContext,
+-    node::{Channels, Inputs, LegatoNode, Node},
+-    nodes::audio::fir::FirFilter,
+-    ports::{PortBuilder, Ports},
+-    runtime::MAX_INPUTS,
+-};
+-
+-#[derive(Clone)]
+-pub struct Upsample<const N: usize> {
+-    filter: FirFilter,
+-    zero_stuffed: Vec<Box<[f32]>>,
+-    chans: usize,
+-    ports: Ports,
+-}
+-
+-impl<const N: usize> Upsample<N> {
+-    pub fn new(buff_size: usize, chans: usize, filter: FirFilter) -> Self {
+-        Self {
+-            filter,
+-            chans,
+-            zero_stuffed: vec![vec![0.0; buff_size * N].into(); chans],
+-            ports: PortBuilder::default()
+-                .audio_in(chans)
+-                .audio_out(chans)
+-                .build(),
+-        }
+-    }
+-}
+-
+-impl<const N: usize> Node for Upsample<N> {
+-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+-        if ai.is_empty() {
+-            return;
+-        };
+-
+-        if let Some(inner) = ai[0] {
+-            debug_assert_eq!(inner.len() * N, ao[0].len());
+-        }
+-
+-        for c in 0..self.chans {
+-            let out = &mut self.zero_stuffed[c];
+-
+-            if let Some(input) = &ai[c] {
+-                // Zero stuff the sample, this makes spectral images that must be filtered
+-                for (n, sample) in input.iter().enumerate() {
+-                    out[n * N] = *sample;
+-                    for k in 1..N {
+-                        out[n * N + k] = 0.0;
+-                    }
+-                }
+-            }
+-        }
+-
+-        let output_size = self.ports().audio_out.len();
+-
+-        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+-
+-        self.zero_stuffed.iter().enumerate().for_each(|(c, x)| {
+-            if ai[c].is_some() {
+-                inputs[c] = Some(x);
+-            }
+-        });
+-
+-        // FIR filter the zero stuffed buffer
+-        self.filter.process(ctx, &inputs[..output_size], ao);
+-    }
+-    fn ports(&self) -> &Ports {
+-        &self.ports
+-    }
+-}
+-#[derive(Clone)]
+-pub struct Downsample<const N: usize> {
+-    filter: FirFilter,
+-    filtered: Vec<Box<[f32]>>,
+-    chans: usize,
+-    ports: Ports,
+-}
+-
+-impl<const N: usize> Downsample<N> {
+-    pub fn new(buff_size: usize, filter: FirFilter, chans: usize) -> Self {
+-        Self {
+-            filter,
+-            filtered: vec![vec![0.0; buff_size * N].into(); chans],
+-            chans,
+-            ports: PortBuilder::default()
+-                .audio_in(chans)
+-                .audio_out(chans)
+-                .build(),
+-        }
+-    }
+-}
+-
+-impl<const N: usize> Node for Downsample<N> {
+-    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+-        // Ensure that ai = ao * N
+-        if let Some(inner) = ai[0] {
+-            debug_assert_eq!(inner.len(), ao[0].len() * N);
+-        }
+-
+-        // Filter the audio before decimating to prevent aliasing
+-        self.filter.process(ctx, ai, &mut self.filtered);
+-
+-        // Decimate the filtered audio
+-        for c in 0..self.chans {
+-            let input = &self.filtered[c];
+-            let out = &mut ao[c];
+-            for (m, o) in out.iter_mut().enumerate() {
+-                *o = input[m * N];
+-            }
+-        }
+-    }
+-    fn ports(&self) -> &Ports {
+-        &self.ports
+-    }
+-}
+-
+-#[derive(Clone)]
+-pub struct Oversampler<const N: usize> {
+-    node: LegatoNode,
+-    upsampler: Upsample<N>,
+-    // State for the node
+-    upsampled_outputs: Vec<Box<[f32]>>,
+-    downsampled_inputs: Vec<Box<[f32]>>,
+-    // Fir downsampler
+-    downsampler: Downsample<N>,
+-    ports: Ports,
+-}
+-
+-impl<const N: usize> Oversampler<N> {
+-    pub fn new(
+-        node: LegatoNode,
+-        upsampler: Upsample<N>,
+-        downsampler: Downsample<N>,
+-        chans: usize,
+-        buff_size: usize,
+-    ) -> Self {
+-        let node_ports = node.get_node().ports().clone();
+-        Self {
+-            node,
+-            upsampler,
+-            downsampler,
+-            upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
+-            downsampled_inputs: vec![vec![0.0; buff_size * N].into(); chans],
+-            ports: node_ports,
+-        }
+-    }
+-}
+-
+-impl<const N: usize> Node for Oversampler<N> {
+-    fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+-        let config = ctx.get_config();
+-
+-        let sr = config.sample_rate;
+-        let block_size = config.block_size;
+-
+-        self.upsampler.process(ctx, ai, &mut self.upsampled_outputs);
+-
+-        let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+-
+-        if !ai.is_empty() {
+-            self.upsampled_outputs
+-                .iter()
+-                .enumerate()
+-                .for_each(|(c, x)| {
+-                    if ai[c].is_some() {
+-                        node_inputs[c] = Some(x);
+-                    }
+-                });
+-        }
+-
+-        // TODO: Better pattern than this
+-        ctx.set_sample_rate(sr * N);
+-        ctx.set_block_size(block_size * N);
+-
+-        self.node
+-            .get_node_mut()
+-            .process(ctx, &node_inputs, &mut self.downsampled_inputs);
+-
+-        ctx.set_sample_rate(sr);
+-        ctx.set_block_size(block_size);
+-
+-        let mut downsampler_node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+-
+-        self.downsampled_inputs
+-            .iter()
+-            .enumerate()
+-            .for_each(|(c, x)| {
+-                downsampler_node_inputs[c] = Some(x);
+-            });
+-
+-        let out_chans = self.ports().audio_out.len();
+-
+-        self.downsampler
+-            .process(ctx, &downsampler_node_inputs[..out_chans], ao);
+-    }
+-    fn ports(&self) -> &Ports {
+-        &self.ports
+-    }
+-}
+-
+-// TODO: Create a filter designer rather than pasting in SciPy coeffs
+-pub fn upsample_by_two_factory(buff_size: usize, chans: usize) -> Upsample<2> {
+-    Upsample::<2>::new(
+-        buff_size,
+-        chans,
+-        FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
+-    )
+-}
+-
+-pub fn downsample_by_two_factory(buff_size: usize, chans: usize) -> Downsample<2> {
+-    Downsample::<2>::new(
+-        buff_size,
+-        FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
+-        chans,
+-    )
+-}
+-
+-pub fn oversample_by_two_factory(
+-    node: LegatoNode,
+-    chans: usize,
+-    buff_size: usize,
+-) -> Oversampler<2> {
+-    let upsampler = upsample_by_two_factory(buff_size, chans);
+-    let downsampler = downsample_by_two_factory(buff_size, chans);
+-
+-    Oversampler::<2>::new(node, upsampler, downsampler, chans, buff_size)
+-}
+-
+-/// A naive filter to cut at 24k at 96k rate.
+-const CUTOFF_24K_COEFFS_FOR_96K: [f32; 64] = [
+-    -0.00078997,
+-    -0.00106131,
+-    0.00019139,
+-    0.00186628,
+-    0.00118124,
+-    -0.00154504,
+-    -0.00188737,
+-    0.00179210,
+-    0.00386756,
+-    -0.00041068,
+-    -0.00518644,
+-    -0.00144159,
+-    0.00656960,
+-    0.00490158,
+-    -0.00646231,
+-    -0.00899469,
+-    0.00486494,
+-    0.01385281,
+-    -0.00056869,
+-    -0.01820437,
+-    -0.00660587,
+-    0.02125839,
+-    0.01747785,
+-    -0.02119668,
+-    -0.03247355,
+-    0.01592738,
+-    0.05352988,
+-    -0.00054194,
+-    -0.08745912,
+-    -0.04247219,
+-    0.18323183,
+-    0.40859913,
+-    0.40859913,
+-    0.18323183,
+-    -0.04247219,
+-    -0.08745912,
+-    -0.00054194,
+-    0.05352988,
+-    0.01592738,
+-    -0.03247355,
+-    -0.02119668,
+-    0.01747785,
+-    0.02125839,
+-    -0.00660587,
+-    -0.01820437,
+-    -0.00056869,
+-    0.01385281,
+-    0.00486494,
+-    -0.00899469,
+-    -0.00646231,
+-    0.00490158,
+-    0.00656960,
+-    -0.00144159,
+-    -0.00518644,
+-    -0.00041068,
+-    0.00386756,
+-    0.00179210,
+-    -0.00188737,
+-    -0.00154504,
+-    0.00118124,
+-    0.00186628,
+-    0.00019139,
+-    -0.00106131,
+-    -0.00078997,
+-];
++// TODO: Rewrite with flat buffer, half band filter
++
++// // A collection of naive oversamplers. May be worth checking out halfband and polyphase filters in the future
++
++// use crate::{
++//     context::AudioContext,
++//     node::{Inputs, LegatoNode, Node},
++//     nodes::audio::fir::FirFilter,
++//     ports::{PortBuilder, Ports},
++//     runtime::MAX_INPUTS,
++// };
++
++// #[derive(Clone)]
++// pub struct Upsample<const N: usize> {
++//     filter: FirFilter,
++//     zero_stuffed: Vec<Box<[f32]>>,
++//     chans: usize,
++//     ports: Ports,
++// }
++
++// impl<const N: usize> Upsample<N> {
++//     pub fn new(buff_size: usize, chans: usize, filter: FirFilter) -> Self {
++//         Self {
++//             filter,
++//             chans,
++//             zero_stuffed: vec![vec![0.0; buff_size * N].into(); chans],
++//             ports: PortBuilder::default()
++//                 .audio_in(chans)
++//                 .audio_out(chans)
++//                 .build(),
++//         }
++//     }
++// }
++
++// impl<const N: usize> Node for Upsample<N> {
++//     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
++//         if ai.is_empty() {
++//             return;
++//         };
++
++//         if let Some(inner) = ai[0] {
++//             debug_assert_eq!(inner.len() * N, ao[0].len());
++//         }
++
++//         for c in 0..self.chans {
++//             let out = &mut self.zero_stuffed[c];
++
++//             if let Some(input) = &ai[c] {
++//                 // Zero stuff the sample, this makes spectral images that must be filtered
++//                 for (n, sample) in input.iter().enumerate() {
++//                     out[n * N] = *sample;
++//                     for k in 1..N {
++//                         out[n * N + k] = 0.0;
++//                     }
++//                 }
++//             }
++//         }
++
++//         let output_size = self.ports().audio_out.len();
++
++//         let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
++
++//         self.zero_stuffed.iter().enumerate().for_each(|(c, x)| {
++//             if ai[c].is_some() {
++//                 inputs[c] = Some(x);
++//             }
++//         });
++
++//         // FIR filter the zero stuffed buffer
++//         self.filter.process(ctx, &inputs[..output_size], ao);
++//     }
++//     fn ports(&self) -> &Ports {
++//         &self.ports
++//     }
++// }
++// #[derive(Clone)]
++// pub struct Downsample<const N: usize> {
++//     filter: FirFilter,
++//     filtered: Vec<Box<[f32]>>,
++//     chans: usize,
++//     ports: Ports,
++// }
++
++// impl<const N: usize> Downsample<N> {
++//     pub fn new(buff_size: usize, filter: FirFilter, chans: usize) -> Self {
++//         Self {
++//             filter,
++//             filtered: vec![vec![0.0; buff_size * N].into(); chans],
++//             chans,
++//             ports: PortBuilder::default()
++//                 .audio_in(chans)
++//                 .audio_out(chans)
++//                 .build(),
++//         }
++//     }
++// }
++
++// impl<const N: usize> Node for Downsample<N> {
++//     fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
++//         // Ensure that ai = ao * N
++//         if let Some(inner) = ai[0] {
++//             debug_assert_eq!(inner.len(), ao[0].len() * N);
++//         }
++
++//         // Filter the audio before decimating to prevent aliasing
++//         self.filter.process(ctx, ai, self.filtered.as_mut_slice());
++
++//         // Decimate the filtered audio
++//         for c in 0..self.chans {
++//             let input = &self.filtered[c];
++//             let out = &mut ao[c];
++//             for (m, o) in out.iter_mut().enumerate() {
++//                 *o = input[m * N];
++//             }
++//         }
++//     }
++//     fn ports(&self) -> &Ports {
++//         &self.ports
++//     }
++// }
++
++// #[derive(Clone)]
++// pub struct Oversampler<const N: usize> {
++//     node: LegatoNode,
++//     upsampler: Upsample<N>,
++//     // State for the node
++//     upsampled_outputs: Vec<Box<[f32]>>,
++//     downsampled_inputs: Vec<Box<[f32]>>,
++//     // Fir downsampler
++//     downsampler: Downsample<N>,
++//     ports: Ports,
++// }
++
++// impl<const N: usize> Oversampler<N> {
++//     pub fn new(
++//         node: LegatoNode,
++//         upsampler: Upsample<N>,
++//         downsampler: Downsample<N>,
++//         chans: usize,
++//         buff_size: usize,
++//     ) -> Self {
++//         let node_ports = node.get_node().ports().clone();
++//         Self {
++//             node,
++//             upsampler,
++//             downsampler,
++//             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
++//             downsampled_inputs: vec![vec![0.0; buff_size * N].into(); chans],
++//             ports: node_ports,
++//         }
++//     }
++// }
++
++// impl<const N: usize> Node for Oversampler<N> {
++//     fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
++//         let config = ctx.get_config();
++
++//         let sr = config.sample_rate;
++//         let block_size = config.block_size;
++
++//         self.upsampler.process(ctx, ai, &mut self.upsampled_outputs);
++
++//         let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
++
++//         if !ai.is_empty() {
++//             self.upsampled_outputs
++//                 .iter()
++//                 .enumerate()
++//                 .for_each(|(c, x)| {
++//                     if ai[c].is_some() {
++//                         node_inputs[c] = Some(x);
++//                     }
++//                 });
++//         }
++
++//         // TODO: Better pattern than this
++//         ctx.set_sample_rate(sr * N);
++//         ctx.set_block_size(block_size * N);
++
++//         self.node
++//             .get_node_mut()
++//             .process(ctx, &node_inputs, &mut self.downsampled_inputs);
++
++//         ctx.set_sample_rate(sr);
++//         ctx.set_block_size(block_size);
++
++//         let mut downsampler_node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
++
++//         self.downsampled_inputs
++//             .iter()
++//             .enumerate()
++//             .for_each(|(c, x)| {
++//                 downsampler_node_inputs[c] = Some(x);
++//             });
++
++//         let out_chans = self.ports().audio_out.len();
++
++//         self.downsampler
++//             .process(ctx, &downsampler_node_inputs[..out_chans], ao);
++//     }
++//     fn ports(&self) -> &Ports {
++//         &self.ports
++//     }
++// }
++
++// // TODO: Create a filter designer rather than pasting in SciPy coeffs
++// pub fn upsample_by_two_factory(buff_size: usize, chans: usize) -> Upsample<2> {
++//     Upsample::<2>::new(
++//         buff_size,
++//         chans,
++//         FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
++//     )
++// }
++
++// pub fn downsample_by_two_factory(buff_size: usize, chans: usize) -> Downsample<2> {
++//     Downsample::<2>::new(
++//         buff_size,
++//         FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
++//         chans,
++//     )
++// }
++
++// pub fn oversample_by_two_factory(
++//     node: LegatoNode,
++//     chans: usize,
++//     buff_size: usize,
++// ) -> Oversampler<2> {
++//     let upsampler = upsample_by_two_factory(buff_size, chans);
++//     let downsampler = downsample_by_two_factory(buff_size, chans);
++
++//     Oversampler::<2>::new(node, upsampler, downsampler, chans, buff_size)
++// }
++
++// /// A naive filter to cut at 24k at 96k rate.
++// const CUTOFF_24K_COEFFS_FOR_96K: [f32; 64] = [
++//     -0.00078997,
++//     -0.00106131,
++//     0.00019139,
++//     0.00186628,
++//     0.00118124,
++//     -0.00154504,
++//     -0.00188737,
++//     0.00179210,
++//     0.00386756,
++//     -0.00041068,
++//     -0.00518644,
++//     -0.00144159,
++//     0.00656960,
++//     0.00490158,
++//     -0.00646231,
++//     -0.00899469,
++//     0.00486494,
++//     0.01385281,
++//     -0.00056869,
++//     -0.01820437,
++//     -0.00660587,
++//     0.02125839,
++//     0.01747785,
++//     -0.02119668,
++//     -0.03247355,
++//     0.01592738,
++//     0.05352988,
++//     -0.00054194,
++//     -0.08745912,
++//     -0.04247219,
++//     0.18323183,
++//     0.40859913,
++//     0.40859913,
++//     0.18323183,
++//     -0.04247219,
++//     -0.08745912,
++//     -0.00054194,
++//     0.05352988,
++//     0.01592738,
++//     -0.03247355,
++//     -0.02119668,
++//     0.01747785,
++//     0.02125839,
++//     -0.00660587,
++//     -0.01820437,
++//     -0.00056869,
++//     0.01385281,
++//     0.00486494,
++//     -0.00899469,
++//     -0.00646231,
++//     0.00490158,
++//     0.00656960,
++//     -0.00144159,
++//     -0.00518644,
++//     -0.00041068,
++//     0.00386756,
++//     0.00179210,
++//     -0.00188737,
++//     -0.00154504,
++//     0.00118124,
++//     0.00186628,
++//     0.00019139,
++//     -0.00106131,
++//     -0.00078997,
++// ];
+diff --git a/crates/src/nodes/audio/sampler.rs b/crates/src/nodes/audio/sampler.rs
+index 1d43f32..d1cbc03 100644
+--- a/crates/src/nodes/audio/sampler.rs
++++ b/crates/src/nodes/audio/sampler.rs
+@@ -4,7 +4,7 @@ use assert_no_alloc::permit_alloc;
+ 
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     resources::SampleKey,
+     sample::AudioSample,
+@@ -34,7 +34,7 @@ impl Sampler {
+ }
+ 
+ impl Node for Sampler {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+         let resources = ctx.get_resources();
+         // Check for sample update by seeing if the handle and local version match
+         // This is all done rather than directly using the swap option, because Arc has a small allocation.
+diff --git a/crates/src/nodes/audio/signal.rs b/crates/src/nodes/audio/signal.rs
+index c91406f..c8404ed 100644
+--- a/crates/src/nodes/audio/signal.rs
++++ b/crates/src/nodes/audio/signal.rs
+@@ -1,6 +1,6 @@
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     params::ParamKey,
+     ports::{PortBuilder, Ports},
+ };
+@@ -24,7 +24,7 @@ impl AudioSignal {
+ }
+ 
+ impl Node for AudioSignal {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+         // Param set on each block, then smoothed with a one pole filter
+         // Maybe we do this per control sample as well in the future with less smoothing, provided the benchmark is decent
+         if let Ok(target) = ctx.get_param(&self.key) {
+diff --git a/crates/src/nodes/audio/sine.rs b/crates/src/nodes/audio/sine.rs
+index a4d7f3c..3c54079 100644
+--- a/crates/src/nodes/audio/sine.rs
++++ b/crates/src/nodes/audio/sine.rs
+@@ -37,7 +37,7 @@ use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
+ use crate::{
+     context::AudioContext,
+     msg::{NodeMessage, RtValue},
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+     simd::{LANES, Vf32},
+ };
+@@ -60,7 +60,12 @@ impl Sine {
+                 .build(),
+         }
+     }
+-    fn process_external_freq(&mut self, ctx: &mut AudioContext, fm_in: &[f32], ao: &mut Channels) {
++    fn process_external_freq(
++        &mut self,
++        ctx: &mut AudioContext,
++        fm_in: &[f32],
++        ao: &mut [&mut [f32]],
++    ) {
+         let config = ctx.get_config();
+ 
+         let fs_recipricol = Vf32::splat(1.0 / config.sample_rate as f32);
+@@ -89,7 +94,7 @@ impl Sine {
+         }
+     }
+ 
+-    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut Channels) {
++    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+         let config = ctx.get_config();
+         let freq = Vf32::splat(self.freq);
+ 
+@@ -121,7 +126,7 @@ impl Sine {
+ }
+ 
+ impl Node for Sine {
+-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         if let Some(fm_in) = ai[0] {
+             self.process_external_freq(ctx, fm_in, ao);
+         } else {
+@@ -136,6 +141,7 @@ impl Node for Sine {
+                 ("freq", RtValue::F32(val)) => self.freq = val,
+                 _ => unreachable!("Invalid parameter and value passed"),
+             },
++            _ => (),
+         }
+     }
+ 
+diff --git a/crates/src/nodes/audio/svf.rs b/crates/src/nodes/audio/svf.rs
+index 1b909e3..f63915d 100644
+--- a/crates/src/nodes/audio/svf.rs
++++ b/crates/src/nodes/audio/svf.rs
+@@ -2,7 +2,7 @@ use std::f32::consts::PI;
+ 
+ use crate::{
+     context::AudioContext,
+-    node::{Inputs, Node, Outputs},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+ };
+ 
+@@ -203,7 +203,7 @@ impl Svf {
+         &mut self,
+         ctx: &mut AudioContext,
+         inputs: &Inputs,
+-        outputs: &mut Outputs,
++        outputs: &mut [&mut [f32]],
+     ) {
+         let chans = self.ports.audio_out.len();
+         let block_size = ctx.get_config().block_size;
+@@ -253,7 +253,7 @@ impl Svf {
+         &mut self,
+         _: &mut AudioContext,
+         inputs: &Inputs,
+-        outputs: &mut Outputs,
++        outputs: &mut [&mut [f32]],
+     ) {
+         for (c, (in_chan_out, out_chan)) in inputs.iter().zip(outputs.iter_mut()).enumerate() {
+             if let Some(in_chan) = in_chan_out {
+@@ -282,7 +282,7 @@ impl Svf {
+ }
+ 
+ impl Node for Svf {
+-    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Outputs) {
++    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+         let cutoff_idx = self.ports.audio_in.len() - 1;
+         if inputs[cutoff_idx].is_some() {
+             self.process_with_cutoff(ctx, inputs, outputs);
+diff --git a/crates/src/nodes/audio/sweep.rs b/crates/src/nodes/audio/sweep.rs
+index d4e9016..b64f9cc 100644
+--- a/crates/src/nodes/audio/sweep.rs
++++ b/crates/src/nodes/audio/sweep.rs
+@@ -2,7 +2,7 @@ use std::time::Duration;
+ 
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+ };
+ 
+@@ -28,7 +28,7 @@ impl Sweep {
+ }
+ 
+ impl Node for Sweep {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+         let config = ctx.get_config();
+ 
+         let fs = config.sample_rate as f32;
+diff --git a/crates/src/nodes/control/map.rs b/crates/src/nodes/control/map.rs
+index 13f1e39..fb06f76 100644
+--- a/crates/src/nodes/control/map.rs
++++ b/crates/src/nodes/control/map.rs
+@@ -35,7 +35,7 @@ impl Node for Map {
+         &mut self,
+         _: &mut crate::context::AudioContext,
+         inputs: &crate::node::Inputs,
+-        outputs: &mut crate::node::Outputs,
++        outputs: &mut [&mut [f32]],
+     ) {
+         debug_assert!(self.max >= self.min);
+         debug_assert!(self.mapped_max >= self.mapped_min);
+diff --git a/crates/src/nodes/control/signal.rs b/crates/src/nodes/control/signal.rs
+index ce136fe..8ced927 100644
+--- a/crates/src/nodes/control/signal.rs
++++ b/crates/src/nodes/control/signal.rs
+@@ -1,6 +1,6 @@
+ use crate::{
+     context::AudioContext,
+-    node::{Channels, Inputs, Node},
++    node::{Inputs, Node},
+     params::ParamKey,
+     ports::{PortBuilder, Ports},
+ };
+@@ -25,7 +25,7 @@ impl Signal {
+ }
+ 
+ impl Node for Signal {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut Channels) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
+         // Param set on each block, then smoothed with a one pole filter
+         // Maybe we do this per control sample as well in the future with less smoothing, provided the benchmark is decent
+         if let Ok(target) = ctx.get_param(&self.key) {
+diff --git a/crates/src/nodes/midi/voice.rs b/crates/src/nodes/midi/voice.rs
+index 8cbb456..ab7d463 100644
+--- a/crates/src/nodes/midi/voice.rs
++++ b/crates/src/nodes/midi/voice.rs
+@@ -1,7 +1,7 @@
+ use crate::{
+     context::AudioContext,
+     midi::MidiMessageKind,
+-    node::{Inputs, Node, Outputs},
++    node::{Inputs, Node},
+     ports::{PortBuilder, Ports},
+ };
+ 
+@@ -29,7 +29,7 @@ impl Voice {
+ }
+ 
+ impl Node for Voice {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut Outputs) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
+         let block_start = ctx.get_instant();
+ 
+         let cfg = ctx.get_config();
+@@ -214,7 +214,7 @@ impl PolyVoice {
+ }
+ 
+ impl Node for PolyVoice {
+-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut Outputs) {
++    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
+         let block_start = ctx.get_instant();
+ 
+         let cfg = ctx.get_config();
+diff --git a/crates/src/pipes.rs b/crates/src/pipes.rs
+index 5b64afa..d96375d 100644
+--- a/crates/src/pipes.rs
++++ b/crates/src/pipes.rs
+@@ -4,8 +4,6 @@ use crate::{
+     ValidationError,
+     ast::Value,
+     builder::{SelectionKind, SelectionView},
+-    node::LegatoNode,
+-    nodes::audio::oversample::oversample_by_two_factory,
+ };
+ 
+ pub struct PipeRegistry {
+@@ -35,7 +33,7 @@ impl Default for PipeRegistry {
+     fn default() -> Self {
+         let mut data: HashMap<String, Box<dyn Pipe>> = HashMap::new();
+         data.insert(String::from("replicate"), Box::new(Replicate {}));
+-        data.insert(String::from("oversample2X"), Box::new(Oversample2X {}));
++        // data.insert(String::from("oversample2X"), Box::new(Oversample2X {}));
+ 
+         Self { data }
+     }
+@@ -103,55 +101,56 @@ impl Pipe for Replicate {
+     }
+ }
+ 
+-/// A simple node that wraps a node in a 2x oversampler.
+-///
+-/// In the future, there will be more rates and an FIR builder.
+-///
+-/// For the time being, if you need higher rates, you can design an FIR
+-/// filter and pass create a node, and create your own pipe, or simply use
+-/// it as a node. You can also create a subgraph with a different rate as well.
+-struct Oversample2X;
+-
+-impl Pipe for Oversample2X {
+-    fn pipe(&self, view: &mut SelectionView, _: Option<Value>) {
+-        let selection = view.selection().clone();
+-
+-        let config = view.config();
+-
+-        match selection {
+-            SelectionKind::Single(key) => {
+-                let node = view.get_node(&key).expect("Could not find key in Pipe!");
+-                let ports = node.get_node().ports();
+-                let oversampler = oversample_by_two_factory(
+-                    node.clone(),
+-                    ports.audio_out.len(),
+-                    config.block_size,
+-                );
+-
+-                let new_kind = format!("Oversample2X{}", node.node_kind);
+-
+-                let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+-
+-                view.replace(key, new_node);
+-            }
+-            SelectionKind::Multiple(keys) => {
+-                for key in keys.iter() {
+-                    let node = view.get_node(key).expect("Could not find key in Pipe!");
+-                    let ports = node.get_node().ports();
+-                    let oversampler = oversample_by_two_factory(
+-                        node.clone(),
+-                        ports.audio_out.len(),
+-                        config.block_size,
+-                    );
+-
+-                    let new_kind = format!("Oversample2X{}", node.node_kind);
+-
+-                    let new_node =
+-                        LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+-
+-                    view.replace(*key, new_node);
+-                }
+-            }
+-        }
+-    }
+-}
++//// A simple node that wraps a node in a 2x oversampler.
++////
++//// In the future, there will be more rates and an FIR builder.
++////
++//// For the time being, if you need higher rates, you can design an FIR
++//// filter and pass create a node, and create your own pipe, or simply use
++//// it as a node. You can also create a subgraph with a different rate as well.
++
++// struct Oversample2X;
++
++// impl Pipe for Oversample2X {
++//     fn pipe(&self, view: &mut SelectionView, _: Option<Value>) {
++//         let selection = view.selection().clone();
++
++//         let config = view.config();
++
++//         match selection {
++//             SelectionKind::Single(key) => {
++//                 let node = view.get_node(&key).expect("Could not find key in Pipe!");
++//                 let ports = node.get_node().ports();
++//                 let oversampler = oversample_by_two_factory(
++//                     node.clone(),
++//                     ports.audio_out.len(),
++//                     config.block_size,
++//                 );
++
++//                 let new_kind = format!("Oversample2X{}", node.node_kind);
++
++//                 let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
++
++//                 view.replace(key, new_node);
++//             }
++//             SelectionKind::Multiple(keys) => {
++//                 for key in keys.iter() {
++//                     let node = view.get_node(key).expect("Could not find key in Pipe!");
++//                     let ports = node.get_node().ports();
++//                     let oversampler = oversample_by_two_factory(
++//                         node.clone(),
++//                         ports.audio_out.len(),
++//                         config.block_size,
++//                     );
++
++//                     let new_kind = format!("Oversample2X{}", node.node_kind);
++
++//                     let new_node =
++//                         LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
++
++//                     view.replace(*key, new_node);
++//                 }
++//             }
++//         }
++//     }
++// }
+diff --git a/crates/src/runtime.rs b/crates/src/runtime.rs
+index 95ad652..3a88027 100644
+--- a/crates/src/runtime.rs
++++ b/crates/src/runtime.rs
+@@ -1,15 +1,15 @@
+ use crate::config::Config;
+ use crate::context::AudioContext;
+-use crate::graph::{AudioGraph, Connection, GraphError};
++use crate::executor::Executor;
++use crate::graph::{Connection, GraphError};
+ use crate::msg::{self, LegatoMsg};
+-use crate::node::{Channels, Inputs, LegatoNode, Node};
++use crate::node::{Inputs, LegatoNode, Node};
+ use crate::ports::Ports;
+ use crate::resources::Resources;
+ use crate::sample::{AudioSampleError, AudioSampleFrontend};
+ use std::fmt::Debug;
+-use std::vec;
+ 
+-use slotmap::{SecondaryMap, new_key_type};
++use slotmap::new_key_type;
+ 
+ // Arbitrary max init. inputs
+ pub const MAX_INPUTS: usize = 32;
+@@ -23,81 +23,41 @@ new_key_type! {
+ pub struct Runtime {
+     // Audio context containing sample rate, control rate, etc.
+     context: AudioContext,
+-    graph: AudioGraph,
+-    // Where the nodes write their output to, so node sinks / port sources
+-    port_sources: SecondaryMap<NodeKey, Vec<Box<[f32]>>>,
+-    // Preallocated buffers for delivering samples
+-    scratch_buffers: Vec<Box<[f32]>>,
+-    // A sink key for pulling the final processed buffer. Optional for graph construction, but required at runtime
+-    sink_key: Option<NodeKey>,
+-    source_key: Option<NodeKey>,
++    executor: Executor,
+     ports: Ports,
+ }
+ impl Runtime {
+-    pub fn new(context: AudioContext, graph: AudioGraph, ports: Ports) -> Self {
+-        let audio_sources = SecondaryMap::with_capacity(graph.len());
+-
+-        let config = context.get_config();
+-        let audio_block_size = config.block_size;
++    pub fn new(context: AudioContext, ports: Ports) -> Self {
++        let executor = Executor::default();
+ 
+         Self {
+             context,
+-            graph,
+-            port_sources: audio_sources,
+-            scratch_buffers: vec![vec![0.0; audio_block_size].into(); MAX_INPUTS],
+-            sink_key: None,
+-            source_key: None,
++            executor,
+             ports,
+         }
+     }
+     pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
+-        let ports = node.get_node().ports();
+-
+-        let audio_chan_size = ports.audio_out.iter().len();
+-
+-        let node_key = self.graph.add_node(node);
+-
+-        let config = self.context.get_config();
+-
+-        self.port_sources.insert(
+-            node_key,
+-            vec![vec![0.0; config.block_size].into(); audio_chan_size],
+-        );
+-
+-        node_key
++        self.executor.graph.add_node(node)
+     }
+-    pub fn remove_node(&mut self, key: NodeKey) {
+-        self.graph.remove_node(key);
+-        self.port_sources.remove(key);
++    pub fn remove_node(&mut self, key: NodeKey) -> Option<LegatoNode> {
++        self.executor.graph.remove_node(key)
+     }
+ 
+     pub fn replace_node(&mut self, key: NodeKey, node: LegatoNode) {
+-        self.graph.replace(key, node);
++        self.executor.graph.replace(key, node);
+     }
+ 
+     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
+-        self.graph.add_edge(connection)
++        self.executor.graph.add_edge(connection)
+     }
+     pub fn remove_edge(&mut self, connection: Connection) -> Result<(), GraphError> {
+-        self.graph.remove_edge(connection)
++        self.executor.graph.remove_edge(connection)
+     }
+     pub fn set_sink_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
+-        match self.graph.exists(key) {
+-            true => {
+-                self.sink_key = Some(key);
+-                Ok(())
+-            }
+-            false => Err(GraphError::NodeDoesNotExist),
+-        }
++        self.executor.set_sink(key)
+     }
+     pub fn set_source_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
+-        match self.graph.exists(key) {
+-            true => {
+-                self.sink_key = Some(key);
+-                Ok(())
+-            }
+-            false => Err(GraphError::NodeDoesNotExist),
+-        }
++        self.executor.set_source(key)
+     }
+     pub fn set_resources(&mut self, resources: Resources) {
+         self.context.set_resources(resources);
+@@ -111,6 +71,13 @@ impl Runtime {
+     pub fn get_config(&self) -> Config {
+         self.context.get_config()
+     }
++    /// Prepare and allocate all of the information needed for the audio execution plan
++    pub fn prepare(&mut self) {
++        let block_size = self.context.get_config().block_size;
++        assert!(block_size != 0 && block_size % 2 == 0);
++
++        self.executor.prepare(block_size);
++    }
+     /// Handle the message from the LegatoFrontend
+     ///
+     /// TODO: How do we handle nested runtimes?
+@@ -131,79 +98,28 @@ impl Runtime {
+     }
+     pub fn get_node_ports(&self, key: &NodeKey) -> &Ports {
+         // Unwrapping becuase for now this is only used during application creation
+-        self.graph.get_node(*key).unwrap().get_node().ports()
++        self.executor
++            .graph
++            .get_node(*key)
++            .unwrap()
++            .get_node()
++            .ports()
+     }
+     pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
+-        self.graph.get_node(*key)
++        self.executor.graph.get_node(*key)
+     }
+     pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
+-        self.graph.get_node_mut(*key)
++        self.executor.graph.get_node_mut(*key)
+     }
+-    // TODO: Try a zero-copy, flat [L L L, R R R] approach for better performance
+-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &Channels {
+-        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
+-
+-        for (_i, node_key) in sorted_order.iter().enumerate() {
+-            let ports = nodes[*node_key].get_node().ports();
+-            let audio_inputs_size = ports.audio_in.len();
+-
+-            self.scratch_buffers[..audio_inputs_size]
+-                .iter_mut()
+-                .for_each(|buf| buf.fill(0.0));
+-
+-            let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+-
+-            let mut has_inputs: [bool; MAX_INPUTS] = [false; MAX_INPUTS];
+-
+-            // Pass in inputs if they exist to source node. In the future, maybe make this explicity rather than from topo sort
+-            if self.source_key.is_some()
+-                && self.source_key.unwrap() == *node_key
+-                && external_inputs.as_ref().is_some()
+-            {
+-                let ai = external_inputs.unwrap();
+-                for (c, ai_chan) in ai.iter().enumerate() {
+-                    inputs[c] = Some(ai_chan.unwrap());
+-                }
+-            } else {
+-                let incoming = incoming.get(*node_key).expect("Invalid connection!");
+-                for conn in incoming {
+-                    let buffer = &self.port_sources[conn.source.node_key][conn.source.port_index];
+-
+-                    has_inputs[conn.sink.port_index] = true;
+-
+-                    for (n, sample) in buffer.iter().enumerate() {
+-                        self.scratch_buffers[conn.sink.port_index][n] += sample;
+-                    }
+-                }
+-
+-                for i in 0..audio_inputs_size {
+-                    if has_inputs[i] {
+-                        inputs[i] = Some(&self.scratch_buffers[i]);
+-                    }
+-                }
+-            }
+-
+-            let node = nodes
+-                .get_mut(*node_key)
+-                .expect("Could not find node at index {node_index:?}")
+-                .get_node_mut();
+-
+-            let output = &mut self.port_sources[*node_key];
+-
+-            node.process(&mut self.context, &inputs[0..audio_inputs_size], output);
+-        }
+-
+-        self.context.set_instant();
+ 
+-        let sink_key = self.sink_key.expect("Sink node must be provided");
+-        self.port_sources
+-            .get(sink_key)
+-            .expect("Invalid output port!")
++    // Execute the audio plan and return the next block
++    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
++        &self.executor.process(&mut self.context, external_inputs)
+     }
+ }
+ 
+ impl Node for Runtime {
+-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
++    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+         let outputs = self.next_block(Some(ai));
+ 
+         debug_assert_eq!(ai.len(), ao.len());
+@@ -221,6 +137,7 @@ impl Node for Runtime {
+             msg::NodeMessage::SetParam(_) => {
+                 unimplemented!("Runtime subgraph messaging not yet setup")
+             }
++            _ => (),
+         }
+     }
+ }
+@@ -259,10 +176,9 @@ impl RuntimeFrontend {
+ }
+ 
+ pub fn build_runtime(config: Config, ports: Ports) -> Runtime {
+-    let graph = AudioGraph::with_capacity(config.initial_graph_capacity);
+     let context = AudioContext::new(config);
+ 
+-    Runtime::new(context, graph, ports)
++    Runtime::new(context, ports)
+ }
+ 
+ impl Debug for Runtime {
+@@ -270,9 +186,9 @@ impl Debug for Runtime {
+         f.debug_map()
+             .entry(&"config", &self.context.get_config())
+             .key(&"graph")
+-            .value(&self.graph)
++            .value(&self.executor.graph)
+             .entry(&"graph_ports", &self.ports)
+-            .entry(&"sink_key", &self.sink_key)
++            .entry(&"sink_key", self.executor.sink())
+             .finish()
+     }
+ }

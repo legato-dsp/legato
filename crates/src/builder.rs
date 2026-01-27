@@ -285,7 +285,6 @@ where
             PortConnectionType::Indexed { port } => vec![port],
             PortConnectionType::Named { ref port } => {
                 let ports = self.runtime.get_node_ports(&connection.source);
-                dbg!(&ports);
                 let index = ports
                     .audio_out
                     .iter()
@@ -422,6 +421,9 @@ where
         let (resources, param_store_frontend) = self.resource_builder.build();
 
         runtime.set_resources(resources);
+
+        // Allocate all of the audio buffers needed at runtime
+        runtime.prepare();
 
         if self.midi_runtime_frontend.is_some() {
             let ctx = runtime.get_context_mut();

@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use crate::{
     context::AudioContext,
-    node::{Inputs, Node, Outputs},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
 };
 
@@ -203,7 +203,7 @@ impl Svf {
         &mut self,
         ctx: &mut AudioContext,
         inputs: &Inputs,
-        outputs: &mut Outputs,
+        outputs: &mut [&mut [f32]],
     ) {
         let chans = self.ports.audio_out.len();
         let block_size = ctx.get_config().block_size;
@@ -253,7 +253,7 @@ impl Svf {
         &mut self,
         _: &mut AudioContext,
         inputs: &Inputs,
-        outputs: &mut Outputs,
+        outputs: &mut [&mut [f32]],
     ) {
         for (c, (in_chan_out, out_chan)) in inputs.iter().zip(outputs.iter_mut()).enumerate() {
             if let Some(in_chan) = in_chan_out {
@@ -282,7 +282,7 @@ impl Svf {
 }
 
 impl Node for Svf {
-    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut Outputs) {
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let cutoff_idx = self.ports.audio_in.len() - 1;
         if inputs[cutoff_idx].is_some() {
             self.process_with_cutoff(ctx, inputs, outputs);

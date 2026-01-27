@@ -106,9 +106,17 @@ fn bench_fir(c: &mut Criterion) {
 
     let mut graph = get_node_test_harness_stereo_4096(Box::new(FirFilter::new(coeffs, 2)));
 
+    let ai: &[Box<[f32]>] = &[vec![1.0; 4096].into(), vec![1.0; 4096].into()];
+
+    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+    for (i, x) in ai.iter().enumerate() {
+        inputs[i] = Some(&x)
+    }
+
     c.bench_function("fir", |b| {
         b.iter(|| {
-            let out = graph.next_block(None);
+            let out = graph.next_block(Some(&inputs));
             black_box(out);
         })
     });

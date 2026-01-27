@@ -111,7 +111,7 @@ impl Node for Adsr {
         &mut self,
         ctx: &mut crate::context::AudioContext,
         inputs: &crate::node::Inputs,
-        outputs: &mut crate::node::Outputs,
+        outputs: &mut [&mut [f32]],
     ) {
         let config = ctx.get_config();
         let sr = config.sample_rate;
@@ -147,6 +147,7 @@ impl Node for Adsr {
         }
     }
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
+        // Leaving this issue here for the time being so that I remember other states
         if let NodeMessage::SetParam(inner) = msg {
             match (inner.param_name, inner.value) {
                 ("attack", RtValue::F32(x)) => self.attack_ms = x,

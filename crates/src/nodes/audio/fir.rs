@@ -2,7 +2,7 @@ use std::simd::{StdFloat, num::SimdFloat};
 
 use crate::{
     context::AudioContext,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
     simd::{LANES, Vf32},
@@ -35,7 +35,7 @@ impl FirFilter {
 }
 
 impl Node for FirFilter {
-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // These checks are important because we are using this elsewhere for oversampling
         if let Some(inner) = ai[0] {
             // Channel alignment

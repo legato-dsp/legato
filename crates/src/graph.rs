@@ -27,7 +27,7 @@ pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
 
 const INITIAL_INPUTS: usize = 8;
 /// A DAG for grabbing nodes and their dependencies via topological sort.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AudioGraph {
     nodes: SlotMap<NodeKey, LegatoNode>,
     incoming_edges: EdgeMap,
@@ -62,7 +62,7 @@ impl AudioGraph {
         self.outgoing_edges
             .insert(key, IndexSet::with_capacity(INITIAL_INPUTS));
 
-        let _ = self.invalidate_topo_sort();
+        self.invalidate_topo_sort().unwrap();
 
         key
     }
@@ -87,6 +87,19 @@ impl AudioGraph {
 
     pub fn is_empty(&self) -> bool {
         self.nodes.len() == 0
+    }
+
+    /// This function is used to grab the total ports in the graph.
+    ///
+    /// This is useful for runtime allocations.
+    pub fn total_ports(&self) -> usize {
+        self.nodes
+            .values()
+            .fold(0, |acc, x| acc + x.get_node().ports().audio_out.len())
+    }
+
+    pub fn nodes(&self) -> Vec<&LegatoNode> {
+        self.nodes.values().collect()
     }
 
     pub fn get_sort_order_nodes_and_runtime_info(
@@ -267,7 +280,7 @@ mod test {
     use crate::{
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
-        node::{Channels, Inputs, Node},
+        node::{Inputs, Node},
         ports::{PortMeta, Ports},
     };
 
@@ -294,7 +307,7 @@ mod test {
     }
 
     impl Node for MonoExample {
-        fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut Channels) {}
+        fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut [&mut [f32]]) {}
         fn ports(&self) -> &Ports {
             &self.ports
         }

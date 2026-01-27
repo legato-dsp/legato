@@ -1,7 +1,7 @@
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
-    node::{Channels, Inputs, Node},
+    node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -26,7 +26,7 @@ impl ApplyOp {
                 .build(),
         }
     }
-    fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut Channels) {
+    fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let chunk_size = LANES;
 
         let val = Vf32::splat(self.val);
@@ -42,7 +42,7 @@ impl ApplyOp {
             }
         }
     }
-    fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut Channels) {
+    fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut [&mut [f32]]) {
         let chans = self.ports.audio_in.len() - 1; // Remove value channel to see input channels
 
         let audio_inputs = &ai[..chans];
@@ -63,7 +63,7 @@ impl ApplyOp {
 }
 
 impl Node for ApplyOp {
-    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut Channels) {
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let val_idx = self.ports.audio_in.len() - 1;
         let val_chan = ai[val_idx];
 
@@ -140,13 +140,11 @@ mod test {
 
         let inputs = [Some(buf_one.as_slice()), Some(buf_two_val.as_slice())];
 
-        let output_one = vec![42.0; BLOCK_SIZE].into();
+        let mut output_one = [42.0; BLOCK_SIZE];
 
-        let mut outputs = [output_one];
+        let mut outputs = [output_one.as_mut_slice()];
 
         node.process(&mut ctx, &inputs, &mut outputs);
-
-        dbg!(&outputs);
 
         for chan in outputs.iter() {
             for sample in chan.iter() {

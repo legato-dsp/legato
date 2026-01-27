@@ -4,8 +4,6 @@ use crate::{
     ValidationError,
     ast::Value,
     builder::{SelectionKind, SelectionView},
-    node::LegatoNode,
-    nodes::audio::oversample::oversample_by_two_factory,
 };
 
 pub struct PipeRegistry {
@@ -35,7 +33,7 @@ impl Default for PipeRegistry {
     fn default() -> Self {
         let mut data: HashMap<String, Box<dyn Pipe>> = HashMap::new();
         data.insert(String::from("replicate"), Box::new(Replicate {}));
-        data.insert(String::from("oversample2X"), Box::new(Oversample2X {}));
+        // data.insert(String::from("oversample2X"), Box::new(Oversample2X {}));
 
         Self { data }
     }
@@ -103,55 +101,56 @@ impl Pipe for Replicate {
     }
 }
 
-/// A simple node that wraps a node in a 2x oversampler.
-///
-/// In the future, there will be more rates and an FIR builder.
-///
-/// For the time being, if you need higher rates, you can design an FIR
-/// filter and pass create a node, and create your own pipe, or simply use
-/// it as a node. You can also create a subgraph with a different rate as well.
-struct Oversample2X;
+//// A simple node that wraps a node in a 2x oversampler.
+////
+//// In the future, there will be more rates and an FIR builder.
+////
+//// For the time being, if you need higher rates, you can design an FIR
+//// filter and pass create a node, and create your own pipe, or simply use
+//// it as a node. You can also create a subgraph with a different rate as well.
 
-impl Pipe for Oversample2X {
-    fn pipe(&self, view: &mut SelectionView, _: Option<Value>) {
-        let selection = view.selection().clone();
+// struct Oversample2X;
 
-        let config = view.config();
+// impl Pipe for Oversample2X {
+//     fn pipe(&self, view: &mut SelectionView, _: Option<Value>) {
+//         let selection = view.selection().clone();
 
-        match selection {
-            SelectionKind::Single(key) => {
-                let node = view.get_node(&key).expect("Could not find key in Pipe!");
-                let ports = node.get_node().ports();
-                let oversampler = oversample_by_two_factory(
-                    node.clone(),
-                    ports.audio_out.len(),
-                    config.block_size,
-                );
+//         let config = view.config();
 
-                let new_kind = format!("Oversample2X{}", node.node_kind);
+//         match selection {
+//             SelectionKind::Single(key) => {
+//                 let node = view.get_node(&key).expect("Could not find key in Pipe!");
+//                 let ports = node.get_node().ports();
+//                 let oversampler = oversample_by_two_factory(
+//                     node.clone(),
+//                     ports.audio_out.len(),
+//                     config.block_size,
+//                 );
 
-                let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+//                 let new_kind = format!("Oversample2X{}", node.node_kind);
 
-                view.replace(key, new_node);
-            }
-            SelectionKind::Multiple(keys) => {
-                for key in keys.iter() {
-                    let node = view.get_node(key).expect("Could not find key in Pipe!");
-                    let ports = node.get_node().ports();
-                    let oversampler = oversample_by_two_factory(
-                        node.clone(),
-                        ports.audio_out.len(),
-                        config.block_size,
-                    );
+//                 let new_node = LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
 
-                    let new_kind = format!("Oversample2X{}", node.node_kind);
+//                 view.replace(key, new_node);
+//             }
+//             SelectionKind::Multiple(keys) => {
+//                 for key in keys.iter() {
+//                     let node = view.get_node(key).expect("Could not find key in Pipe!");
+//                     let ports = node.get_node().ports();
+//                     let oversampler = oversample_by_two_factory(
+//                         node.clone(),
+//                         ports.audio_out.len(),
+//                         config.block_size,
+//                     );
 
-                    let new_node =
-                        LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+//                     let new_kind = format!("Oversample2X{}", node.node_kind);
 
-                    view.replace(*key, new_node);
-                }
-            }
-        }
-    }
-}
+//                     let new_node =
+//                         LegatoNode::new(node.name.clone(), new_kind, Box::new(oversampler));
+
+//                     view.replace(*key, new_node);
+//                 }
+//             }
+//         }
+//     }
+// }

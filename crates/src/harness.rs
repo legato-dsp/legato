@@ -15,11 +15,13 @@ pub fn get_node_test_harness_stereo_4096(node: Box<dyn DynNode>) -> Runtime {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let mut graph = build_runtime(config, ports);
+    let mut runtime = build_runtime(config, ports);
 
-    let id = graph.add_node(LegatoNode::new("test node".into(), "test".into(), node));
+    let id = runtime.add_node(LegatoNode::new("test node".into(), "test".into(), node));
 
-    let _ = graph.set_sink_key(id);
+    let _ = runtime.set_sink_key(id);
 
-    graph
+    runtime.prepare();
+
+    runtime
 }

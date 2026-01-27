@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
@@ -43,8 +43,6 @@ fn main() {
         2,
         config.sample_rate as u32,
     );
-
-    dbg!(&app);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
