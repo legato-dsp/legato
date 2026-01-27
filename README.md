@@ -84,3 +84,4 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
 - Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
 - Bitflags or something similar for user defined params rather than static string comparison?
 - Unify node creation spec and node logic
+- Flat multi-chan buffer for delay lines
