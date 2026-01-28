@@ -188,8 +188,13 @@ impl Executor {
 
             let node_start = *self.node_offsets.get(*node_key).unwrap();
 
-            let outputs =
+            let mut outputs_raw =
                 slice_node_ports_mut(&mut self.data, node_start, block_size, audio_outputs_size);
+
+            let outputs: &mut [&mut [f32]] = unsafe {
+                &mut *(&mut outputs_raw[..audio_outputs_size] as *mut [MaybeUninit<&mut [f32]>]
+                    as *mut [&mut [f32]])
+            };
 
             node.process(&mut ctx, &inputs[0..audio_inputs_size], outputs);
         }
@@ -212,7 +217,12 @@ impl Executor {
             .audio_out
             .len();
 
-        let final_outputs = slice_node_ports(&self.data, *node_offset, block_size, node_arity);
+        let final_outputs_raw = slice_node_ports(&self.data, *node_offset, block_size, node_arity);
+
+        let final_outputs: &[&[f32]] = unsafe {
+            &*(&final_outputs_raw[..node_arity] as *const [MaybeUninit<&[f32]>]
+                as *const [&[f32]])
+        };
 
         final_outputs
     }
@@ -224,7 +234,7 @@ fn slice_node_ports_mut<'a>(
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> &'a mut [&'a mut [f32]] {
+) -> [MaybeUninit<&'a mut [f32]>; MAX_ARITY] {
     let end = (block_size * chans) + offset;
 
     let node_buffer = &mut buffer[offset..end];
@@ -234,18 +244,13 @@ fn slice_node_ports_mut<'a>(
     assert_eq!(slices.len(), chans);
 
     let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
-        { [ const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY ] };
+        { [const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY] };
 
     for (i, slice) in slices.enumerate() {
         outputs_raw[i] = MaybeUninit::new(slice);
     }
 
-    // TODO: Evaluate safety!
-    let outputs: &mut [&mut [f32]] = unsafe {
-        &mut *(&mut outputs_raw[..chans] as *mut [MaybeUninit<&mut [f32]>] as *mut [&mut [f32]])
-    };
-
-    outputs
+    outputs_raw
 }
 
 #[inline(always)]
@@ -254,7 +259,7 @@ fn slice_node_ports<'a>(
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> &'a [&'a [f32]] {
+) -> [MaybeUninit<&'a [f32]>; MAX_ARITY] {
     let end = (block_size * chans) + offset;
 
     let node_buffer = &buffer[offset..end];
@@ -264,15 +269,11 @@ fn slice_node_ports<'a>(
     assert_eq!(slices.len(), chans);
 
     let mut outputs_raw: [MaybeUninit<&[f32]>; MAX_ARITY] =
-        { [ const { MaybeUninit::<&[f32]>::uninit() }; MAX_ARITY ] };
+        { [const { MaybeUninit::<&[f32]>::uninit() }; MAX_ARITY] };
 
     for (i, slice) in slices.enumerate() {
         outputs_raw[i] = MaybeUninit::new(slice);
     }
 
-    // TODO: Evaluate safety!
-    let outputs: &[&[f32]] =
-        unsafe { &*(&outputs_raw[..chans] as *const [MaybeUninit<&[f32]>] as *const [&[f32]]) };
-
-    outputs
+    outputs_raw
 }
