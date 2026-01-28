@@ -234,7 +234,7 @@ fn slice_node_ports_mut<'a>(
     assert_eq!(slices.len(), chans);
 
     let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
-        unsafe { MaybeUninit::uninit().assume_init() };
+        { [ const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY ] };
 
     for (i, slice) in slices.enumerate() {
         outputs_raw[i] = MaybeUninit::new(slice);
@@ -264,7 +264,7 @@ fn slice_node_ports<'a>(
     assert_eq!(slices.len(), chans);
 
     let mut outputs_raw: [MaybeUninit<&[f32]>; MAX_ARITY] =
-        unsafe { MaybeUninit::uninit().assume_init() };
+        { [ const { MaybeUninit::<&[f32]>::uninit() }; MAX_ARITY ] };
 
     for (i, slice) in slices.enumerate() {
         outputs_raw[i] = MaybeUninit::new(slice);

@@ -51,7 +51,7 @@ fn main() {
     "#,
     );
 
-    let config = Config::new(48_000, BlockSize::Block4096, 2, 6);
+    let config = Config::new(48_000, BlockSize::Block1024, 2, 6);
 
     let ports = PortBuilder::default().audio_out(2).build();
 
