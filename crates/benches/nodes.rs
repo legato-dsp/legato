@@ -116,7 +116,7 @@ fn bench_fir(c: &mut Criterion) {
 
     c.bench_function("fir", |b| {
         b.iter(|| {
-            let out = graph.next_block(Some(&inputs));
+            let out = graph.next_block(Some(black_box(&inputs)));
             black_box(out);
         })
     });
@@ -158,7 +158,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
         }
 
         b.iter(|| {
-            let out = app.next_block(Some(&inputs));
+            let out = app.next_block(Some(black_box(&inputs)));
             black_box(out);
         });
     });
@@ -223,7 +223,7 @@ fn bench_svf(c: &mut Criterion) {
 
     c.bench_function("SVF", |b| {
         b.iter(|| {
-            let out = graph.next_block(Some(&inputs));
+            let out = graph.next_block(black_box(Some(&inputs)));
             black_box(out);
         })
     });
