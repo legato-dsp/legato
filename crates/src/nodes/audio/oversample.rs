@@ -1,300 +1,191 @@
-// TODO: Rewrite with flat buffer, half band filter
+use std::{cmp::max, mem::MaybeUninit};
 
-// // A collection of naive oversamplers. May be worth checking out halfband and polyphase filters in the future
+use halfband::fir::{Downsampler16, Upsampler16};
 
-// use crate::{
-//     context::AudioContext,
-//     node::{Inputs, LegatoNode, Node},
-//     nodes::audio::fir::FirFilter,
-//     ports::{PortBuilder, Ports},
-//     runtime::MAX_INPUTS,
-// };
+use crate::{
+    context::AudioContext,
+    executor::MAX_ARITY,
+    node::{Inputs, LegatoNode, Node},
+    ports::{PortBuilder, Ports},
+};
 
-// #[derive(Clone)]
-// pub struct Upsample<const N: usize> {
-//     filter: FirFilter,
-//     zero_stuffed: Vec<Box<[f32]>>,
-//     chans: usize,
-//     ports: Ports,
-// }
+const OVERSAMPLE_K: usize = 2;
 
-// impl<const N: usize> Upsample<N> {
-//     pub fn new(buff_size: usize, chans: usize, filter: FirFilter) -> Self {
-//         Self {
-//             filter,
-//             chans,
-//             zero_stuffed: vec![vec![0.0; buff_size * N].into(); chans],
-//             ports: PortBuilder::default()
-//                 .audio_in(chans)
-//                 .audio_out(chans)
-//                 .build(),
-//         }
-//     }
-// }
+#[derive(Debug)]
+pub struct Oversampler2X {
+    node: LegatoNode,
+    upsamplers: Box<[Upsampler16]>,
+    downsamplers: Box<[Downsampler16]>,
+    // Flat work buffer, so buffer_size * upsample * chans
+    upsampled: Box<[f32]>,
+    node_outputs: Box<[f32]>,
+    chans: usize,
+    ports: Ports,
+}
 
-// impl<const N: usize> Node for Upsample<N> {
-//     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-//         if ai.is_empty() {
-//             return;
-//         };
+impl Oversampler2X {
+    pub fn new(node: LegatoNode, buffer_size: usize) -> Self {
+        let ports = node.get_node().ports();
 
-//         if let Some(inner) = ai[0] {
-//             debug_assert_eq!(inner.len() * N, ao[0].len());
-//         }
+        let chans = max(ports.audio_in.len(), ports.audio_out.len());
 
-//         for c in 0..self.chans {
-//             let out = &mut self.zero_stuffed[c];
+        let new_ports = PortBuilder::default()
+            .audio_in(chans)
+            .audio_in(chans)
+            .build();
 
-//             if let Some(input) = &ai[c] {
-//                 // Zero stuff the sample, this makes spectral images that must be filtered
-//                 for (n, sample) in input.iter().enumerate() {
-//                     out[n * N] = *sample;
-//                     for k in 1..N {
-//                         out[n * N + k] = 0.0;
-//                     }
-//                 }
-//             }
-//         }
+        let upsamplers = (0..chans)
+            .map(|_| Upsampler16::default())
+            .collect::<Vec<Upsampler16>>()
+            .into();
 
-//         let output_size = self.ports().audio_out.len();
+        let downsamplers = (0..chans)
+            .map(|_| Downsampler16::default())
+            .collect::<Vec<Downsampler16>>()
+            .into();
 
-//         let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+        Self {
+            node,
+            upsamplers,
+            downsamplers,
+            upsampled: vec![0.0; buffer_size * OVERSAMPLE_K * chans].into(),
+            node_outputs: vec![0.0; buffer_size * OVERSAMPLE_K * chans].into(),
+            chans,
+            ports: new_ports,
+        }
+    }
+}
 
-//         self.zero_stuffed.iter().enumerate().for_each(|(c, x)| {
-//             if ai[c].is_some() {
-//                 inputs[c] = Some(x);
-//             }
-//         });
+/// Upsampler and Downsampler are not clone.
+///
+/// So, we lose state, but likely that is not what we want anyways.
+impl Clone for Oversampler2X {
+    fn clone(&self) -> Self {
+        let upsamplers = (0..self.chans)
+            .map(|_| Upsampler16::default())
+            .collect::<Vec<Upsampler16>>()
+            .into();
 
-//         // FIR filter the zero stuffed buffer
-//         self.filter.process(ctx, &inputs[..output_size], ao);
-//     }
-//     fn ports(&self) -> &Ports {
-//         &self.ports
-//     }
-// }
-// #[derive(Clone)]
-// pub struct Downsample<const N: usize> {
-//     filter: FirFilter,
-//     filtered: Vec<Box<[f32]>>,
-//     chans: usize,
-//     ports: Ports,
-// }
+        let downsamplers = (0..self.chans)
+            .map(|_| Downsampler16::default())
+            .collect::<Vec<Downsampler16>>()
+            .into();
 
-// impl<const N: usize> Downsample<N> {
-//     pub fn new(buff_size: usize, filter: FirFilter, chans: usize) -> Self {
-//         Self {
-//             filter,
-//             filtered: vec![vec![0.0; buff_size * N].into(); chans],
-//             chans,
-//             ports: PortBuilder::default()
-//                 .audio_in(chans)
-//                 .audio_out(chans)
-//                 .build(),
-//         }
-//     }
-// }
+        Self {
+            node: self.node.clone(),
+            upsamplers,
+            downsamplers,
+            upsampled: self.upsampled.clone(),
+            node_outputs: self.node_outputs.clone(),
+            chans: self.chans,
+            ports: self.ports.clone(),
+        }
+    }
+}
 
-// impl<const N: usize> Node for Downsample<N> {
-//     fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-//         // Ensure that ai = ao * N
-//         if let Some(inner) = ai[0] {
-//             debug_assert_eq!(inner.len(), ao[0].len() * N);
-//         }
+impl Node for Oversampler2X {
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+        let cfg = ctx.get_config();
 
-//         // Filter the audio before decimating to prevent aliasing
-//         self.filter.process(ctx, ai, self.filtered.as_mut_slice());
+        let block_size = cfg.block_size;
+        let sample_rate = cfg.sample_rate;
 
-//         // Decimate the filtered audio
-//         for c in 0..self.chans {
-//             let input = &self.filtered[c];
-//             let out = &mut ao[c];
-//             for (m, o) in out.iter_mut().enumerate() {
-//                 *o = input[m * N];
-//             }
-//         }
-//     }
-//     fn ports(&self) -> &Ports {
-//         &self.ports
-//     }
-// }
+        assert!(self.upsampled.len() == self.chans * block_size * OVERSAMPLE_K);
 
-// #[derive(Clone)]
-// pub struct Oversampler<const N: usize> {
-//     node: LegatoNode,
-//     upsampler: Upsample<N>,
-//     // State for the node
-//     upsampled_outputs: Vec<Box<[f32]>>,
-//     downsampled_inputs: Vec<Box<[f32]>>,
-//     // Fir downsampler
-//     downsampler: Downsample<N>,
-//     ports: Ports,
-// }
+        // Used to construct slices for oversampling
+        let mut node_inputs: [Option<&[f32]>; MAX_ARITY] = [None; MAX_ARITY];
+        let mut has_inputs: [bool; MAX_ARITY] = [false; MAX_ARITY];
 
-// impl<const N: usize> Oversampler<N> {
-//     pub fn new(
-//         node: LegatoNode,
-//         upsampler: Upsample<N>,
-//         downsampler: Downsample<N>,
-//         chans: usize,
-//         buff_size: usize,
-//     ) -> Self {
-//         let node_ports = node.get_node().ports().clone();
-//         Self {
-//             node,
-//             upsampler,
-//             downsampler,
-//             upsampled_outputs: vec![vec![0.0; buff_size * N].into(); chans],
-//             downsampled_inputs: vec![vec![0.0; buff_size * N].into(); chans],
-//             ports: node_ports,
-//         }
-//     }
-// }
+        // Upsample audio into flat buffer slices per chan
+        for (c, chan_in_outer) in inputs.iter().enumerate() {
+            if let Some(chan_in) = chan_in_outer {
+                has_inputs[c] = true;
+                let start = block_size * OVERSAMPLE_K * c;
+                let end = start + block_size * OVERSAMPLE_K;
 
-// impl<const N: usize> Node for Oversampler<N> {
-//     fn process<'a>(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-//         let config = ctx.get_config();
+                let chan_mut = &mut self.upsampled[start..end];
 
-//         let sr = config.sample_rate;
-//         let block_size = config.block_size;
+                self.upsamplers[c].process_block(chan_in, chan_mut);
+            }
+        }
 
-//         self.upsampler.process(ctx, ai, &mut self.upsampled_outputs);
+        for (c, (input_chan, has_input_chan)) in node_inputs
+            .iter_mut()
+            .zip(has_inputs.iter())
+            .take(self.chans)
+            .enumerate()
+        {
+            if *has_input_chan {
+                let start = block_size * OVERSAMPLE_K * c;
+                let end = start + block_size * OVERSAMPLE_K;
 
-//         let mut node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+                let chan_in = &self.upsampled[start..end];
 
-//         if !ai.is_empty() {
-//             self.upsampled_outputs
-//                 .iter()
-//                 .enumerate()
-//                 .for_each(|(c, x)| {
-//                     if ai[c].is_some() {
-//                         node_inputs[c] = Some(x);
-//                     }
-//                 });
-//         }
+                *input_chan = Some(chan_in);
+            }
+        }
 
-//         // TODO: Better pattern than this
-//         ctx.set_sample_rate(sr * N);
-//         ctx.set_block_size(block_size * N);
+        self.node_outputs.fill(0.0);
 
-//         self.node
-//             .get_node_mut()
-//             .process(ctx, &node_inputs, &mut self.downsampled_inputs);
+        let mut node_outputs_raw = slice_node_ports_mut(
+            &mut self.node_outputs,
+            0,
+            block_size * OVERSAMPLE_K,
+            self.chans,
+        );
 
-//         ctx.set_sample_rate(sr);
-//         ctx.set_block_size(block_size);
+        let outputs_for_node: &mut [&mut [f32]] = unsafe {
+            &mut *(&mut node_outputs_raw[..self.chans] as *mut [MaybeUninit<&mut [f32]>]
+                as *mut [&mut [f32]])
+        };
 
-//         let mut downsampler_node_inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+        // TODO: This is stupid, find a different pattern
 
-//         self.downsampled_inputs
-//             .iter()
-//             .enumerate()
-//             .for_each(|(c, x)| {
-//                 downsampler_node_inputs[c] = Some(x);
-//             });
+        ctx.set_block_size(block_size * OVERSAMPLE_K);
+        ctx.set_sample_rate(sample_rate * OVERSAMPLE_K);
 
-//         let out_chans = self.ports().audio_out.len();
+        self.node
+            .get_node_mut()
+            .process(ctx, &inputs, outputs_for_node);
 
-//         self.downsampler
-//             .process(ctx, &downsampler_node_inputs[..out_chans], ao);
-//     }
-//     fn ports(&self) -> &Ports {
-//         &self.ports
-//     }
-// }
+        ctx.set_block_size(block_size);
+        ctx.set_sample_rate(sample_rate);
 
-// // TODO: Create a filter designer rather than pasting in SciPy coeffs
-// pub fn upsample_by_two_factory(buff_size: usize, chans: usize) -> Upsample<2> {
-//     Upsample::<2>::new(
-//         buff_size,
-//         chans,
-//         FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
-//     )
-// }
+        for c in 0..self.chans {
+            let downsampler = &mut self.downsamplers[c];
 
-// pub fn downsample_by_two_factory(buff_size: usize, chans: usize) -> Downsample<2> {
-//     Downsample::<2>::new(
-//         buff_size,
-//         FirFilter::new(CUTOFF_24K_COEFFS_FOR_96K.into(), chans),
-//         chans,
-//     )
-// }
+            let chan_out = &mut outputs[c];
 
-// pub fn oversample_by_two_factory(
-//     node: LegatoNode,
-//     chans: usize,
-//     buff_size: usize,
-// ) -> Oversampler<2> {
-//     let upsampler = upsample_by_two_factory(buff_size, chans);
-//     let downsampler = downsample_by_two_factory(buff_size, chans);
+            downsampler.process_block(outputs_for_node[c], chan_out);
+        }
+    }
 
-//     Oversampler::<2>::new(node, upsampler, downsampler, chans, buff_size)
-// }
+    fn ports(&self) -> &Ports {
+        &self.node.get_node().ports()
+    }
+}
 
-// /// A naive filter to cut at 24k at 96k rate.
-// const CUTOFF_24K_COEFFS_FOR_96K: [f32; 64] = [
-//     -0.00078997,
-//     -0.00106131,
-//     0.00019139,
-//     0.00186628,
-//     0.00118124,
-//     -0.00154504,
-//     -0.00188737,
-//     0.00179210,
-//     0.00386756,
-//     -0.00041068,
-//     -0.00518644,
-//     -0.00144159,
-//     0.00656960,
-//     0.00490158,
-//     -0.00646231,
-//     -0.00899469,
-//     0.00486494,
-//     0.01385281,
-//     -0.00056869,
-//     -0.01820437,
-//     -0.00660587,
-//     0.02125839,
-//     0.01747785,
-//     -0.02119668,
-//     -0.03247355,
-//     0.01592738,
-//     0.05352988,
-//     -0.00054194,
-//     -0.08745912,
-//     -0.04247219,
-//     0.18323183,
-//     0.40859913,
-//     0.40859913,
-//     0.18323183,
-//     -0.04247219,
-//     -0.08745912,
-//     -0.00054194,
-//     0.05352988,
-//     0.01592738,
-//     -0.03247355,
-//     -0.02119668,
-//     0.01747785,
-//     0.02125839,
-//     -0.00660587,
-//     -0.01820437,
-//     -0.00056869,
-//     0.01385281,
-//     0.00486494,
-//     -0.00899469,
-//     -0.00646231,
-//     0.00490158,
-//     0.00656960,
-//     -0.00144159,
-//     -0.00518644,
-//     -0.00041068,
-//     0.00386756,
-//     0.00179210,
-//     -0.00188737,
-//     -0.00154504,
-//     0.00118124,
-//     0.00186628,
-//     0.00019139,
-//     -0.00106131,
-//     -0.00078997,
-// ];
+#[inline(always)]
+fn slice_node_ports_mut<'a>(
+    buffer: &'a mut [f32],
+    offset: usize,
+    block_size: usize,
+    chans: usize,
+) -> [MaybeUninit<&'a mut [f32]>; MAX_ARITY] {
+    let end = (block_size * chans) + offset;
+
+    let node_buffer = &mut buffer[offset..end];
+
+    let slices = node_buffer.chunks_exact_mut(block_size);
+
+    assert_eq!(slices.len(), chans);
+
+    let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
+        { [const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY] };
+
+    for (i, slice) in slices.enumerate() {
+        outputs_raw[i] = MaybeUninit::new(slice);
+    }
+
+    outputs_raw
+}

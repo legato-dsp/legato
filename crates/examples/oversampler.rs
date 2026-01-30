@@ -7,7 +7,7 @@ use legato::{
     ports::PortBuilder,
 };
 
-// Example with a poc oversample pipe
+// Example with a oversample pipe
 
 fn main() {
     let graph = String::from(

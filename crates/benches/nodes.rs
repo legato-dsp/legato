@@ -116,7 +116,7 @@ fn bench_fir(c: &mut Criterion) {
 
     c.bench_function("fir", |b| {
         b.iter(|| {
-            let out = graph.next_block(Some(&inputs));
+            let out = graph.next_block(Some(black_box(&inputs)));
             black_box(out);
         })
     });
@@ -158,7 +158,46 @@ fn bench_stereo_delay(c: &mut Criterion) {
         }
 
         b.iter(|| {
-            let out = app.next_block(Some(&inputs));
+            let out = app.next_block(Some(black_box(&inputs)));
+            black_box(out);
+        });
+    });
+}
+
+fn bench_oversampler(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 44_100,
+        initial_graph_capacity: 4,
+    };
+
+    let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
+
+    let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
+        r#"
+            audio {
+                sweep { freq: [40.0, 48000.0], duration: 5000.0, chans: 2 } | oversample2X()
+            }
+        
+            { sweep }
+        "#,
+    ));
+
+    c.bench_function("Basic oversampler", |b| {
+        let ai: &[Box<[f32]>] = &[
+            vec![0.0; config.block_size].into(),
+            vec![0.0; config.block_size].into(),
+        ];
+
+        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        for (i, x) in ai.iter().enumerate() {
+            inputs[i] = Some(&x)
+        }
+
+        b.iter(|| {
+            let out = app.next_block(black_box(Some(&inputs)));
             black_box(out);
         });
     });
@@ -184,7 +223,7 @@ fn bench_svf(c: &mut Criterion) {
 
     c.bench_function("SVF", |b| {
         b.iter(|| {
-            let out = graph.next_block(Some(&inputs));
+            let out = graph.next_block(black_box(Some(&inputs)));
             black_box(out);
         })
     });
@@ -195,6 +234,7 @@ criterion_group!(
     bench_stereo_sine,
     bench_fir,
     bench_stereo_delay,
-    bench_svf
+    bench_svf,
+    bench_oversampler
 );
 criterion_main!(benches);
