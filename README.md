@@ -81,7 +81,7 @@ It may be wise to simply use laptop speakers at low volume when developing, and 
 Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
 
 - Single tap delay node for delay compensation
-- Better oversampling logic (kind of half-assed at the moment, needs a half-band or more efficient filter)
+- Resampler (currently contains a halfband oversampler, but I want a polyphase resampler for arbitrary ratios as well)
 - Bitflags or something similar for user defined params rather than static string comparison?
 - Unify node creation spec and node logic
 - Flat multi-chan buffer for delay lines
