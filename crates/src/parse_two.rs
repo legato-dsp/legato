@@ -4,7 +4,7 @@
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
-use std::{collections::HashMap, env, fs};
+use std::{collections::{BTreeMap, HashMap}, env, fs};
 
 #[derive(Clone, Debug)]
 pub enum Json {
@@ -136,16 +136,17 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json, extra::Err<Rich<'a, char>>> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum Value {
+enum AST {
     U32(u32),
     I32(i32),
     F32(f32),
     Bool(bool),
     Ident(String),
-    Array(Vec<Value>)
+    Array(Vec<AST>),
+    Object(BTreeMap<String, AST>)
 }
 
-fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
+fn value_parser<'a>() -> impl Parser<'a, &'a str, AST, Err<Rich<'a, char>>> {
     recursive(|value| {
         let digits = text::digits(10).to_slice();
 
@@ -171,9 +172,9 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
 
         let ident = text::ascii::ident()
             .map(|s: &str| match s {
-                "true" => Value::Bool(true),
-                "false" => Value::Bool(false),
-                _ => Value::Ident(s.to_string()),
+                "true" => AST::Bool(true),
+                "false" => AST::Bool(false),
+                _ => AST::Ident(s.to_string()),
             });
 
         let array = value
@@ -194,11 +195,17 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
                 )
                 .boxed();
 
+        let kv = ident.clone().then_ignore(just(":").padded()).then(value);
+
+        // let object = kv.clone()
+                
+        
+
         choice((
-            f32.map(Value::F32),
-            i32.map(Value::I32),
-            u32.map(Value::U32),
-            array.map(Value::Array),
+            f32.map(AST::F32),
+            i32.map(AST::I32),
+            u32.map(AST::U32),
+            array.map(AST::Array),
             ident
         )).padded().boxed()
     })
@@ -211,13 +218,13 @@ mod test_two {
     #[test]
     fn parse_values() {
         let cases = [
-            ("32", Value::U32(32)),
-            ("42.0", Value::F32(42.0)),
-            ("-64", Value::I32(-64)),
-            ("false", Value::Bool(false)),
-            ("true", Value::Bool(true)),
-            ("bob", Value::Ident("bob".into())),
-            ("[42.0, 31.0, 24.0]", Value::Array(vec![Value::F32(42.0), Value::F32(31.0), Value::F32(24.0)]))
+            ("32", AST::U32(32)),
+            ("42.0", AST::F32(42.0)),
+            ("-64", AST::I32(-64)),
+            ("false", AST::Bool(false)),
+            ("true", AST::Bool(true)),
+            ("bob", AST::Ident("bob".into())),
+            ("[42.0, 31.0, 24.0]", AST::Array(vec![AST::F32(42.0), AST::F32(31.0), AST::F32(24.0)]))
         ];
 
         for (input, expected) in cases {
