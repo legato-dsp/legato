@@ -141,46 +141,67 @@ enum Value {
     I32(i32),
     F32(f32),
     Bool(bool),
-    Ident(String)
+    Ident(String),
+    Array(Vec<Value>)
 }
 
-fn parser_two<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
-    let ident = text::ascii::ident()
-        .map(|s: &str| match s {
-            "true" => Value::Bool(true),
-            "false" => Value::Bool(false),
-            _ => Value::Ident(s.to_string()),
-        })
-        .padded();    
+fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
+    recursive(|value| {
+        let digits = text::digits(10).to_slice();
 
-    let digits = text::digits(10).to_slice();
+        let frac = just('.').then(digits);
 
-    let frac = just('.').then(digits);
+        let exp = just('e')
+            .or(just('E'))
+            .then(one_of("+-").or_not())
+            .then(digits);
 
-    let exp = just('e')
-        .or(just('E'))
-        .then(one_of("+-").or_not())
-        .then(digits);
+        let f32 = just('-')
+            .or_not()
+            .then(text::int(10))
+            .then(frac)
+            .then(exp.or_not())
+            .to_slice()
+            .map(|s: &str| s.parse().unwrap())
+            .boxed();
 
-    let f32 = just('-')
-        .or_not()
-        .then(text::int(10))
-        .then(frac)
-        .then(exp.or_not())
-        .to_slice()
-        .map(|s: &str| s.parse().unwrap())
-        .boxed();
+        let i32 = just('-').then(digits).to_slice().map(|s: &str| s.parse().unwrap()).boxed();
 
-    let i32 = just('-').then(digits).to_slice().map(|s: &str| s.parse().unwrap()).boxed();
+        let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap()).boxed();
 
-    let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap()).boxed();
+        let ident = text::ascii::ident()
+            .map(|s: &str| match s {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => Value::Ident(s.to_string()),
+            });
 
-    choice((
-        f32.map(Value::F32),
-        i32.map(Value::I32),
-        u32.map(Value::U32),
-        ident
-    ))
+        let array = value
+                .clone()
+                .separated_by(just(',').padded().recover_with(skip_then_retry_until(
+                    any().ignored(),
+                    one_of(",]").ignored(),
+                )))
+                .allow_trailing()
+                .collect()
+                .padded()
+                .delimited_by(
+                    just('['),
+                    just(']')
+                        .ignored()
+                        .recover_with(via_parser(end()))
+                        .recover_with(skip_then_retry_until(any().ignored(), end())),
+                )
+                .boxed();
+
+        choice((
+            f32.map(Value::F32),
+            i32.map(Value::I32),
+            u32.map(Value::U32),
+            array.map(Value::Array),
+            ident
+        )).padded().boxed()
+    })
 }
 
 #[cfg(test)]
@@ -188,31 +209,29 @@ mod test_two {
     use super::*;
 
     #[test]
-    fn parse_values(){
-        let (num_u32, _errors) = parser_two().parse("32").into_output_errors();
+    fn parse_values() {
+        let cases = [
+            ("32", Value::U32(32)),
+            ("42.0", Value::F32(42.0)),
+            ("-64", Value::I32(-64)),
+            ("false", Value::Bool(false)),
+            ("true", Value::Bool(true)),
+            ("bob", Value::Ident("bob".into())),
+            ("[42.0, 31.0, 24.0]", Value::Array(vec![Value::F32(42.0), Value::F32(31.0), Value::F32(24.0)]))
+        ];
 
-        assert_eq!(num_u32.unwrap(), Value::U32(32));
-
-        let (num_f32, _errors) = parser_two().parse("42.0").into_output_errors();
-
-        assert_eq!(num_f32.unwrap(), Value::F32(42.0));
-
-        let (num_i32, _errors) = parser_two().parse("-64").into_output_errors();
-
-        assert_eq!(num_i32.unwrap(), Value::I32(-64));
-
-        let (falsy, _errors) = parser_two().parse("false").into_output_errors();
-
-        assert_eq!(falsy.unwrap(), Value::Bool(false));
-
-        let (truthy, _errors) = parser_two().parse("true").into_output_errors();
-
-        assert_eq!(truthy.unwrap(), Value::Bool(true));
-
-        let (bob, _errors) = parser_two().parse("bob").into_output_errors();
-
-        assert_eq!(bob.unwrap(), Value::Ident("bob".into()));
+        for (input, expected) in cases {
+            let result = value_parser().parse(input).into_result();
+            
+            assert_eq!(
+                result.unwrap(), 
+                expected, 
+                "Failed to parse input: '{}'", input
+            );
+        }
     }
+
+
 }
 
 
