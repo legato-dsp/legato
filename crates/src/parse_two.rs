@@ -141,9 +141,18 @@ enum Value {
     I32(i32),
     F32(f32),
     Bool(bool),
+    Ident(String)
 }
 
 fn parser_two<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident()
+        .map(|s: &str| match s {
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
+            _ => Value::Ident(s.to_string()),
+        })
+        .padded();    
+
     let digits = text::digits(10).to_slice();
 
     let frac = just('.').then(digits);
@@ -167,11 +176,10 @@ fn parser_two<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap()).boxed();
 
     choice((
-        just("true").to(Value::Bool(true)),
-        just("false").to(Value::Bool(false)),
         f32.map(Value::F32),
         i32.map(Value::I32),
         u32.map(Value::U32),
+        ident
     ))
 }
 
@@ -200,6 +208,10 @@ mod test_two {
         let (truthy, _errors) = parser_two().parse("true").into_output_errors();
 
         assert_eq!(truthy.unwrap(), Value::Bool(true));
+
+        let (bob, _errors) = parser_two().parse("bob").into_output_errors();
+
+        assert_eq!(bob.unwrap(), Value::Ident("bob".into()));
     }
 }
 
