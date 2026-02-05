@@ -140,6 +140,7 @@ enum Value {
     U32(u32),
     I32(i32),
     F32(f32),
+    Bool(bool),
 }
 
 fn parser_two<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
@@ -166,6 +167,8 @@ fn parser_two<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap()).boxed();
 
     choice((
+        just("true").to(Value::Bool(true)),
+        just("false").to(Value::Bool(false)),
         f32.map(Value::F32),
         i32.map(Value::I32),
         u32.map(Value::U32),
@@ -177,7 +180,7 @@ mod test_two {
     use super::*;
 
     #[test]
-    fn parse_numbers(){
+    fn parse_values(){
         let (num_u32, _errors) = parser_two().parse("32").into_output_errors();
 
         assert_eq!(num_u32.unwrap(), Value::U32(32));
@@ -189,6 +192,14 @@ mod test_two {
         let (num_i32, _errors) = parser_two().parse("-64").into_output_errors();
 
         assert_eq!(num_i32.unwrap(), Value::I32(-64));
+
+        let (falsy, _errors) = parser_two().parse("false").into_output_errors();
+
+        assert_eq!(falsy.unwrap(), Value::Bool(false));
+
+        let (truthy, _errors) = parser_two().parse("true").into_output_errors();
+
+        assert_eq!(truthy.unwrap(), Value::Bool(true));
     }
 }
 
