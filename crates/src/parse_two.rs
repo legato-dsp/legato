@@ -6,6 +6,8 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
 use std::{collections::{BTreeMap, HashMap}, env, fs};
 
+use crate::ast::Object;
+
 #[derive(Clone, Debug)]
 pub enum Json {
     Invalid,
@@ -135,18 +137,24 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Json, extra::Err<Rich<'a, char>>> {
     })
 }
 
+
 #[derive(Clone, Debug, PartialEq)]
-enum AST {
+enum Value {
     U32(u32),
     I32(i32),
     F32(f32),
     Bool(bool),
     Ident(String),
-    Array(Vec<AST>),
-    Object(BTreeMap<String, AST>)
+    Array(Vec<Value>),
+    Object(BTreeMap<String, Value>)
 }
 
-fn value_parser<'a>() -> impl Parser<'a, &'a str, AST, Err<Rich<'a, char>>> {
+#[derive(Clone, Debug, PartialEq)]
+enum AST {
+    DeclarationScope((String, Value))
+}
+
+fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     recursive(|value| {
         let digits = text::digits(10).to_slice();
 
@@ -170,12 +178,13 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, AST, Err<Rich<'a, char>>> {
 
         let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap()).boxed();
 
-        let ident = text::ascii::ident()
-            .map(|s: &str| match s {
-                "true" => AST::Bool(true),
-                "false" => AST::Bool(false),
-                _ => AST::Ident(s.to_string()),
-            });
+        let ident_raw = text::ascii::ident().map(ToString::to_string);
+
+        let ident_value = ident_raw.clone().map(|s| match s.as_str() {
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
+            _ => Value::Ident(s),
+        });
 
         let array = value
                 .clone()
@@ -195,20 +204,44 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, AST, Err<Rich<'a, char>>> {
                 )
                 .boxed();
 
-        let kv = ident.clone().then_ignore(just(":").padded()).then(value);
-
-        // let object = kv.clone()
+        let kv = ident_raw
+            .then_ignore(just(':').padded())
+            .then(value);
                 
-        
+        let object = kv
+            .separated_by(just(',').padded())
+            .collect::<BTreeMap<String, Value>>()
+            .padded()
+            .delimited_by(just('{'), just('}'))
+            .boxed();        
 
         choice((
-            f32.map(AST::F32),
-            i32.map(AST::I32),
-            u32.map(AST::U32),
-            array.map(AST::Array),
-            ident
+            f32.map(Value::F32),
+            i32.map(Value::I32),
+            u32.map(Value::U32),
+            array.map(Value::Array),
+            object.map(Value::Object),
+            ident_value
         )).padded().boxed()
     })
+}
+
+fn ast_parser<'a>() -> impl Parser<'a, &'a str, Vec<AST>, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+
+    // This matches: node_type : alias { params } | pipe()
+    // For now, let's focus on the DeclarationScope (String, Value) logic
+    let scope_block = ident
+        .then_ignore(just('{').padded())
+        .then(value_parser()) // Using your existing value_parser
+        .then_ignore(just('}').padded())
+        .map(|(name, val)| AST::DeclarationScope((name, val)));
+
+    scope_block
+        .repeated()
+        .collect()
+        .padded()
+        .then_ignore(end())
 }
 
 #[cfg(test)]
@@ -218,13 +251,26 @@ mod test_two {
     #[test]
     fn parse_values() {
         let cases = [
-            ("32", AST::U32(32)),
-            ("42.0", AST::F32(42.0)),
-            ("-64", AST::I32(-64)),
-            ("false", AST::Bool(false)),
-            ("true", AST::Bool(true)),
-            ("bob", AST::Ident("bob".into())),
-            ("[42.0, 31.0, 24.0]", AST::Array(vec![AST::F32(42.0), AST::F32(31.0), AST::F32(24.0)]))
+            ("32", Value::U32(32)),
+            ("42.0", Value::F32(42.0)),
+            ("-64", Value::I32(-64)),
+            ("false", Value::Bool(false)),
+            ("true", Value::Bool(true)),
+            ("bob", Value::Ident("bob".into())),
+            ("[42.0, 31.0, 24.0]", Value::Array(vec![Value::F32(42.0), Value::F32(31.0), Value::F32(24.0)])),
+            (r#"
+                {
+                    version: 42.0,
+                    settings: { 
+                        enabled: true 
+                    }
+                }
+            "#, Value::Object(BTreeMap::from([
+            ("version".to_string(), Value::F32(42.0)),
+            ("settings".to_string(), Value::Object(BTreeMap::from([
+                ("enabled".to_string(), Value::Bool(true))
+            ])))
+        ])))
         ];
 
         for (input, expected) in cases {
@@ -238,47 +284,36 @@ mod test_two {
         }
     }
 
-
-}
-
-
-
-
-
-
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
     #[test]
-    fn test() {
+    fn test_declaration_scope() {
         let src = r#"
-            {
-                "name": "example"
+            MyScope {
+                {
+                    version: 1,
+                    settings: { 
+                        enabled: true 
+                    }
+                }
             }
         "#;
 
-        let (json, errs) = parser().parse(src.trim()).into_output_errors();
+        let result = ast_parser().parse(src.trim()).into_result();
 
-        println!("{json:#?}");
+        let expected_map = BTreeMap::from([
+            ("version".to_string(), Value::U32(1)),
+            ("settings".to_string(), Value::Object(BTreeMap::from([
+                ("enabled".to_string(), Value::Bool(true))
+            ])))
+        ]);
 
-        errs.into_iter().for_each(|e| {
-            Report::build(ReportKind::Error, ((), e.span().into_range()))
-                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                .with_message(e.to_string())
-                .with_label(
-                    Label::new(((), e.span().into_range()))
-                        .with_message(e.reason().to_string())
-                        .with_color(Color::Red),
-                )
-                .finish()
-                .print(Source::from(&src))
-                .unwrap()
-        });
+        let expected_ast = vec![
+            AST::DeclarationScope((
+                "MyScope".to_string(),
+                Value::Object(expected_map)
+            ))
+        ];
 
-
+        assert_eq!(result.unwrap(), expected_ast);
     }
-}
 
+}
