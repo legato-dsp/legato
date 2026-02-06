@@ -6,10 +6,9 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
 use std::{collections::{BTreeMap, HashMap}, env, fs};
 
-use crate::ast::Object;
-
 #[derive(Clone, Debug, PartialEq)]
 enum Value {
+    Null,
     U32(u32),
     I32(i32),
     F32(f32),
@@ -20,10 +19,36 @@ enum Value {
     Object(BTreeMap<String, Value>)
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum AST {
-    DeclarationScope((String, Value))
+pub type Object = BTreeMap<String, Value>;
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ASTPipe {
+    pub name: String,
+    pub params: Option<Value>,
 }
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NodeDeclaration {
+    pub node_type: String,
+    pub alias: Option<String>,
+    pub params: Option<Object>,
+    pub pipes: Vec<ASTPipe>,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DeclarationScope {
+    pub namespace: String,
+    pub declarations: Vec<NodeDeclaration>
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Ast {
+    pub declarations: Vec<DeclarationScope>,
+    // We can add connections, source, and sink here in the next stage
+}
+
+
 
 fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     recursive(|value| {
@@ -63,6 +88,7 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
         let ident_value = ident_raw.clone().map(|s| match s.as_str() {
             "true" => Value::Bool(true),
             "false" => Value::Bool(false),
+            "null" => Value::Null,
             _ => Value::Ident(s),
         });
 
@@ -106,188 +132,198 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     })
 }
 
-fn ast_parser<'a>() -> impl Parser<'a, &'a str, Vec<AST>, Err<Rich<'a, char>>> {
+fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
-    let scope_block = ident
-        .then_ignore(just('{').padded())
-        .then(value_parser())
-        .then_ignore(just('}').padded())
-        .map(|(name, val)| AST::DeclarationScope((name, val)));
+    let alias = just(':').padded().ignore_then(ident.clone()).or_not();
 
-    scope_block
+    let obj_parser = ident
+        .then_ignore(just(':').padded())
+        .then(value_parser())
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<BTreeMap<String, Value>>();
+
+    let params = obj_parser
+        .delimited_by(just('{').padded(), just('}').padded())
+        .or_not();
+
+    let pipe = just('|')
+        .padded()
+        .ignore_then(ident.clone())
+        .then(
+            value_parser()
+                .delimited_by(just('(').padded(), just(')').padded())
+                .or_not(),
+        )
+        .map(|(name, params)| ASTPipe { name, params });
+
+    ident
+        .then(alias)
+        .then(params)
+        .then(pipe.repeated().collect())
+        .map(|(((node_type, alias), params), pipes)| NodeDeclaration {
+            node_type,
+            alias,
+            params,
+            pipes,
+        })
+}
+
+fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+
+    let scope = ident
+        .then_ignore(just('{').padded())
+        .then(node_declaration().separated_by(just(',').padded()).allow_trailing().collect())
+        .then_ignore(just('}').padded())
+        .map(|(namespace, declarations)| DeclarationScope { namespace, declarations });
+
+    scope
         .repeated()
         .collect()
+        .map(|declarations| Ast { declarations })
         .padded()
         .then_ignore(end())
 }
 
 #[cfg(test)]
-mod test_two {
+mod test_refactored {
     use super::*;
     use ariadne::{Color, Label, Report, ReportKind, Source};
     use std::collections::BTreeMap;
 
+    // Value parser helper
     fn assert_parse_equals_value(input: &str, expected: Value) {
         let parser = value_parser();
         match parser.parse(input).into_result() {
-            Ok(output) => assert_eq!(output, expected, "Parsed result didn't match expectation"),
+            Ok(output) => assert_eq!(output, expected, "Parsed Value didn't match expectation"),
             Err(errors) => {
-                let errors_pretty = errors.into_iter().for_each(|e| {
-                    Report::build(ReportKind::Error, ((), e.span().into_range()))
-                        .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                        .with_message(e.to_string())
-                        .with_label(
-                            Label::new(((), e.span().into_range()))
-                                .with_message(e.reason().to_string())
-                                .with_color(Color::Red),
-                        )
-                        .finish()
-                        .print(Source::from(&input))
-                        .unwrap()
-                });
-                println!("{:?}", errors_pretty);
-                panic!("Parse failed (see report above)");
+                print_errors(input, errors);
+                panic!("Value parse failed");
             }
         }
     }
 
-    fn assert_parse_equals_ast(input: &str, expected: Vec<AST>) {
-        let parser = ast_parser();
+    // AST parser helper
+    fn assert_parse_equals_ast(input: &str, expected: Ast) {
+        let parser = main_parser();
         match parser.parse(input).into_result() {
-            Ok(output) => assert_eq!(output, expected, "Parsed result didn't match expectation"),
+            Ok(output) => assert_eq!(output, expected, "Parsed AST didn't match expectation"),
             Err(errors) => {
-                let errors_pretty = errors.into_iter().for_each(|e| {
-                    Report::build(ReportKind::Error, ((), e.span().into_range()))
-                        .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                        .with_message(e.to_string())
-                        .with_label(
-                            Label::new(((), e.span().into_range()))
-                                .with_message(e.reason().to_string())
-                                .with_color(Color::Red),
-                        )
-                        .finish()
-                        .print(Source::from(&input))
-                        .unwrap()
-                });
-                println!("{:?}", errors_pretty);
-                panic!("Parse failed (see report above)");
+                print_errors(input, errors);
+                panic!("AST parse failed");
             }
         }
     }
 
-    #[test]
-    fn test_debug_values() {
-        // Test the string specifically
-        assert_parse_equals_value(
-            r#""Line\nNew""#, 
-            Value::String("Line\nNew".to_string())
-        );
-
-        // Test the number specifically
-        assert_parse_equals_value("32", Value::U32(32));
-        
-        // Test the object
-        let input = r#"{ bio: "Rust\nRules" }"#;
-        let mut map = BTreeMap::new();
-        map.insert("bio".to_string(), Value::String("Rust\nRules".to_string()));
-        assert_parse_equals_value(input, Value::Object(map));
-    }
-
-    #[test]
-    fn parse_values() {
-        let cases = [
-            ("32", Value::U32(32)),
-            ("42.0", Value::F32(42.0)),
-            ("-64", Value::I32(-64)),
-            ("false", Value::Bool(false)),
-            ("true", Value::Bool(true)),
-            ("bob", Value::Ident("bob".into())),
-            ("[42.0, 31.0, 24.0]", Value::Array(vec![Value::F32(42.0), Value::F32(31.0), Value::F32(24.0)])),
-            (r#"
-                {
-                    version: 42.0,
-                    settings: { 
-                        enabled: true 
-                    }
-                }
-            "#, Value::Object(BTreeMap::from([
-            ("version".to_string(), Value::F32(42.0)),
-            ("settings".to_string(), Value::Object(BTreeMap::from([
-                ("enabled".to_string(), Value::Bool(true))
-            ])))
-        ])))
-        ];
-
-        for (input, expected) in cases {            
-            assert_parse_equals_value(input, expected);
+    fn print_errors(input: &str, errors: Vec<Rich<char>>) {
+        for e in errors {
+            Report::build(ReportKind::Error, ((), e.span().into_range()))
+                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                .with_message(e.to_string())
+                .with_label(
+                    Label::new(((), e.span().into_range()))
+                        .with_message(e.reason().to_string())
+                        .with_color(Color::Red),
+                )
+                .finish()
+                .print(Source::from(input))
+                .unwrap();
         }
     }
 
     #[test]
-    fn test_bogus(){
-        // Should fail as we need keyword or closing string
-        let missing_quote = r#"
-            MyScope {
-                {
-                    version: 1,
-                    settings: { 
-                        enabled: "true 
-                    }
-                }
-            }
-        "#;
-
-        let parser = value_parser();
-        let res = parser.parse(&missing_quote);
-        
-        assert_eq!(res.output().is_none(), true);
+    fn test_value_primitives() {
+        assert_parse_equals_value("null", Value::Null);
+        assert_parse_equals_value("true", Value::Bool(true));
+        assert_parse_equals_value("42.5", Value::F32(42.5));
+        assert_parse_equals_value("-10", Value::I32(-10));
+        assert_parse_equals_value(r#""escaped\nline""#, Value::String("escaped\nline".to_string()));
     }
 
     #[test]
-    fn test_declaration_scope() {
+    fn test_node_pipes_and_aliases() {
         let src = r#"
-            MyScope {
-                {
-                    version: 1,
-                    settings: { 
-                        enabled: true 
-                    }
-                }
+            audio {
+                osc: sine { freq: 440 } | lowpass(100.5) | gain(null)
             }
         "#;
 
-        let expected_map = BTreeMap::from([
-            ("version".to_string(), Value::U32(1)),
-            ("settings".to_string(), Value::Object(BTreeMap::from([
-                ("enabled".to_string(), Value::Bool(true))
-            ])))
-        ]);
+        let expected = Ast {
+            declarations: vec![DeclarationScope {
+                namespace: "audio".to_string(),
+                declarations: vec![NodeDeclaration {
+                    node_type: "osc".to_string(),
+                    alias: Some("sine".to_string()),
+                    params: Some(BTreeMap::from([
+                        ("freq".to_string(), Value::U32(440))
+                    ])),
+                    pipes: vec![
+                        ASTPipe {
+                            name: "lowpass".to_string(),
+                            params: Some(Value::F32(100.5)),
+                        },
+                        ASTPipe {
+                            name: "gain".to_string(),
+                            params: Some(Value::Null),
+                        },
+                    ],
+                }],
+            }],
+        };
 
-        let expected_ast = vec![
-            AST::DeclarationScope((
-                "MyScope".to_string(),
-                Value::Object(expected_map)
-            ))
-        ];
-
-        assert_parse_equals_ast(src, expected_ast);
+        assert_parse_equals_ast(src, expected);
     }
 
     #[test]
-    fn test_ident_keys_string_values() {
+    fn test_multiple_scopes_and_nodes() {
+        let src = r#"
+            control {
+                param { val: 255.0 }
+            }
+            audio {
+                osc: square_wave_one { freq: 440.0, gain: 0.2 } | volume(0.8),
+            }
+        "#;
+
+        let parser = main_parser();
+        let ast = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(ast.declarations.len(), 2);
+        assert_eq!(ast.declarations[0].namespace, "control");
+        assert_eq!(ast.declarations[1].declarations.len(), 1);
+        assert_eq!(ast.declarations[1].declarations[0].alias, Some("square_wave_one".to_string()));
+        assert_eq!(ast.declarations[1].declarations[0].node_type, "osc");
+        assert_eq!(ast.declarations[1].declarations[0].pipes, vec![ASTPipe { name: "volume".into(), params: Some(Value::F32(0.8))}]);
+    }
+
+    #[test]
+    fn test_bogus_syntax() {
+        let broken_src = "bogus_scope { node { param: 1 ";
+        let res = main_parser().parse(broken_src);
+        assert!(res.into_result().is_err());
+    }
+
+    #[test]
+    fn test_complex_object_nesting() {
         let input = r#"{ 
-            username: "Alice",
-            bio: "Software Engineer\nRust Enthusiast",
-            lucky_number: 7
+            meta: { author: "bob", active: true },
+            tags: ["rust", "dsp"]
         }"#;
 
-        let mut expected_map = BTreeMap::new();
-        expected_map.insert("username".to_string(), Value::String("Alice".to_string()));
-        expected_map.insert("bio".to_string(), Value::String("Software Engineer\nRust Enthusiast".to_string()));
-        expected_map.insert("lucky_number".to_string(), Value::U32(7));
+        let mut meta_map = BTreeMap::new();
+        meta_map.insert("author".into(), Value::String("bob".into()));
+        meta_map.insert("active".into(), Value::Bool(true));
+
+        let expected_map = BTreeMap::from([
+            ("meta".into(), Value::Object(meta_map)),
+            ("tags".into(), Value::Array(vec![
+                Value::String("rust".into()),
+                Value::String("dsp".into())
+            ])),
+        ]);
 
         assert_parse_equals_value(input, Value::Object(expected_map));
     }
-
 }
