@@ -43,8 +43,6 @@ pub struct Ast {
     pub connections: Vec<Connection>, // We can add connections, source, and sink here in the next stage
 }
 
-// General extra padding rules for comments, etfc
-
 fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     recursive(|value| {
         let escape = just('\\').ignore_then(choice((
@@ -164,16 +162,51 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
         })
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Port {
+    Named(String),
+    Index(u32),
+    Slice(u32, u32),
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Endpoint {
+    pub node: String,
+    pub port: Port,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Connection {
-    pub source: String,
-    pub sink: String,
+    pub source: Endpoint,
+    pub sink: Endpoint,
+}
+
+fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+    let uint = text::digits(10)
+        .to_slice()
+        .map(|s: &str| s.parse::<u32>().unwrap());
+
+    let port = choice((
+        // node.mono
+        just('.').ignore_then(ident).map(Port::Named),
+        // node[0..2]
+        uint.then_ignore(just(".."))
+            .then(uint)
+            .delimited_by(just('['), just(']'))
+            .map(|(s, e)| Port::Slice(s, e)),
+        // node[0]
+        uint.delimited_by(just('['), just(']')).map(Port::Index),
+    ))
+    .or_not()
+    .map(|p| p.unwrap_or(Port::None));
+
+    ident.then(port).map(|(node, port)| Endpoint { node, port })
 }
 
 fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich<'a, char>>> {
-    let ident = text::ascii::ident().map(ToString::to_string);
-
-    ident
+    endpoint_parser()
         .separated_by(just(">>").padded())
         .at_least(2)
         .collect::<Vec<_>>()
@@ -390,8 +423,8 @@ mod test {
         let parser = connection_parser();
         let result = parser.parse(src).into_result().unwrap();
 
-        assert_eq!(result[0].source, "osc");
-        assert_eq!(result[0].sink, "gain");
+        assert_eq!(result[0].source.node, "osc");
+        assert_eq!(result[0].sink.node, "gain");
     }
 
     #[test]
@@ -409,10 +442,10 @@ mod test {
         let ast = parser.parse(src).into_result().unwrap();
 
         assert_eq!(ast.connections.len(), 2);
-        assert_eq!(ast.connections[0].source, "osc");
-        assert_eq!(ast.connections[0].sink, "gain");
-        assert_eq!(ast.connections[1].source, "gain");
-        assert_eq!(ast.connections[1].sink, "output");
+        assert_eq!(ast.connections[0].source.node, "osc");
+        assert_eq!(ast.connections[0].sink.node, "gain");
+        assert_eq!(ast.connections[1].source.node, "gain");
+        assert_eq!(ast.connections[1].sink.node, "output");
     }
 
     #[test]
@@ -420,7 +453,7 @@ mod test {
         let src = "osc   >>   gain";
         let parser = connection_parser().padded();
         let result = parser.parse(src).into_result().unwrap();
-        assert_eq!(result[0].source, "osc");
+        assert_eq!(result[0].source.node, "osc");
     }
 
     #[test]
@@ -439,11 +472,38 @@ mod test {
         let ast = parser.parse(src).into_result().unwrap();
 
         assert_eq!(ast.connections.len(), 3);
-        assert_eq!(ast.connections[0].source, "osc");
-        assert_eq!(ast.connections[0].sink, "gain");
-        assert_eq!(ast.connections[1].source, "gain");
-        assert_eq!(ast.connections[1].sink, "svf");
-        assert_eq!(ast.connections[2].source, "gain");
-        assert_eq!(ast.connections[2].sink, "output");
+        assert_eq!(ast.connections[0].source.node, "osc");
+        assert_eq!(ast.connections[0].sink.node, "gain");
+        assert_eq!(ast.connections[1].source.node, "gain");
+        assert_eq!(ast.connections[1].sink.node, "svf");
+        assert_eq!(ast.connections[2].source.node, "gain");
+        assert_eq!(ast.connections[2].sink.node, "output");
+    }
+
+    #[test]
+    fn test_complex_ports() {
+        let src = "audio_in.stereo >> looper[0..2] >> out[1]";
+        let parser = connection_parser();
+        let result = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(result[0].source.port, Port::Named("stereo".into()));
+        assert_eq!(result[0].sink.port, Port::Slice(0, 2));
+
+        assert_eq!(result[1].source.node, "looper");
+        assert_eq!(result[1].sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn test_mixed_chain() {
+        let src = "osc >> gain.input >> bus[0..2] >> master[1]";
+        let parser = connection_parser();
+        let result = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(result[0].source.port, Port::None);
+        assert_eq!(result[0].sink.port, Port::Named("input".into()));
+        assert_eq!(result[1].sink.port, Port::Slice(0, 2));
+        assert_eq!(result[2].sink.port, Port::Index(1));
     }
 }
