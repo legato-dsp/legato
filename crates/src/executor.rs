@@ -196,7 +196,7 @@ impl Executor {
                     as *mut [&mut [f32]])
             };
 
-            node.process(&mut ctx, &inputs[0..audio_inputs_size], outputs);
+            node.process(ctx, &inputs[0..audio_inputs_size], outputs);
         }
 
         ctx.set_instant();
@@ -229,12 +229,12 @@ impl Executor {
 }
 
 #[inline(always)]
-fn slice_node_ports_mut<'a>(
-    buffer: &'a mut [f32],
+fn slice_node_ports_mut(
+    buffer: &mut [f32],
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> [MaybeUninit<&'a mut [f32]>; MAX_ARITY] {
+) -> [MaybeUninit<&mut [f32]>; MAX_ARITY] {
     let end = (block_size * chans) + offset;
 
     let node_buffer = &mut buffer[offset..end];
@@ -254,12 +254,12 @@ fn slice_node_ports_mut<'a>(
 }
 
 #[inline(always)]
-fn slice_node_ports<'a>(
-    buffer: &'a [f32],
+fn slice_node_ports(
+    buffer: &[f32],
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> [MaybeUninit<&'a [f32]>; MAX_ARITY] {
+) -> [MaybeUninit<&[f32]>; MAX_ARITY] {
     let end = (block_size * chans) + offset;
 
     let node_buffer = &buffer[offset..end];

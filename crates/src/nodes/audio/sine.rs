@@ -136,13 +136,10 @@ impl Node for Sine {
 
     /// For now, we panic here, as it's difficult to make a strong message without allocating
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        match msg {
-            NodeMessage::SetParam(payload) => match (payload.param_name, payload.value) {
-                ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unreachable!("Invalid parameter and value passed"),
-            },
-            _ => (),
-        }
+        if let NodeMessage::SetParam(payload) = msg { match (payload.param_name, payload.value) {
+            ("freq", RtValue::F32(val)) => self.freq = val,
+            _ => unreachable!("Invalid parameter and value passed"),
+        } }
     }
 
     fn ports(&self) -> &Ports {

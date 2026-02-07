@@ -67,9 +67,9 @@ fn map_range_simd(x: Vf32, in_min: Vf32, in_max: Vf32, out_min: Vf32, out_max: V
     let original_range = in_max - in_min;
     let new_range = out_max - out_min;
 
-    let result = out_min + ((x - in_min) * (new_range / original_range));
+    
 
-    result
+    out_min + ((x - in_min) * (new_range / original_range))
 }
 
 #[cfg(test)]

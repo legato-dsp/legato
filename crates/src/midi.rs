@@ -122,7 +122,7 @@ impl MidiWriter {
         let encoded = msg.encode();
         let sliced = &encoded.data[..encoded.len];
         connection
-            .send(&sliced)
+            .send(sliced)
             .map_err(|x| MidiError::SendError(x.to_string()))
     }
     /// Drain the incoming messages and send to the system.
@@ -256,7 +256,7 @@ impl MidiStore {
                 self.channel_messages[index] = msg;
                 self.channel_messages_count[chan] += 1;
 
-                return Ok(());
+                Ok(())
             }
             MidiMessageKind::Start
             | MidiMessageKind::Continue
@@ -271,7 +271,7 @@ impl MidiStore {
                 self.general_messages[count] = msg;
                 self.general_messages_count += 1;
 
-                return Ok(());
+                Ok(())
             }
             MidiMessageKind::Dummy => unreachable!(),
         }
@@ -350,7 +350,7 @@ pub fn start_midi_thread(
     // The input connection thread
     let reader_handle = input
         .connect(
-            &input_port,
+            input_port,
             port_name,
             move |_, message, _| {
                 let instant = Instant::now();
@@ -358,7 +358,7 @@ pub fn start_midi_thread(
                 if let Ok(msg) = parse_midi(message, instant) {
                     // Init midi offset if not yet set
                     // TODO: Proper app wide error handling
-                    if let Err(_) = midi_listener.send_to_store(msg, instant) {
+                    if midi_listener.send_to_store(msg, instant).is_err() {
                         eprintln!("MIDI DROP");
                     }
                 }
@@ -511,7 +511,7 @@ impl MidiMessage {
 }
 
 pub fn parse_midi(message: &[u8], instant: Instant) -> Result<MidiMessage, MidiError> {
-    if message.len() < 1 {
+    if message.is_empty() {
         return Err(MidiError::CouldNotParse);
     }
 
@@ -643,7 +643,7 @@ impl MidiPortKind {
                 {
                     Ok(idx)
                 } else {
-                    return Err(MidiError::InvalidPort);
+                    Err(MidiError::InvalidPort)
                 }
             }
         }
@@ -660,7 +660,7 @@ impl MidiPortKind {
                 {
                     Ok(idx)
                 } else {
-                    return Err(MidiError::InvalidPort);
+                    Err(MidiError::InvalidPort)
                 }
             }
         }

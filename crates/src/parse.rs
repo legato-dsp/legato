@@ -50,12 +50,12 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
         let f32 = just('-')
             .or_not()
             .then(text::int(10))
-            .then(just('.').then(digits.clone()))
+            .then(just('.').then(digits))
             .to_slice()
             .map(|s: &str| Value::F32(s.parse().unwrap()));
 
         let i32 = just('-')
-            .then(digits.clone())
+            .then(digits)
             .to_slice()
             .map(|s: &str| Value::I32(s.parse().unwrap()))
             .boxed();
@@ -65,7 +65,7 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(|s: &str| Value::U32(s.parse().unwrap()));
 
         let ident_raw = text::ascii::ident().map(ToString::to_string);
-        let ident_value = ident_raw.clone().map(|s| match s.as_str() {
+        let ident_value = ident_raw.map(|s| match s.as_str() {
             "true" => Value::Bool(true),
             "false" => Value::Bool(false),
             "null" => Value::Null,
@@ -111,7 +111,7 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
 fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
-    let alias = just(':').padded().ignore_then(ident.clone()).or_not();
+    let alias = just(':').padded().ignore_then(ident).or_not();
 
     let obj_parser = ident
         .then_ignore(just(':').padded())
@@ -126,7 +126,7 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
     let pipe = just('|')
         .padded()
-        .ignore_then(ident.clone())
+        .ignore_then(ident)
         .then(
             value_parser()
                 .padded()
@@ -194,7 +194,9 @@ fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich
 fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
-    let scope = ident
+    
+
+    ident
         .then_ignore(extra_padded(just('{')))
         .then(
             extra_padded(node_declaration())
@@ -206,9 +208,7 @@ fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a,
         .map(|(namespace, declarations)| DeclarationScope {
             namespace,
             declarations,
-        });
-
-    scope
+        })
 }
 
 /// Just matches { string }, used in source and sink.

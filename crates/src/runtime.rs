@@ -74,7 +74,7 @@ impl Runtime {
     /// Prepare and allocate all of the information needed for the audio execution plan
     pub fn prepare(&mut self) {
         let block_size = self.context.get_config().block_size;
-        assert!(block_size != 0 && block_size % 2 == 0);
+        assert!(block_size != 0 && block_size.is_multiple_of(2));
 
         self.executor.prepare(block_size);
     }
@@ -114,7 +114,7 @@ impl Runtime {
 
     // Execute the audio plan and return the next block
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
-        &self.executor.process(&mut self.context, external_inputs)
+        self.executor.process(&mut self.context, external_inputs)
     }
 }
 
@@ -133,11 +133,8 @@ impl Node for Runtime {
         &self.ports
     }
     fn handle_msg(&mut self, msg: msg::NodeMessage) {
-        match msg {
-            msg::NodeMessage::SetParam(_) => {
-                unimplemented!("Runtime subgraph messaging not yet setup")
-            }
-            _ => (),
+        if let msg::NodeMessage::SetParam(_) = msg {
+            unimplemented!("Runtime subgraph messaging not yet setup")
         }
     }
 }

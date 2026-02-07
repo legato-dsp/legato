@@ -146,7 +146,7 @@ impl Node for Oversampler2X {
 
         self.node
             .get_node_mut()
-            .process(ctx, &inputs, outputs_for_node);
+            .process(ctx, inputs, outputs_for_node);
 
         ctx.set_block_size(block_size);
         ctx.set_sample_rate(sample_rate);
@@ -161,17 +161,17 @@ impl Node for Oversampler2X {
     }
 
     fn ports(&self) -> &Ports {
-        &self.node.get_node().ports()
+        self.node.get_node().ports()
     }
 }
 
 #[inline(always)]
-fn slice_node_ports_mut<'a>(
-    buffer: &'a mut [f32],
+fn slice_node_ports_mut(
+    buffer: &mut [f32],
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> [MaybeUninit<&'a mut [f32]>; MAX_ARITY] {
+) -> [MaybeUninit<&mut [f32]>; MAX_ARITY] {
     let end = (block_size * chans) + offset;
 
     let node_buffer = &mut buffer[offset..end];

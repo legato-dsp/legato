@@ -103,13 +103,13 @@ impl Pipe for Replicate {
     }
 }
 
-//// A simple node that wraps a node in a 2x oversampler.
-////
-//// In the future, there will be more rates and an FIR builder.
-////
-//// For the time being, if you need higher rates, you can design an FIR
-//// filter and pass create a node, and create your own pipe, or simply use
-//// it as a node. You can also create a subgraph with a different rate as well.
+/// A simple node that wraps a node in a 2x oversampler.
+///
+/// In the future, there will be more rates and an FIR builder.
+///
+/// For the time being, if you need higher rates, you can design an FIR
+/// filter and pass create a node, and create your own pipe, or simply use
+/// it as a node. You can also create a subgraph with a different rate as well.
 
 struct Oversample2X;
 

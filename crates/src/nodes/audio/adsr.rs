@@ -33,7 +33,7 @@ pub struct Adsr {
 impl Adsr {
     pub fn new(chans: usize, attack: f32, decay: f32, sustain: f32, release: f32) -> Self {
         Self {
-            chans: chans,
+            chans,
             attack_ms: attack,
             decay_ms: decay,
             sustain_amount: sustain,
