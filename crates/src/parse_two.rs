@@ -43,6 +43,8 @@ pub struct Ast {
     pub connections: Vec<Connection>, // We can add connections, source, and sink here in the next stage
 }
 
+// General extra padding rules for comments, etfc
+
 fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     recursive(|value| {
         let escape = just('\\').ignore_then(choice((
@@ -164,22 +166,26 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Connection {
-    pub source_node: String,
-    pub sink_node: String,
+    pub source: String,
+    pub sink: String,
 }
 
-fn connection_parser<'a>() -> impl Parser<'a, &'a str, Connection, Err<Rich<'a, char>>> {
+fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
-    let connection = ident
-        .then_ignore(just(">>").padded())
-        .then(ident.padded())
-        .map(|(source_node, sink_node)| Connection {
-            source_node,
-            sink_node,
-        });
-
-    connection
+    ident
+        .separated_by(just(">>").padded())
+        .at_least(2)
+        .collect::<Vec<_>>()
+        .map(|endpoints| {
+            endpoints
+                .windows(2)
+                .map(|w| Connection {
+                    source: w[0].clone(),
+                    sink: w[1].clone(),
+                })
+                .collect()
+        })
 }
 
 fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a, char>>> {
@@ -205,10 +211,15 @@ fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a,
 fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
     let declarations = scope_parser().padded().repeated().collect();
 
-    let connections = connection_parser().padded().repeated().collect();
+    let connections = connection_parser()
+        .padded()
+        .repeated()
+        .collect::<Vec<Vec<Connection>>>()
+        .map(|v| v.into_iter().flatten().collect::<Vec<Connection>>())
+        .or_not(); // Connections optional
 
     let ast = declarations
-        .then(connections.or_not())
+        .then(connections)
         .map(|(declarations, connections)| Ast {
             declarations,
             connections: connections.unwrap_or(Vec::new()),
@@ -379,8 +390,8 @@ mod test {
         let parser = connection_parser();
         let result = parser.parse(src).into_result().unwrap();
 
-        assert_eq!(result.source_node, "osc");
-        assert_eq!(result.sink_node, "gain");
+        assert_eq!(result[0].source, "osc");
+        assert_eq!(result[0].sink, "gain");
     }
 
     #[test]
@@ -398,10 +409,10 @@ mod test {
         let ast = parser.parse(src).into_result().unwrap();
 
         assert_eq!(ast.connections.len(), 2);
-        assert_eq!(ast.connections[0].source_node, "osc");
-        assert_eq!(ast.connections[0].sink_node, "gain");
-        assert_eq!(ast.connections[1].source_node, "gain");
-        assert_eq!(ast.connections[1].sink_node, "output");
+        assert_eq!(ast.connections[0].source, "osc");
+        assert_eq!(ast.connections[0].sink, "gain");
+        assert_eq!(ast.connections[1].source, "gain");
+        assert_eq!(ast.connections[1].sink, "output");
     }
 
     #[test]
@@ -409,6 +420,30 @@ mod test {
         let src = "osc   >>   gain";
         let parser = connection_parser().padded();
         let result = parser.parse(src).into_result().unwrap();
-        assert_eq!(result.source_node, "osc");
+        assert_eq!(result[0].source, "osc");
+    }
+
+    #[test]
+    fn test_connections_in_ast_nested() {
+        let src = r#"
+            audio {
+                osc,
+                gain,
+                svf
+            }
+            osc >> gain >> svf
+            gain >> output
+        "#;
+
+        let parser = main_parser();
+        let ast = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(ast.connections.len(), 3);
+        assert_eq!(ast.connections[0].source, "osc");
+        assert_eq!(ast.connections[0].sink, "gain");
+        assert_eq!(ast.connections[1].source, "gain");
+        assert_eq!(ast.connections[1].sink, "svf");
+        assert_eq!(ast.connections[2].source, "gain");
+        assert_eq!(ast.connections[2].sink, "output");
     }
 }
