@@ -40,7 +40,11 @@ pub struct DeclarationScope {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
-    pub connections: Vec<Connection>, // We can add connections, source, and sink here in the next stage
+    pub connections: Vec<Connection>,
+    // When chaining executors/graphs, this is the entry point
+    pub source: Option<String>,
+    // The exit point that the runtime/executor delivers samples from
+    pub sink: String,
 }
 
 fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
@@ -241,7 +245,17 @@ fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a,
     scope
 }
 
+/// Just matches { string }, used in source and sink.
+fn scope_or_sink<'a>() -> impl Parser<'a, &'a str, String, Err<Rich<'a, char>>> {
+    text::ascii::ident()
+        .map(ToString::to_string)
+        .delimited_by(just('{').padded(), just('}').padded())
+}
+
+/// The main entrypoint for the Legato parser.
 fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
+    let source = scope_or_sink().or_not();
+
     let declarations = scope_parser().padded().repeated().collect();
 
     let connections = connection_parser()
@@ -251,16 +265,20 @@ fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
         .map(|v| v.into_iter().flatten().collect::<Vec<Connection>>())
         .or_not(); // Connections optional
 
-    let ast = declarations
+    let sink = scope_or_sink();
+
+    source
+        .then(declarations)
         .then(connections)
-        .map(|(declarations, connections)| Ast {
+        .then(sink)
+        .map(|(((source, declarations), connections), sink)| Ast {
+            source,
             declarations,
             connections: connections.unwrap_or(Vec::new()),
+            sink,
         })
         .padded()
-        .then_ignore(end());
-
-    ast
+        .then_ignore(end())
 }
 
 #[cfg(test)]
@@ -327,6 +345,8 @@ mod test {
             audio {
                 osc: sine { freq: 440 } | lowpass(100.5) | gain(null)
             }
+
+            { sine }
         "#;
 
         let expected = Ast {
@@ -348,6 +368,8 @@ mod test {
                     ],
                 }],
             }],
+            source: None,
+            sink: "sine".into(),
             connections: Vec::new(),
         };
 
@@ -360,9 +382,12 @@ mod test {
             control {
                 param { val: 255.0 }
             }
+
             audio {
                 osc: square_wave_one { freq: 440.0, gain: 0.2 } | volume(0.8),
             }
+
+            { square_wave_one }
         "#;
 
         let parser = main_parser();
@@ -432,10 +457,13 @@ mod test {
         let src = r#"
             audio {
                 osc,
-                gain
+                gain,
+                output
             }
             osc >> gain
             gain >> output
+
+            { output }
         "#;
 
         let parser = main_parser();
@@ -446,6 +474,9 @@ mod test {
         assert_eq!(ast.connections[0].sink.node, "gain");
         assert_eq!(ast.connections[1].source.node, "gain");
         assert_eq!(ast.connections[1].sink.node, "output");
+        // Sink logic
+        assert_eq!(ast.sink, "output".to_string());
+        assert!(ast.source.is_none());
     }
 
     #[test]
@@ -462,10 +493,13 @@ mod test {
             audio {
                 osc,
                 gain,
-                svf
+                svf,
+                output
             }
             osc >> gain >> svf
             gain >> output
+
+            { output }
         "#;
 
         let parser = main_parser();
@@ -478,6 +512,8 @@ mod test {
         assert_eq!(ast.connections[1].sink.node, "svf");
         assert_eq!(ast.connections[2].source.node, "gain");
         assert_eq!(ast.connections[2].sink.node, "output");
+
+        assert_eq!(ast.sink, "output".to_string());
     }
 
     #[test]
