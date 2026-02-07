@@ -85,3 +85,4 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
 - Bitflags or something similar for user defined params rather than static string comparison?
 - Unify node creation spec and node logic
 - Flat multi-chan buffer for delay lines
+- Oversampling logic likely may break delay lines and samplers. This will need a better solution, likely small executors with polyphase or halfband resamplers at the boundaries. Not sure how to approach this at the moment.
