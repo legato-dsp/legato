@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    ast::DSLParams,
     builder::{ResourceBuilderView, ValidationError},
+    ir::DSLParams,
     node::DynNode,
 };
 

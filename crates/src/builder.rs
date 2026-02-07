@@ -5,12 +5,13 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
+use chumsky::Parser;
 
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
-    ast::{DSLParams, PortConnectionType, Value, build_ast},
     config::Config,
     graph::{Connection, ConnectionEntry},
+    ir::{DSLParams, Port, Value},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::{
@@ -18,7 +19,7 @@ use crate::{
         mixer::{MonoFanOut, TrackMixer},
     },
     params::{ParamKey, ParamMeta},
-    parse::parse_legato_file,
+    parse::legato_parser_inner,
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{
@@ -278,12 +279,12 @@ where
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
         let source_indicies: Vec<usize> = match connection.source_kind {
-            PortConnectionType::Auto => {
+            Port::None => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 ports.audio_out.iter().enumerate().map(|(i, _)| i).collect()
             }
-            PortConnectionType::Indexed { port } => vec![port],
-            PortConnectionType::Named { ref port } => {
+            Port::Index(port) => vec![port],
+            Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = ports
                     .audio_out
@@ -294,7 +295,7 @@ where
 
                 vec![index]
             }
-            PortConnectionType::Slice { start, end } => {
+            Port::Slice(start, end) => {
                 if end < start {
                     panic!("End slice cannot be less than start!");
                 }
@@ -304,12 +305,12 @@ where
         };
 
         let sink_indicies: Vec<usize> = match connection.sink_kind {
-            PortConnectionType::Auto => {
+            Port::None => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
                 ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
             }
-            PortConnectionType::Indexed { port } => vec![port],
-            PortConnectionType::Named { ref port } => {
+            Port::Index(port) => vec![port],
+            Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
                 let index = ports
                     .audio_in
@@ -320,7 +321,7 @@ where
 
                 vec![index]
             }
-            PortConnectionType::Slice { start, end } => {
+            Port::Slice(start, end) => {
                 if end < start {
                     panic!("End slice cannot be less than start!");
                 }
@@ -451,11 +452,8 @@ where
 
 impl LegatoBuilder<DslBuilding> {
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
-        let pairs = parse_legato_file(content)
-            .map_err(|x| ValidationError::ParseError(x.to_string()))
-            .unwrap();
-
-        let ast = build_ast(pairs).unwrap();
+        // TODO: Use file and error handling later
+        let ast = legato_parser_inner().parse(content).unwrap();
 
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {
@@ -475,35 +473,35 @@ impl LegatoBuilder<DslBuilding> {
         for connection in ast.connections.iter() {
             let source_key = self
                 .working_name_lookup
-                .get(&connection.source_name)
+                .get(&connection.source.node)
                 .unwrap_or_else(|| {
                     panic!(
                         "Could not find source key in connection {}",
-                        &connection.source_name
+                        &connection.source.node
                     )
                 });
 
             let sink_key = self
                 .working_name_lookup
-                .get(&connection.sink_name)
+                .get(&connection.sink.node)
                 .unwrap_or_else(|| {
                     panic!(
                         "Could not find sink key in connection {}",
-                        &connection.sink_name
+                        &connection.sink.node
                     )
                 });
 
             self._connect_ref_self(AddConnectionProps {
                 source: *source_key,
                 sink: *sink_key,
-                source_kind: connection.source_port.clone(),
-                sink_kind: connection.sink_port.clone(),
+                source_kind: connection.source.port.clone(),
+                sink_kind: connection.sink.port.clone(),
             });
         }
 
         let sink_key = self
             .working_name_lookup
-            .get(&ast.sink.name)
+            .get(&ast.sink)
             .expect("Could not find sink!");
 
         self.runtime
@@ -513,7 +511,7 @@ impl LegatoBuilder<DslBuilding> {
         if let Some(source) = ast.source {
             let source_key = self
                 .working_name_lookup
-                .get(&source.name)
+                .get(&source)
                 .expect("Explicit source passed but node not found!!");
 
             self.runtime
@@ -692,9 +690,9 @@ impl<'a> ResourceBuilderView<'a> {
 #[derive(Debug, PartialEq, Clone)]
 pub struct AddConnectionProps {
     pub source: NodeKey,
-    pub source_kind: PortConnectionType,
+    pub source_kind: Port,
     pub sink: NodeKey,
-    pub sink_kind: PortConnectionType,
+    pub sink_kind: Port,
 }
 
 pub enum AddConnectionKind {
