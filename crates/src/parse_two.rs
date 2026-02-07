@@ -1,10 +1,6 @@
-//! This is a parser for JSON.
-//! Run it with the following command:
-//! cargo run --example json -- examples/sample.json
-
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
-use std::{collections::{BTreeMap, HashMap}, env, fs};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
 enum Value {
@@ -16,7 +12,7 @@ enum Value {
     Ident(String),
     String(String),
     Array(Vec<Value>),
-    Object(BTreeMap<String, Value>)
+    Object(BTreeMap<String, Value>),
 }
 
 pub type Object = BTreeMap<String, Value>;
@@ -35,20 +31,17 @@ pub struct NodeDeclaration {
     pub pipes: Vec<ASTPipe>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeclarationScope {
     pub namespace: String,
-    pub declarations: Vec<NodeDeclaration>
+    pub declarations: Vec<NodeDeclaration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
-    // We can add connections, source, and sink here in the next stage
+    pub connections: Vec<Connection>, // We can add connections, source, and sink here in the next stage
 }
-
-
 
 fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
     recursive(|value| {
@@ -69,8 +62,9 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(Value::String);
 
         let digits = text::digits(10);
-        
-        let f32 = just('-').or_not()
+
+        let f32 = just('-')
+            .or_not()
             .then(text::int(10))
             .then(just('.').then(digits.clone()))
             .to_slice()
@@ -82,7 +76,9 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(|s: &str| Value::I32(s.parse().unwrap()))
             .boxed();
 
-        let u32 = digits.to_slice().map(|s: &str| Value::U32(s.parse().unwrap()));
+        let u32 = digits
+            .to_slice()
+            .map(|s: &str| Value::U32(s.parse().unwrap()));
 
         let ident_raw = text::ascii::ident().map(ToString::to_string);
         let ident_value = ident_raw.clone().map(|s| match s.as_str() {
@@ -92,7 +88,9 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             _ => Value::Ident(s),
         });
 
-        let kv = ident_raw.then_ignore(just(':').padded()).then(value.clone());
+        let kv = ident_raw
+            .then_ignore(just(':').padded())
+            .then(value.clone());
         let object = kv
             .separated_by(just(',').padded())
             .allow_trailing()
@@ -120,15 +118,9 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(Value::Array)
             .boxed();
 
-        choice((
-            f32,
-            i32,
-            u32,
-            string_value, 
-            object,
-            array,
-            ident_value,
-        )).padded().boxed()
+        choice((f32, i32, u32, string_value, object, array, ident_value))
+            .padded()
+            .boxed()
     })
 }
 
@@ -170,25 +162,65 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
         })
 }
 
-fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Connection {
+    pub source_node: String,
+    pub sink_node: String,
+}
+
+fn connection_parser<'a>() -> impl Parser<'a, &'a str, Connection, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+
+    let connection = ident
+        .then_ignore(just(">>").padded())
+        .then(ident.padded())
+        .map(|(source_node, sink_node)| Connection {
+            source_node,
+            sink_node,
+        });
+
+    connection
+}
+
+fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
     let scope = ident
         .then_ignore(just('{').padded())
-        .then(node_declaration().separated_by(just(',').padded()).allow_trailing().collect())
+        .then(
+            node_declaration()
+                .separated_by(just(',').padded())
+                .allow_trailing()
+                .collect(),
+        )
         .then_ignore(just('}').padded())
-        .map(|(namespace, declarations)| DeclarationScope { namespace, declarations });
+        .map(|(namespace, declarations)| DeclarationScope {
+            namespace,
+            declarations,
+        });
 
     scope
-        .repeated()
-        .collect()
-        .map(|declarations| Ast { declarations })
+}
+
+fn main_parser<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, char>>> {
+    let declarations = scope_parser().padded().repeated().collect();
+
+    let connections = connection_parser().padded().repeated().collect();
+
+    let ast = declarations
+        .then(connections.or_not())
+        .map(|(declarations, connections)| Ast {
+            declarations,
+            connections: connections.unwrap_or(Vec::new()),
+        })
         .padded()
-        .then_ignore(end())
+        .then_ignore(end());
+
+    ast
 }
 
 #[cfg(test)]
-mod test_refactored {
+mod test {
     use super::*;
     use ariadne::{Color, Label, Report, ReportKind, Source};
     use std::collections::BTreeMap;
@@ -239,7 +271,10 @@ mod test_refactored {
         assert_parse_equals_value("true", Value::Bool(true));
         assert_parse_equals_value("42.5", Value::F32(42.5));
         assert_parse_equals_value("-10", Value::I32(-10));
-        assert_parse_equals_value(r#""escaped\nline""#, Value::String("escaped\nline".to_string()));
+        assert_parse_equals_value(
+            r#""escaped\nline""#,
+            Value::String("escaped\nline".to_string()),
+        );
     }
 
     #[test]
@@ -256,9 +291,7 @@ mod test_refactored {
                 declarations: vec![NodeDeclaration {
                     node_type: "osc".to_string(),
                     alias: Some("sine".to_string()),
-                    params: Some(BTreeMap::from([
-                        ("freq".to_string(), Value::U32(440))
-                    ])),
+                    params: Some(BTreeMap::from([("freq".to_string(), Value::U32(440))])),
                     pipes: vec![
                         ASTPipe {
                             name: "lowpass".to_string(),
@@ -271,6 +304,7 @@ mod test_refactored {
                     ],
                 }],
             }],
+            connections: Vec::new(),
         };
 
         assert_parse_equals_ast(src, expected);
@@ -293,9 +327,18 @@ mod test_refactored {
         assert_eq!(ast.declarations.len(), 2);
         assert_eq!(ast.declarations[0].namespace, "control");
         assert_eq!(ast.declarations[1].declarations.len(), 1);
-        assert_eq!(ast.declarations[1].declarations[0].alias, Some("square_wave_one".to_string()));
+        assert_eq!(
+            ast.declarations[1].declarations[0].alias,
+            Some("square_wave_one".to_string())
+        );
         assert_eq!(ast.declarations[1].declarations[0].node_type, "osc");
-        assert_eq!(ast.declarations[1].declarations[0].pipes, vec![ASTPipe { name: "volume".into(), params: Some(Value::F32(0.8))}]);
+        assert_eq!(
+            ast.declarations[1].declarations[0].pipes,
+            vec![ASTPipe {
+                name: "volume".into(),
+                params: Some(Value::F32(0.8))
+            }]
+        );
     }
 
     #[test]
@@ -318,12 +361,54 @@ mod test_refactored {
 
         let expected_map = BTreeMap::from([
             ("meta".into(), Value::Object(meta_map)),
-            ("tags".into(), Value::Array(vec![
-                Value::String("rust".into()),
-                Value::String("dsp".into())
-            ])),
+            (
+                "tags".into(),
+                Value::Array(vec![
+                    Value::String("rust".into()),
+                    Value::String("dsp".into()),
+                ]),
+            ),
         ]);
 
         assert_parse_equals_value(input, Value::Object(expected_map));
+    }
+
+    #[test]
+    fn test_basic_connection() {
+        let src = "osc >> gain";
+        let parser = connection_parser();
+        let result = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(result.source_node, "osc");
+        assert_eq!(result.sink_node, "gain");
+    }
+
+    #[test]
+    fn test_connections_in_ast() {
+        let src = r#"
+            audio {
+                osc,
+                gain
+            }
+            osc >> gain
+            gain >> output
+        "#;
+
+        let parser = main_parser();
+        let ast = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(ast.connections.len(), 2);
+        assert_eq!(ast.connections[0].source_node, "osc");
+        assert_eq!(ast.connections[0].sink_node, "gain");
+        assert_eq!(ast.connections[1].source_node, "gain");
+        assert_eq!(ast.connections[1].sink_node, "output");
+    }
+
+    #[test]
+    fn test_connection_whitespace() {
+        let src = "osc   >>   gain";
+        let parser = connection_parser().padded();
+        let result = parser.parse(src).into_result().unwrap();
+        assert_eq!(result.source_node, "osc");
     }
 }
