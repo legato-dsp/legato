@@ -14,7 +14,6 @@ use crate::{
     runtime::{Runtime, RuntimeFrontend},
 };
 
-pub mod ast;
 pub mod builder;
 pub mod config;
 pub mod connection;
@@ -22,6 +21,7 @@ pub mod context;
 pub mod executor;
 pub mod graph;
 pub mod harness;
+pub mod ir;
 pub mod math;
 pub mod midi;
 pub mod msg;
@@ -29,7 +29,6 @@ pub mod node;
 pub mod out;
 pub mod params;
 pub mod parse;
-pub mod parse_two;
 pub mod pipes;
 pub mod ports;
 pub mod registry;

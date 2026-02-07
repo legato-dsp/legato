@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
@@ -27,7 +27,7 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 44_100,
+        sample_rate: 48_000,
         block_size: 4096,
         channels: 2,
         initial_graph_capacity: 4,

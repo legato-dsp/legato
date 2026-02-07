@@ -3,8 +3,8 @@
 use std::{collections::HashMap, time::Duration};
 
 use crate::{
-    ast::DSLParams,
     builder::{ResourceBuilderView, ValidationError},
+    ir::DSLParams,
     node::DynNode,
     node_spec,
     nodes::{
