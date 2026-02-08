@@ -55,16 +55,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
-
-    let _ = frontend.load_sample(
-        &String::from("amen"),
-        Path::new("../samples/amen.wav"),
-        2,
-        config.sample_rate as u32,
-    );
-
-    dbg!(&app);
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
