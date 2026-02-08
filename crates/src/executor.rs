@@ -106,7 +106,7 @@ impl Executor {
     #[inline(always)]
     pub(crate) fn process(
         &mut self,
-        mut ctx: &mut AudioContext,
+        ctx: &mut AudioContext,
         external_inputs: Option<&Inputs>,
     ) -> &[&[f32]] {
         assert!(self.state == ExecutorState::Prepared);
