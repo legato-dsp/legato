@@ -1,0 +1,126 @@
+## Getting Started
+
+---
+
+Legato aims to be a diverse and accessible ecosystem for audio plugin and hardware creation.
+
+The license is AGPLv3, and any work contributed will fall within this.
+
+Legato also provides additional permissions where source disclosure is not required, in order to make the project more accessible and attractive to indie developers working on music hardware. See the LICENSE file for details.
+
+**Before working on any new functionality, please open an issue beforehand.**
+
+Due to the plugin-oriented nature of Legato, it is unlikely that nodes will be added for every possible use case. However, if something is sufficiently general (e.g., pitch shifting, polyphase resampling), it may be considered.
+
+Large engine improvements must include benchmarks or a clear explanation of their performance impact.
+
+---
+
+## Development Setup
+
+---
+
+Developers are strongly encouraged to use Nix to manage dependencies.
+
+This makes benchmarks, development configurations, and tests reproducible.
+
+For now, this is as simple as cloning the repository and using the provided Nix development shell, optionally via `direnv`.
+
+While Nix is not required, contributions are expected to build and run in the Nix environment.
+
+Nix is also a likely deployment target, and fine-tuned OS images may be provided in the future.
+
+---
+
+## Code Style Guide
+
+---
+
+* Prefer modeling state and events with enums or bitflags
+* Avoid locking primitives in real-time code
+* Avoid syscalls or heap allocations in the audio thread
+* Non-trivial nodes should include benchmarks using Criterion, with black-boxed inputs and outputs
+* `unsafe` with measurable performance gains is acceptable; undefined behavior is not. Use Miri to verify correctness
+* Non-trivial code should include at least a few relevant test cases
+
+### Concurrency and Lock-Free Expectations
+
+Code that runs on the audio thread must be lock-free.
+
+Avoid mutexes, condition variables, and blocking synchronization primitives.
+
+If using channels, queues, or ring buffers, they must be lock-free and non-blocking under all expected conditions. Do not assume that a “channel” is suitable for real-time use without verifying its implementation.
+
+---
+
+## General Performance Guidelines
+
+---
+
+When optimizing DSP code, generally follow these steps:
+
+* Use flat buffers or cache-optimized data structures
+* Consider structuring algorithms to use `chunks_exact` where possible for auto-vectorization, if gains are observed when benchmarking
+* Prefer branching at function entry rather than in hot DSP paths.
+* Use branchless solutions where appropriate
+* Use polynomial approximations for operations that cannot be efficiently vectorized
+* Avoid heap allocations and system calls in hot paths; if allocation is required, use arenas or preallocation
+* Avoid mutexes or blocking primitives in audio-thread code
+* Once these steps are complete, consider `std::simd` (nightly) for further optimization, but make this yields measurable performance gains
+
+---
+
+## Project Architecture Guide
+
+---
+
+General guidance for examples and downstream applications:
+
+* Legato allows users to define custom nodes; prefer this for repeated functionality
+* Runtimes/Executors can themselves be nodes, but this may negatively impact cache locality. Prefer custom nodes when possible
+* Legato currently does not use async. Consider this carefully before proposing changes
+
+---
+
+## Pull Requests and Review Process
+
+---
+
+All pull requests must adhere to the following:
+
+* Every PR must reference an existing issue
+* The scope of the PR should match the associated issue
+* All CI checks must pass
+* Performance-relevant changes must include benchmarks or justification
+* Non-trivial changes must include appropriate tests
+* PRs should include a clear description of design decisions and trade-offs
+
+PRs that do not meet these requirements may be closed without review.
+
+Expect feedback and revision requests. Force-pushing after review is discouraged unless explicitly requested.
+
+---
+
+## Logo Usage
+
+---
+
+The Legato logo may only be used in non-monetized contexts.
+
+Community spaces such as Matrix or Discord are acceptable.
+
+Commercial packages of nodes or other educational material that do not adhere to AGPLv3 or are not fair use are not permitted.
+
+---
+
+## AI Policy
+
+---
+
+AI tools may be used for auxiliary tasks such as generating test harnesses, proofreading documentation, or general review.
+
+However, pull requests that show clear signs of low-effort AI generation will not be accepted.
+
+If you are unwilling to take the time to explain your solution, I won't take the time to review it.
+
+Legato aims to help HUMANS make art. The project WILL NOT incorporate or promote visuals, art, music, or other creative works that were not made by HUMANS on official channels.
