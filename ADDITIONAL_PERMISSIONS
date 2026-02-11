@@ -7,19 +7,41 @@ you are granted permission to distribute works derived from this software in bin
 form without providing Corresponding Source, provided that all of the following conditions
 are met:
 
-1. The derived work is an end-user-facing software or hardware application whose primary purpose is
-   interactive music creation.
+1. The derived work is an end-user-facing software or hardware application whose primary
+   purpose is interactive creative expression, including but not limited to:
 
-2. The derived work is not:
+   a) Musical performance and composition;
+   b) Audio-visual art and generative art;
+   c) Physical or digital art installations;
+   d) Video games and interactive entertainment;
+   e) Live performance systems;
+   f) Experimental media or immersive environments;
+
+   and is primarily intended for direct human interaction and creative control.
+
+2. The derived work does not primarily function as, enable, or depend upon automated,
+   machine-learning-based, or algorithmic systems for the generation of music or musical
+   compositions without substantial real-time human authorship (“AI-generated music”).
+
+3. The derived work is not:
+
    a) A digital audio workstation (DAW);
-   b) A development tool, editor, SDK, or authoring environment for plugins or audio content;
-   c) A paid downloadable content pack, extension, fork, or framework derived from Legato DSP;
-   d) An embedded system, firmware, or dedicated hardware device, including automotive or
-      consumer electronics systems, not designed for interactive music creation.
+   b) A development tool, editor, SDK, framework, or authoring environment for plugins,
+      instruments, or audio content;
+   c) A paid downloadable content pack, extension, fork, or commercial framework derived
+      from Legato DSP;
+   d) An embedded system, firmware, or dedicated hardware device, including automotive
+      or consumer electronics systems, not primarily designed for interactive creative use;
+   e) A platform whose primary purpose is large-scale automated content generation,
+      asset synthesis, or dataset production.
+
+4. Human creative control must remain central to the use of the software. Systems in which
+   musical or artistic output is predominantly produced by automated processes, statistical
+   models, or machine learning systems without meaningful human authorship are excluded
+   from this permission.
 
 Any derived work that does not meet all of the above conditions must comply fully with the
 terms of the GNU Affero General Public License v3, including the obligation to provide
 Corresponding Source.
 
 This additional permission does not modify or replace the AGPL; all other terms remain in effect.
-
