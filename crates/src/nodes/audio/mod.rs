@@ -3,6 +3,7 @@ pub mod allpass;
 pub mod delay;
 pub mod fir;
 pub mod mixer;
+pub mod onepole;
 pub mod ops;
 pub mod oversample;
 pub mod sampler;
