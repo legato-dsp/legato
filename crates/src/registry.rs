@@ -10,6 +10,7 @@ use crate::{
     nodes::{
         audio::{
             adsr::Adsr,
+            allpass::Allpass,
             delay::{DelayLine, DelayRead, DelayWrite},
             mixer::{MonoFanOut, TrackMixer},
             ops::{ApplyOpKind, mult_node_factory},
@@ -306,6 +307,37 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
                 let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "allpass".into(),
+            required = ["delay_length", "feedback", "chans"], // TODO: Something more eloquent for capacity
+            optional = ["capacity"],
+            build = |rb, p| {
+                let config = rb.get_config();
+
+                let sr = config.sample_rate;
+
+                let chans = p.get_usize("chans").unwrap_or(2);
+
+                let delay_length = p
+                    .get_duration("delay_length")
+                    .unwrap_or(Duration::from_millis(200));
+
+                let delay_length_samples = sr as f32 * (delay_length.as_secs_f32());
+
+                let feedback = p.get_f32("feedback").unwrap_or(0.5);
+
+                let mut capacity = p.get_usize("capacity").unwrap_or(sr * 1);
+
+                // Clamp with reasonable allpass size.
+                if capacity < (delay_length_samples as usize) {
+                    capacity = (delay_length_samples as usize) * 2;
+                }
+
+                let node = Allpass::new(chans, feedback, delay_length_samples, capacity);
+
                 Ok(Box::new(node))
             }
         ),

@@ -194,8 +194,6 @@ fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich
 fn scope_parser<'a>() -> impl Parser<'a, &'a str, DeclarationScope, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
-    
-
     ident
         .then_ignore(extra_padded(just('{')))
         .then(
@@ -528,5 +526,59 @@ mod test {
         assert_eq!(result[0].sink.port, Port::Named("input".into()));
         assert_eq!(result[1].sink.port, Port::Slice(0, 2));
         assert_eq!(result[2].sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn test_audio_graph_with_slices_and_pipes() {
+        let src = r#"
+        audio {
+            sampler { sampler_name: "amen", chans: 2 } | logger(),
+            allpass { delay_length: 200, feedback: 0.5, chans: 2 },
+            track_mixer { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] },
+        }
+
+        sampler >> track_mixer[0..2]
+        sampler >> allpass
+        allpass >> track_mixer[2..4]
+
+        { track_mixer }
+    "#;
+
+        let parser = legato_parser_inner();
+        let ast = parser.parse(src).into_result().unwrap();
+
+        assert_eq!(ast.declarations.len(), 1);
+        let scope = &ast.declarations[0];
+        assert_eq!(scope.namespace, "audio");
+        assert_eq!(scope.declarations.len(), 3);
+
+        let sampler = &scope.declarations[0];
+        assert_eq!(sampler.node_type, "sampler");
+        assert_eq!(sampler.alias, None);
+        assert_eq!(sampler.pipes.len(), 1);
+        assert_eq!(sampler.pipes[0].name, "logger");
+
+        let track_mixer = &scope.declarations[2];
+        let gain = track_mixer.params.as_ref().unwrap().get("gain").unwrap();
+
+        assert_eq!(gain, &Value::Array(vec![Value::F32(0.5), Value::F32(0.5)]));
+
+        assert_eq!(ast.connections.len(), 3);
+
+        // sampler >> track_mixer[0..2]
+        assert_eq!(ast.connections[0].source.node, "sampler");
+        assert_eq!(ast.connections[0].sink.node, "track_mixer");
+        assert_eq!(ast.connections[0].sink.port, Port::Slice(0, 2));
+
+        // sampler >> allpass
+        assert_eq!(ast.connections[1].source.node, "sampler");
+        assert_eq!(ast.connections[1].sink.node, "allpass");
+
+        // allpass >> track_mixer[2..4]
+        assert_eq!(ast.connections[2].source.node, "allpass");
+        assert_eq!(ast.connections[2].sink.node, "track_mixer");
+        assert_eq!(ast.connections[2].sink.port, Port::Slice(2, 4));
+
+        assert_eq!(ast.sink, "track_mixer".to_string());
     }
 }
