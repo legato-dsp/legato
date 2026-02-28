@@ -1,4 +1,5 @@
 pub mod adsr;
+pub mod allpass;
 pub mod delay;
 pub mod fir;
 pub mod mixer;
