@@ -2,6 +2,8 @@
 
 use std::{collections::HashMap, time::Duration};
 
+use chumsky::prelude::todo;
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     ir::DSLParams,
@@ -13,6 +15,7 @@ use crate::{
             allpass::Allpass,
             delay::{DelayLine, DelayRead, DelayWrite},
             mixer::{MonoFanOut, TrackMixer},
+            onepole::OnePole,
             ops::{ApplyOpKind, mult_node_factory},
             sampler::Sampler,
             sine::Sine,
@@ -307,6 +310,19 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
                 let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
+                Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "onepole".into(),
+            required = ["cutoff"],
+            optional = ["chans"],
+            build = |rb, p| {
+                let chans = p.get_usize("chans").unwrap_or(2);
+                let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
+                let sr = rb.get_config().sample_rate;
+
+                let node = OnePole::new(cutoff, chans, sr);
                 Ok(Box::new(node))
             }
         ),
