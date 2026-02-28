@@ -9,22 +9,22 @@ use crate::{
     runtime::NodeKey,
 };
 
-pub(crate) const MAX_ARITY: usize = 32;
+pub const MAX_ARITY: usize = 32;
 
 /// For the time being, we just check if it has been prepared or not,
 /// but in the future we might pause, stop, etc.
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) enum ExecutorState {
+pub enum ExecutorState {
     Prepared,
     #[default]
     Unprepared,
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Executor {
+pub struct Executor {
     data: Box<[f32]>,
     scratch: Box<[f32]>,
-    pub(crate) graph: AudioGraph,
+    pub graph: AudioGraph,
     node_offsets: SecondaryMap<NodeKey, usize>,
     // Keys for inputs/output nodes
     source_key: Option<NodeKey>,
@@ -34,7 +34,7 @@ pub(crate) struct Executor {
 
 impl Executor {
     /// Set the sink key for the runtime
-    pub(crate) fn set_sink(&mut self, key: NodeKey) -> Result<(), GraphError> {
+    pub fn set_sink(&mut self, key: NodeKey) -> Result<(), GraphError> {
         match self.graph.exists(key) {
             true => {
                 self.sink_key = Some(key);
@@ -45,7 +45,7 @@ impl Executor {
     }
 
     /// Set the source key for the runtime
-    pub(crate) fn set_source(&mut self, key: NodeKey) -> Result<(), GraphError> {
+    pub fn set_source(&mut self, key: NodeKey) -> Result<(), GraphError> {
         match self.graph.exists(key) {
             true => {
                 self.source_key = Some(key);
@@ -62,7 +62,7 @@ impl Executor {
     /// Prepare the flat buffer allocation for the graph, as well as the node offsets.
     ///
     /// NOTE: This is not realtime safe!
-    pub(crate) fn prepare(&mut self, block_size: usize) {
+    pub fn prepare(&mut self, block_size: usize) {
         // Allocate flat buffer
         let num_ports = self.graph.total_ports();
         let buffer_size = num_ports * block_size;
@@ -104,7 +104,7 @@ impl Executor {
     }
 
     #[inline(always)]
-    pub(crate) fn process(
+    pub fn process(
         &mut self,
         ctx: &mut AudioContext,
         external_inputs: Option<&Inputs>,
