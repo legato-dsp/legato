@@ -31,7 +31,8 @@ pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hou
     let mut count = 0_usize;
 
     while count < dur_in_samples {
-        let block = app.next_block(None);
+        let block_view = app.next_block(None);
+        let block = &block_view.channels[0..block_view.chans];
 
         for n in 0..block_size {
             for block_chan in block {
@@ -51,7 +52,9 @@ fn write_runtime_data_cpal<T>(output: &mut [T], config: &StreamConfig, runtime: 
 where
     T: SizedSample + FromSample<f64>,
 {
-    let next_block = runtime.next_block(None);
+    let next_block_view = runtime.next_block(None);
+
+    let next_block = &next_block_view.channels[0..next_block_view.chans];
 
     let chans = config.channels as usize;
 
@@ -89,7 +92,8 @@ fn write_runtime_data_cpal_app<T>(output: &mut [T], config: &StreamConfig, app: 
 where
     T: SizedSample + FromSample<f64>,
 {
-    let next_block = app.next_block(None);
+    let next_block_view = app.next_block(None);
+    let next_block = &next_block_view.channels[0..next_block_view.chans];
 
     let chans = config.channels as usize;
 

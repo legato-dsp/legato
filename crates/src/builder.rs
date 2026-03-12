@@ -19,7 +19,7 @@ use crate::{
         mixer::{MonoFanOut, TrackMixer},
     },
     params::{ParamKey, ParamMeta},
-    parse::legato_parser_inner,
+    parse::legato_parser,
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{
@@ -453,7 +453,7 @@ where
 impl LegatoBuilder<DslBuilding> {
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
         // TODO: Use file and error handling later
-        let ast = legato_parser_inner().parse(content).unwrap();
+        let ast = legato_parser(content).unwrap();
 
         for scope in ast.declarations.iter() {
             for node in scope.declarations.iter() {

@@ -20,6 +20,15 @@ pub enum ExecutorState {
     Unprepared,
 }
 
+/// We use this struct to easily slice in other contexts,
+/// and we can slice later with this owned array.
+///
+/// Otherwise,
+pub struct OutputView<'a> {
+    pub channels: [&'a [f32]; MAX_ARITY],
+    pub chans: usize,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Executor {
     data: Box<[f32]>,
@@ -108,7 +117,7 @@ impl Executor {
         &mut self,
         ctx: &mut AudioContext,
         external_inputs: Option<&Inputs>,
-    ) -> &[&[f32]] {
+    ) -> OutputView {
         assert!(self.state == ExecutorState::Prepared);
 
         let block_size = ctx.get_config().block_size;
@@ -128,13 +137,12 @@ impl Executor {
 
             let mut has_inputs: [bool; MAX_ARITY] = [false; MAX_ARITY];
 
-            // TODO: External inputs
-
-            let valid_inputs = self.source_key.is_some()
+            // Check and see if we have external inputs
+            let valid_external_inputs = self.source_key.is_some()
                 && self.source_key.unwrap() == *node_key
                 && external_inputs.as_ref().is_some();
 
-            if valid_inputs {
+            if valid_external_inputs {
                 let ai = external_inputs.unwrap();
 
                 for (c, chan) in ai.iter().flat_map(|x| *x).enumerate() {
@@ -163,8 +171,6 @@ impl Executor {
 
                     has_inputs[conn.sink.port_index] = true;
 
-                    // TODO: Zero copy for only one dependency?
-
                     let scratch_start = conn.sink.port_index * block_size;
                     let scratch_end = scratch_start + block_size;
 
@@ -188,15 +194,14 @@ impl Executor {
 
             let node_start = *self.node_offsets.get(*node_key).unwrap();
 
-            let mut outputs_raw =
+            let mut active_outputs =
                 slice_node_ports_mut(&mut self.data, node_start, block_size, audio_outputs_size);
 
-            let outputs: &mut [&mut [f32]] = unsafe {
-                &mut *(&mut outputs_raw[..audio_outputs_size] as *mut [MaybeUninit<&mut [f32]>]
-                    as *mut [&mut [f32]])
-            };
-
-            node.process(ctx, &inputs[0..audio_inputs_size], outputs);
+            node.process(
+                ctx,
+                &inputs[0..audio_inputs_size],
+                &mut active_outputs[0..audio_outputs_size],
+            );
         }
 
         ctx.set_instant();
@@ -217,40 +222,13 @@ impl Executor {
             .audio_out
             .len();
 
-        let final_outputs_raw = slice_node_ports(&self.data, *node_offset, block_size, node_arity);
+        let final_outputs = slice_node_ports(&self.data, *node_offset, block_size, node_arity);
 
-        let final_outputs: &[&[f32]] = unsafe {
-            &*(&final_outputs_raw[..node_arity] as *const [MaybeUninit<&[f32]>]
-                as *const [&[f32]])
-        };
-
-        final_outputs
+        OutputView {
+            channels: final_outputs,
+            chans: node_arity,
+        }
     }
-}
-
-#[inline(always)]
-fn slice_node_ports_mut(
-    buffer: &mut [f32],
-    offset: usize,
-    block_size: usize,
-    chans: usize,
-) -> [MaybeUninit<&mut [f32]>; MAX_ARITY] {
-    let end = (block_size * chans) + offset;
-
-    let node_buffer = &mut buffer[offset..end];
-
-    let slices = node_buffer.chunks_exact_mut(block_size);
-
-    assert_eq!(slices.len(), chans);
-
-    let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
-        { [const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY] };
-
-    for (i, slice) in slices.enumerate() {
-        outputs_raw[i] = MaybeUninit::new(slice);
-    }
-
-    outputs_raw
 }
 
 #[inline(always)]
@@ -259,21 +237,26 @@ fn slice_node_ports(
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> [MaybeUninit<&[f32]>; MAX_ARITY] {
-    let end = (block_size * chans) + offset;
+) -> [&[f32]; MAX_ARITY] {
+    let node_end = (block_size * chans) + offset;
+    let node_buffer = &buffer[offset..node_end];
 
-    let node_buffer = &buffer[offset..end];
+    let mut chunks = node_buffer.chunks_exact(block_size);
 
-    let slices = node_buffer.chunks_exact(block_size);
+    std::array::from_fn(|_| chunks.next().unwrap_or_default())
+}
 
-    assert_eq!(slices.len(), chans);
+#[inline(always)]
+fn slice_node_ports_mut(
+    buffer: &mut [f32],
+    offset: usize,
+    block_size: usize,
+    chans: usize,
+) -> [&mut [f32]; MAX_ARITY] {
+    let node_end = (block_size * chans) + offset;
+    let node_buffer = &mut buffer[offset..node_end];
 
-    let mut outputs_raw: [MaybeUninit<&[f32]>; MAX_ARITY] =
-        { [const { MaybeUninit::<&[f32]>::uninit() }; MAX_ARITY] };
+    let chunks = &mut node_buffer.chunks_exact_mut(block_size);
 
-    for (i, slice) in slices.enumerate() {
-        outputs_raw[i] = MaybeUninit::new(slice);
-    }
-
-    outputs_raw
+    std::array::from_fn(|_| chunks.next().unwrap_or_default())
 }

@@ -7,6 +7,7 @@ use heapless::spsc::{Consumer, Producer};
 use crate::{
     builder::ValidationError,
     config::Config,
+    executor::OutputView,
     midi::MidiRuntimeFrontend,
     msg::LegatoMsg,
     node::Inputs,
@@ -67,7 +68,7 @@ impl LegatoApp {
     /// This is useful for tests, or compatability with different audio backends.
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView {
         // If we have a midi runtime, drain it.
         if let Some(midi_runtime) = &self.midi_runtime_frontend {
             let ctx = self.runtime.get_context_mut();
