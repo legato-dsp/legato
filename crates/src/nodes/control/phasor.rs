@@ -65,22 +65,18 @@ impl Node for Phasor {
 #[cfg(test)]
 mod test {
     use super::*;
-
     use crate::harness::{get_node_test_harness_stereo, get_node_test_harness_stereo_4096};
 
     fn run_phasor(freq: f32, blocks: usize) -> Vec<f32> {
-        let mut graph = get_node_test_harness_stereo_4096(Box::new(Phasor::new(freq)));
-
-        let mut out = Vec::new();
+        let mut runtime = get_node_test_harness_stereo_4096(Box::new(Phasor::new(freq)));
+        let block_size = runtime.get_config().block_size;
+        let mut out = Vec::with_capacity(blocks * block_size);
 
         for _ in 0..blocks {
-            let block = graph.next_block(None);
-
-            let ch0 = &block[0];
-
-            out.extend_from_slice(ch0);
+            let view = runtime.next_block(None);
+            // In the new graph, we access the slice from the channels array
+            out.extend_from_slice(view.channels[0]);
         }
-
         out
     }
 
@@ -91,7 +87,6 @@ mod test {
     #[test]
     fn phasor_output_range() {
         let out = run_phasor(440.0, 4);
-
         for &x in &out {
             assert!(x >= -1.0 && x <= 1.0, "Out of range: {}", x);
         }
@@ -100,70 +95,68 @@ mod test {
     #[test]
     fn phasor_zero_freq() {
         let out = run_phasor(0.0, 2);
-
         for &x in &out {
-            assert!(approx(x, -1.0, 1e-6));
+            // Phasor at 0Hz should stay at its initial phase (mapped to -1.0)
+            assert!(approx(x, -1.0, 1e-6), "Expected -1.0, got {}", x);
         }
     }
 
     #[test]
     fn phasor_one_hz_cycle() {
-        // here we use a more easily divisible block and sample rate to ensure
         let sr = 48_000;
         let block_size = 4_000;
-        let blocks = sr / block_size;
-
-        let mut graph = get_node_test_harness_stereo(Box::new(Phasor::new(1.0)), sr, block_size);
+        let mut runtime = get_node_test_harness_stereo(Box::new(Phasor::new(1.0)), sr, block_size);
 
         let mut out = Vec::new();
-        for _ in 0..blocks {
-            let block = graph.next_block(None);
-            out.extend_from_slice(&block[0]);
+        for _ in 0..(sr / block_size) {
+            let view = runtime.next_block(None);
+            out.extend_from_slice(view.channels[0]);
         }
 
         let first = out[0];
-        let last = out[sr as usize - 1];
+        let last = out[sr - 1];
 
+        // A 1Hz phasor over 1s should end nearly where it started
         let diff = (last - first).abs();
-        assert!(diff < 2e-3, "Cycle not complete: diff = {}", diff); // TODO: Evaluate acceptible difference here
+        assert!(diff < 2e-3, "Cycle not complete: diff = {}", diff);
     }
 
-    /// Phase is continuous across blocks
     #[test]
     fn phasor_block_continuity() {
-        let mut graph = get_node_test_harness_stereo_4096(Box::new(Phasor::new(440.0)));
+        let freq = 440.0;
+        let sr = 48_000;
+        let mut runtime = get_node_test_harness_stereo_4096(Box::new(Phasor::new(freq)));
 
-        // First block
-        let a = graph.next_block(None);
-        let last_a = a[0][4095];
+        let block_size = runtime.get_config().block_size;
 
-        // Second block
-        let b = graph.next_block(None);
-        let first_b = b[0][0];
+        let view_a = runtime.next_block(None);
+        let last_a = view_a.channels[0][block_size - 1];
 
-        let expected_step = (440.0 / 48_000.0) * 2.0;
+        let view_b = runtime.next_block(None);
+        let first_b = view_b.channels[0][0];
 
-        let diff = first_b - last_a;
+        // The phase increment per sample, mapped to the -1.0 to 1.0 range (range of 2.0)
+        let expected_step = (freq / sr as f32) * 2.0;
+        let actual_diff = first_b - last_a;
 
         assert!(
-            approx(diff, expected_step, 1e-3),
-            "Discontinuity: {} vs {}",
-            diff,
-            expected_step
+            approx(actual_diff, expected_step, 1e-3),
+            "Discontinuity at block boundary: expected step {}, got {}",
+            expected_step,
+            actual_diff
         );
     }
 
     #[test]
     fn phasor_long_run_stable() {
-        let mut graph = get_node_test_harness_stereo_4096(Box::new(Phasor::new(1234.5)));
+        let mut runtime = get_node_test_harness_stereo_4096(Box::new(Phasor::new(1234.5)));
 
         for _ in 0..100 {
-            let block = graph.next_block(None);
-
-            for ch in block.iter() {
-                for &x in ch.iter() {
-                    assert!(x.is_finite());
-                    assert!(x >= -1.1 && x <= 1.1);
+            let view = runtime.next_block(None);
+            for i in 0..view.chans {
+                for &x in view.channels[i] {
+                    assert!(x.is_finite(), "Sample is NaN or Inf");
+                    assert!(x >= -1.1 && x <= 1.1, "Sample exploded: {}", x);
                 }
             }
         }

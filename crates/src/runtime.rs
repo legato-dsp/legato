@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::context::AudioContext;
-use crate::executor::Executor;
+use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
 use crate::msg::{self, LegatoMsg};
 use crate::node::{Inputs, LegatoNode, Node};
@@ -113,14 +113,16 @@ impl Runtime {
     }
 
     // Execute the audio plan and return the next block
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> &[&[f32]] {
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView {
         self.executor.process(&mut self.context, external_inputs)
     }
 }
 
 impl Node for Runtime {
     fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        let outputs = self.next_block(Some(ai));
+        let output_view = self.next_block(Some(ai));
+
+        let outputs = &output_view.channels[0..output_view.chans];
 
         debug_assert_eq!(ai.len(), ao.len());
         debug_assert_eq!(outputs.len(), ao.len());
