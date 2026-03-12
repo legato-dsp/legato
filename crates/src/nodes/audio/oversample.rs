@@ -20,7 +20,6 @@ pub struct Oversampler2X {
     upsampled: Box<[f32]>,
     node_outputs: Box<[f32]>,
     chans: usize,
-    ports: Ports,
 }
 
 impl Oversampler2X {
@@ -28,11 +27,6 @@ impl Oversampler2X {
         let ports = node.get_node().ports();
 
         let chans = max(ports.audio_in.len(), ports.audio_out.len());
-
-        let new_ports = PortBuilder::default()
-            .audio_in(chans)
-            .audio_in(chans)
-            .build();
 
         let upsamplers = (0..chans)
             .map(|_| Upsampler16::default())
@@ -51,7 +45,6 @@ impl Oversampler2X {
             upsampled: vec![0.0; buffer_size * OVERSAMPLE_K * chans].into(),
             node_outputs: vec![0.0; buffer_size * OVERSAMPLE_K * chans].into(),
             chans,
-            ports: new_ports,
         }
     }
 }
@@ -78,7 +71,6 @@ impl Clone for Oversampler2X {
             upsampled: self.upsampled.clone(),
             node_outputs: self.node_outputs.clone(),
             chans: self.chans,
-            ports: self.ports.clone(),
         }
     }
 }
@@ -109,6 +101,7 @@ impl Node for Oversampler2X {
             }
         }
 
+        // Construct optional slices for oversampler inputs
         for (c, (input_chan, has_input_chan)) in node_inputs
             .iter_mut()
             .zip(has_inputs.iter())
@@ -125,6 +118,7 @@ impl Node for Oversampler2X {
             }
         }
 
+        // Reset outputs
         self.node_outputs.fill(0.0);
 
         let mut node_outputs_raw = slice_node_ports_mut(
@@ -134,10 +128,7 @@ impl Node for Oversampler2X {
             self.chans,
         );
 
-        let outputs_for_node: &mut [&mut [f32]] = unsafe {
-            &mut *(&mut node_outputs_raw[..self.chans] as *mut [MaybeUninit<&mut [f32]>]
-                as *mut [&mut [f32]])
-        };
+        let outputs_for_node = &mut node_outputs_raw[..self.chans];
 
         // TODO: This is stupid, find a different pattern
 
@@ -148,12 +139,13 @@ impl Node for Oversampler2X {
             .get_node_mut()
             .process(ctx, inputs, outputs_for_node);
 
+        // Drop the context back to original state
+
         ctx.set_block_size(block_size);
         ctx.set_sample_rate(sample_rate);
 
         for c in 0..self.chans {
             let downsampler = &mut self.downsamplers[c];
-
             let chan_out = &mut outputs[c];
 
             downsampler.process_block(outputs_for_node[c], chan_out);
@@ -171,21 +163,11 @@ fn slice_node_ports_mut(
     offset: usize,
     block_size: usize,
     chans: usize,
-) -> [MaybeUninit<&mut [f32]>; MAX_ARITY] {
+) -> [&mut [f32]; MAX_ARITY] {
     let end = (block_size * chans) + offset;
-
     let node_buffer = &mut buffer[offset..end];
 
-    let slices = node_buffer.chunks_exact_mut(block_size);
+    let mut chunks = node_buffer.chunks_exact_mut(block_size);
 
-    assert_eq!(slices.len(), chans);
-
-    let mut outputs_raw: [MaybeUninit<&mut [f32]>; MAX_ARITY] =
-        { [const { MaybeUninit::<&mut [f32]>::uninit() }; MAX_ARITY] };
-
-    for (i, slice) in slices.enumerate() {
-        outputs_raw[i] = MaybeUninit::new(slice);
-    }
-
-    outputs_raw
+    std::array::from_fn(|_| chunks.next().unwrap_or_default())
 }

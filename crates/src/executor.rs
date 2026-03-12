@@ -1,13 +1,10 @@
-use std::mem::MaybeUninit;
-
-use slotmap::SecondaryMap;
-
 use crate::{
     context::AudioContext,
     graph::{AudioGraph, GraphError},
     node::Inputs,
     runtime::NodeKey,
 };
+use slotmap::SecondaryMap;
 
 pub const MAX_ARITY: usize = 32;
 
@@ -117,7 +114,7 @@ impl Executor {
         &mut self,
         ctx: &mut AudioContext,
         external_inputs: Option<&Inputs>,
-    ) -> OutputView {
+    ) -> OutputView<'_> {
         assert!(self.state == ExecutorState::Prepared);
 
         let block_size = ctx.get_config().block_size;

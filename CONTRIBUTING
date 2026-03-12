@@ -40,7 +40,7 @@ Nix is also a likely deployment target, and fine-tuned OS images may be provided
 * Avoid locking primitives in real-time code
 * Avoid syscalls or heap allocations in the audio thread
 * Non-trivial nodes should include benchmarks using Criterion, with black-boxed inputs and outputs
-* `unsafe` with measurable performance gains is acceptable; undefined behavior is not. Use Miri to verify correctness
+* `unsafe` with measurable performance gains is acceptable, but safety should be preferred under most circumstances, provided UB is checked with Miri.
 * Non-trivial code should include at least a few relevant test cases
 
 ### Concurrency and Lock-Free Expectations
