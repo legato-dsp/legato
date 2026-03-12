@@ -78,8 +78,4 @@ impl AudioContext {
             store.clear();
         }
     }
-
-    pub unsafe fn get_param_unchecked(&self, key: &ParamKey) -> f32 {
-        unsafe { self.resources.get_param_unchecked(key) }
-    }
 }

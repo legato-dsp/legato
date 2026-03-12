@@ -139,21 +139,6 @@ impl LegatoFrontend {
         )
     }
 
-    /// # Safety
-    ///
-    /// ParamKey must map to a valid index on this parameter store.
-    ///
-    /// To ensure this, this must be the same ParamKey made by the builder,
-    /// and the array must have not been resized.
-    ///
-    /// This is more of an escape hatch if a downstream user has the performance requirement.
-    pub unsafe fn set_param_unchecked(&mut self, key: ParamKey, val: f32) {
-        unsafe {
-            self.param_store_frontend
-                .set_param_unchecked_no_clamp(key, val)
-        }
-    }
-
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
         if let Ok(key) = self.param_store_frontend.get_key(name) {
             return self.param_store_frontend.set_param(key, val);
