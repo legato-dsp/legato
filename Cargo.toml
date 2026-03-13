@@ -11,3 +11,9 @@ license = "AGPL-3.0-or-later"
 authors = ["Your Name <email@example.com>"]
 
 [workspace.dependencies]
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
