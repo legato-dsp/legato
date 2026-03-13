@@ -21,13 +21,13 @@ impl PipeRegistry {
         self.data.insert(name, pipe);
     }
 
-    pub fn get(&self, name: &str) -> Result<&Box<dyn Pipe>, ValidationError> {
-        self.data
-            .get(name)
+    pub fn get(&self, name: &str) -> Result<&dyn Pipe, ValidationError> {
+        self.data.get(name)
+            .and_then(|x| Some(&**x))
             .ok_or(ValidationError::PipeNotFound(format!(
-                "Could not find pipe {}",
-                name
-            )))
+                 "Could not find pipe {}",
+                 name)
+            ))
     }
 }
 
