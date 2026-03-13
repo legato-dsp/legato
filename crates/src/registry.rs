@@ -405,14 +405,11 @@ pub fn control_registry_factory() -> NodeRegistry {
                 assert!(new_range.len() == 2);
 
                 // Probably a nicer way to do this
-
                 let mut r_0 = [0.0; 2];
                 let mut r_1 = [0.0; 2];
 
-                for i in 0..2 {
-                    r_0[i] = range[i];
-                    r_1[i] = new_range[i]
-                }
+                r_0.copy_from_slice(&range[..2]);
+                r_1.copy_from_slice(&new_range[..2]);
 
                 Ok(Box::new(Map::new(r_0, r_1)))
             }

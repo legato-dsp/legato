@@ -3,10 +3,7 @@ use std::{
     marker::PhantomData,
     sync::{Arc, atomic::AtomicU64},
 };
-
 use arc_swap::ArcSwapOption;
-use chumsky::Parser;
-
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     config::Config,
