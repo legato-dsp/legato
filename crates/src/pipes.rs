@@ -22,8 +22,7 @@ impl PipeRegistry {
     }
 
     pub fn get(&self, name: &str) -> Result<&dyn Pipe, ValidationError> {
-        self.data.get(name)
-            .and_then(|x| Some(&**x))
+        self.data.get(name).map(|x| &**x)
             .ok_or(ValidationError::PipeNotFound(format!(
                  "Could not find pipe {}",
                  name)
