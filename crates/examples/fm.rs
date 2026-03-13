@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
