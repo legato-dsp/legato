@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.6"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+authors = ["Your Name <email@example.com>"]
+
+[workspace.dependencies]
