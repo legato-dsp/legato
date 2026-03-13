@@ -1,4 +1,4 @@
-use std::{cmp::max, mem::MaybeUninit};
+use std::cmp::max;
 
 use halfband::fir::{Downsampler16, Upsampler16};
 
@@ -6,7 +6,7 @@ use crate::{
     context::AudioContext,
     executor::MAX_ARITY,
     node::{Inputs, LegatoNode, Node},
-    ports::{PortBuilder, Ports},
+    ports::Ports,
 };
 
 const OVERSAMPLE_K: usize = 2;

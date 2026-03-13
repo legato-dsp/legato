@@ -343,7 +343,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let feedback = p.get_f32("feedback").unwrap_or(0.5);
 
-                let mut capacity = p.get_usize("capacity").unwrap_or(sr * 1);
+                let mut capacity = p.get_usize("capacity").unwrap_or(sr);
 
                 // Clamp with reasonable allpass size.
                 if capacity < (delay_length_samples as usize) {

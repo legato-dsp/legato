@@ -79,19 +79,16 @@ impl Node for Allpass {
         &self.ports
     }
     fn handle_msg(&mut self, msg: NodeMessage) {
-        match msg {
-            NodeMessage::SetParam(inner) => match (inner.param_name, inner.value) {
-                ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(0.0, 0.98),
-                ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(0.0, 0.98),
-                ("delay_length", RtValue::F32(val)) => {
-                    self.delay_length_samples = (val as f32).clamp(0.0, self.capacity as f32)
-                }
-                ("delay_length", RtValue::U32(val)) => {
-                    self.delay_length_samples = (val as f32).clamp(0.0, self.capacity as f32)
-                }
-                _ => (),
-            },
+        if let NodeMessage::SetParam(inner) = msg { match (inner.param_name, inner.value) {
+            ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(0.0, 0.98),
+            ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(0.0, 0.98),
+            ("delay_length", RtValue::F32(val)) => {
+                self.delay_length_samples = val.clamp(0.0, self.capacity as f32)
+            }
+            ("delay_length", RtValue::U32(val)) => {
+                self.delay_length_samples = (val as f32).clamp(0.0, self.capacity as f32)
+            }
             _ => (),
-        }
+        } }
     }
 }

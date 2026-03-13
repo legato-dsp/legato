@@ -113,7 +113,7 @@ impl Runtime {
     }
 
     // Execute the audio plan and return the next block
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView {
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
         self.executor.process(&mut self.context, external_inputs)
     }
 }

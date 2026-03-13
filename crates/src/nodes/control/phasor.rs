@@ -3,7 +3,6 @@ use crate::{
     msg::{self, RtValue},
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
-    simd::LANES,
 };
 
 #[derive(Clone, Debug)]
@@ -51,14 +50,11 @@ impl Node for Phasor {
     }
 
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        match msg {
-            msg::NodeMessage::SetParam(inner) => match (inner.param_name, inner.value) {
-                ("freq", RtValue::F32(val)) => self.freq = val,
-                ("freq", RtValue::U32(val)) => self.freq = val as f32,
-                _ => (),
-            },
+        if let msg::NodeMessage::SetParam(inner) = msg { match (inner.param_name, inner.value) {
+            ("freq", RtValue::F32(val)) => self.freq = val,
+            ("freq", RtValue::U32(val)) => self.freq = val as f32,
             _ => (),
-        }
+        } }
     }
 }
 
