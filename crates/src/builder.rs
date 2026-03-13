@@ -1,9 +1,3 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    marker::PhantomData,
-    sync::{Arc, atomic::AtomicU64},
-};
-use arc_swap::ArcSwapOption;
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     config::Config,
@@ -26,6 +20,12 @@ use crate::{
     runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
     sample::{AudioSampleFrontend, AudioSampleHandle},
     spec::NodeSpec,
+};
+use arc_swap::ArcSwapOption;
+use std::{
+    collections::{BTreeMap, HashMap},
+    marker::PhantomData,
+    sync::{Arc, atomic::AtomicU64},
 };
 
 /// ValidationError covers logical issues

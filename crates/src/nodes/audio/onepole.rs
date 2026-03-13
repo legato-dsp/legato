@@ -49,7 +49,11 @@ impl Node for OnePole {
     }
 
     fn handle_msg(&mut self, msg: NodeMessage) {
-        if let NodeMessage::SetParam(inner) = msg && let ("a", RtValue::F32(val)) = (inner.param_name, inner.value) { self.a = val }
+        if let NodeMessage::SetParam(inner) = msg
+            && let ("a", RtValue::F32(val)) = (inner.param_name, inner.value)
+        {
+            self.a = val
+        }
     }
 
     fn ports(&self) -> &Ports {

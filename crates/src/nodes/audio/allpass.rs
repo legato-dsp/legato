@@ -54,11 +54,12 @@ impl Node for Allpass {
                 let output = &mut outputs[c];
 
                 for i in 0..input.len() {
-                    let delay_length_samples =
-                        delay_length_port.map_or(self.delay_length_samples, |buf| {
+                    let delay_length_samples = delay_length_port
+                        .map_or(self.delay_length_samples, |buf| {
                             let delay_length_ms = buf[i];
                             sr * (delay_length_ms / 1000.0)
-                        }).clamp(1.0, max_capacity);
+                        })
+                        .clamp(1.0, max_capacity);
 
                     let feedback = feedback_port
                         .map_or(self.feedback, |buf| buf[i])
@@ -77,16 +78,18 @@ impl Node for Allpass {
         &self.ports
     }
     fn handle_msg(&mut self, msg: NodeMessage) {
-        if let NodeMessage::SetParam(inner) = msg { match (inner.param_name, inner.value) {
-            ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(0.0, 0.98),
-            ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(0.0, 0.98),
-            ("delay_length", RtValue::F32(val)) => {
-                self.delay_length_samples = val.clamp(0.0, self.capacity as f32)
+        if let NodeMessage::SetParam(inner) = msg {
+            match (inner.param_name, inner.value) {
+                ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(0.0, 0.98),
+                ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(0.0, 0.98),
+                ("delay_length", RtValue::F32(val)) => {
+                    self.delay_length_samples = val.clamp(0.0, self.capacity as f32)
+                }
+                ("delay_length", RtValue::U32(val)) => {
+                    self.delay_length_samples = (val as f32).clamp(0.0, self.capacity as f32)
+                }
+                _ => (),
             }
-            ("delay_length", RtValue::U32(val)) => {
-                self.delay_length_samples = (val as f32).clamp(0.0, self.capacity as f32)
-            }
-            _ => (),
-        } }
+        }
     }
 }

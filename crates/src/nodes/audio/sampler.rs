@@ -67,7 +67,7 @@ impl Node for Sampler {
             let config = ctx.get_config();
 
             let block_size = config.block_size;
-            let chans = self.ports.audio_out.iter().len();
+            let _chans = self.ports.audio_out.iter().len();
 
             let buf = inner.data();
 
