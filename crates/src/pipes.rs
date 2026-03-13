@@ -110,7 +110,6 @@ impl Pipe for Replicate {
 /// For the time being, if you need higher rates, you can design an FIR
 /// filter and pass create a node, and create your own pipe, or simply use
 /// it as a node. You can also create a subgraph with a different rate as well.
-
 struct Oversample2X;
 
 impl Pipe for Oversample2X {
