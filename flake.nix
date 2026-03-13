@@ -48,7 +48,10 @@
             ]);
           venv = pythonSet.mkVirtualEnv "dev-scripts-env" uvWorkspace.deps.default;
         in
-        pkgs.mkShell {          
+        pkgs.mkShell {
+          # For local shell, use native cpu
+          RUSTFLAGS = "-C target-cpu=native";
+          
           nativeBuildInputs = with pkgs; [ 
             clang 
             pkg-config 
@@ -56,8 +59,11 @@
           
           buildInputs = with pkgs; [
             uv 
-            nightly
+            nightly 
+            cargo 
+            rustc 
             rustfmt 
+            rustPackages.clippy
             # audio stack
             alsa-lib 
             jack2 
@@ -68,15 +74,6 @@
             pnpm 
             venv
           ];
-
-          env = {
-            RUSTFLAGS = "-C target-cpu=native";
-          };
-
-          shellHook = ''
-            echo "--- Legato Dev Environment ---"
-            echo "Optimization: target-cpu=native"
-          '';
         };
       });
 
