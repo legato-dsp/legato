@@ -25,21 +25,35 @@
   outputs = { self, nixpkgs, uv2nix, pyproject-nix, pyproject-build-systems, naersk, rust-overlay, ... }:
     let
       supportedSystems = [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" "aarch64-linux" ];      
-      forEachSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ (import rust-overlay) ];
-        };
-        inherit system;
-      });
+      forEachSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: 
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ (import rust-overlay) ];
+          };
+          
+          nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
+            extensions = [ "rust-src" "clippy" "rustfmt" ];
+          });
+
+          naersk' = naersk.lib.${system}.override {
+            cargo = nightly;
+            rustc = nightly;
+          };
+          
+          commonArgs = {
+            nativeBuildInputs = with pkgs; [ clang pkg-config ];
+            buildInputs = with pkgs; [ 
+              alsa-lib 
+              jack2 
+              ffmpeg_6-full 
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ udev ];
+          };
+        in f { inherit pkgs system nightly naersk' commonArgs; });
     in
     {
-      devShells = forEachSystem ({ pkgs, ... }: {
+      devShells = forEachSystem ({ pkgs, nightly, commonArgs, ... }: {
         default = let
-          nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
-            extensions = [ "rust-src" "clippy" ];
-          });
-          
           uvWorkspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./scripts; };
           pythonSet = (pkgs.callPackage pyproject-nix.build.packages { python = pkgs.python313; })
             .overrideScope (nixpkgs.lib.composeManyExtensions [
@@ -49,45 +63,36 @@
           venv = pythonSet.mkVirtualEnv "dev-scripts-env" uvWorkspace.deps.default;
         in
         pkgs.mkShell {
-          # For local shell, use native cpu
-          RUSTFLAGS = "-C target-cpu=native";
-          
-          nativeBuildInputs = with pkgs; [ 
-            clang 
-            pkg-config 
-          ];
-          
-          buildInputs = with pkgs; [
-            uv 
-            nightly 
-            cargo 
-            rustc 
-            rustfmt 
-            rustPackages.clippy
-            # audio stack
-            alsa-lib 
-            jack2 
-            ffmpeg_6-full
-            # misc
-            pre-commit 
-            nodejs 
-            pnpm 
+          nativeBuildInputs = commonArgs.nativeBuildInputs;
+          buildInputs = commonArgs.buildInputs ++ [
+            nightly
+            pkgs.pre-commit 
+            pkgs.nodejs 
+            pkgs.pnpm 
+            pkgs.uv 
             venv
           ];
+
+          env = {
+            RUSTFLAGS = "-C target-cpu=native";
+          };
+
+          shellHook = ''
+            unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
+          '';
         };
       });
 
-      packages = forEachSystem ({ pkgs, system }: 
-        let
-          nightly = pkgs.rust-bin.selectLatestNightlyWith (t: t.default);
-          naersk' = pkgs.callPackage naersk { };
-          platformFlags = if pkgs.stdenv.isx86_64 then "-C target-cpu=x86-64-v3" else "";
-        in {
-          default = naersk'.buildPackage {
-            src = ./.;
-            nativeBuildInputs = [ nightly ];
-            RUSTFLAGS = platformFlags;
-          };
+      packages = forEachSystem ({ pkgs, nightly, naersk', commonArgs, ... }: {
+        default = naersk'.buildPackage {
+          src = ./crates;
+          cargo = nightly;
+          rustc = nightly;
+          
+          nativeBuildInputs = commonArgs.nativeBuildInputs;
+          buildInputs = commonArgs.buildInputs;
+          RUSTFLAGS = if pkgs.stdenv.isx86_64 then "-C target-cpu=x86-64-v3" else "";
+        };
       });
 
       apps = forEachSystem ({ pkgs, ... }: 

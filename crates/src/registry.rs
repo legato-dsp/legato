@@ -307,7 +307,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                     .unwrap_or(Duration::from_secs_f32(5.0));
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
-                let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
+                let node = Sweep::new(&range, duration, chans);
                 Ok(Box::new(node))
             }
         ),
