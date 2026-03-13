@@ -60,8 +60,8 @@ impl LegatoNode {
     }
 
     #[inline(always)]
-    pub fn get_node(&self) -> &Box<dyn DynNode> {
-        &self.node
+    pub fn get_node(&self) -> &dyn DynNode {
+        &*self.node
     }
 
     #[inline(always)]

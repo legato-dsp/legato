@@ -33,7 +33,7 @@ pub fn get_node_test_harness_stereo(
 ) -> Runtime {
     let config = Config {
         sample_rate: sr,
-        block_size: block_size,
+        block_size,
         channels: 2,
         initial_graph_capacity: 1,
     };

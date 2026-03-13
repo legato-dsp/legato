@@ -82,7 +82,6 @@ impl Runtime {
     ///
     /// TODO: How do we handle nested runtimes?
     pub fn handle_msg(&mut self, msg: LegatoMsg) {
-        #[cfg(debug_assertions)]
         match msg {
             LegatoMsg::NodeMessage(key, param_msg) => {
                 if let Some(node) = self.get_node_mut(&key) {
@@ -113,7 +112,7 @@ impl Runtime {
     }
 
     // Execute the audio plan and return the next block
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView {
+    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
         self.executor.process(&mut self.context, external_inputs)
     }
 }

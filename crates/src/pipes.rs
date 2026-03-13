@@ -21,9 +21,10 @@ impl PipeRegistry {
         self.data.insert(name, pipe);
     }
 
-    pub fn get(&self, name: &str) -> Result<&Box<dyn Pipe>, ValidationError> {
+    pub fn get(&self, name: &str) -> Result<&dyn Pipe, ValidationError> {
         self.data
             .get(name)
+            .map(|x| &**x)
             .ok_or(ValidationError::PipeNotFound(format!(
                 "Could not find pipe {}",
                 name
@@ -110,7 +111,6 @@ impl Pipe for Replicate {
 /// For the time being, if you need higher rates, you can design an FIR
 /// filter and pass create a node, and create your own pipe, or simply use
 /// it as a node. You can also create a subgraph with a different rate as well.
-
 struct Oversample2X;
 
 impl Pipe for Oversample2X {

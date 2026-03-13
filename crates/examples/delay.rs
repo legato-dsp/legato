@@ -51,7 +51,7 @@ fn main() {
 
     let config = Config {
         sample_rate: 48_000,
-        block_size: 4096,
+        block_size: 1024,
         channels: 2,
         initial_graph_capacity: 4,
     };

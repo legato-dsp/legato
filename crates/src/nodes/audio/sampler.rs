@@ -67,16 +67,16 @@ impl Node for Sampler {
             let config = ctx.get_config();
 
             let block_size = config.block_size;
-            let chans = self.ports.audio_out.iter().len();
+            let _chans = self.ports.audio_out.iter().len();
 
             let buf = inner.data();
 
             let len = buf[0].len();
 
-            for n in 0..block_size {
-                let i = self.read_pos + n;
-                for c in 0..chans {
-                    ao[c][n] = if i < len {
+            for (c, chan_out) in ao.iter_mut().enumerate() {
+                for (n, sample_out) in chan_out.iter_mut().enumerate() {
+                    let i = self.read_pos + n;
+                    *sample_out = if i < len {
                         buf[c][i]
                     } else if self.is_looping {
                         buf[c][i % len]

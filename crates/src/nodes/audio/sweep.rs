@@ -16,10 +16,12 @@ pub struct Sweep {
 }
 
 impl Sweep {
-    pub fn new(range: [f32; 2], duration: Duration, chans: usize) -> Self {
+    pub fn new(range: &[f32], duration: Duration, chans: usize) -> Self {
+        let mut new_range = [0.0; 2];
+        new_range.copy_from_slice(range);
         Self {
             phase: 0.0,
-            range,
+            range: new_range,
             duration,
             elapsed: 0,
             ports: PortBuilder::default().audio_out(chans).build(),

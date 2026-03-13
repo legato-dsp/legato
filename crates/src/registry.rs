@@ -307,7 +307,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                     .unwrap_or(Duration::from_secs_f32(5.0));
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
-                let node = Sweep::new(*range.as_array().unwrap(), duration, chans);
+                let node = Sweep::new(&range, duration, chans);
                 Ok(Box::new(node))
             }
         ),
@@ -343,7 +343,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let feedback = p.get_f32("feedback").unwrap_or(0.5);
 
-                let mut capacity = p.get_usize("capacity").unwrap_or(sr * 1);
+                let mut capacity = p.get_usize("capacity").unwrap_or(sr);
 
                 // Clamp with reasonable allpass size.
                 if capacity < (delay_length_samples as usize) {
@@ -405,14 +405,11 @@ pub fn control_registry_factory() -> NodeRegistry {
                 assert!(new_range.len() == 2);
 
                 // Probably a nicer way to do this
-
                 let mut r_0 = [0.0; 2];
                 let mut r_1 = [0.0; 2];
 
-                for i in 0..2 {
-                    r_0[i] = range[i];
-                    r_1[i] = new_range[i]
-                }
+                r_0.copy_from_slice(&range[..2]);
+                r_1.copy_from_slice(&new_range[..2]);
 
                 Ok(Box::new(Map::new(r_0, r_1)))
             }
