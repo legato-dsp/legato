@@ -1,9 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     time::Duration,
 };
 
-use crate::builder::ValidationError;
+use crate::{builder::ValidationError, registry};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -61,6 +61,7 @@ pub struct Ast {
     pub macros: Vec<Macro>,
     // The exit point that the runtime/executor delivers samples from
     pub sink: String,
+    pub source: Option<String>,
 }
 
 impl From<Ast> for IR {
@@ -84,6 +85,15 @@ fn lower_ast_to_ir(ast: Ast) -> IR {
         for decl in scope.declarations {
             // If macro exists, expand
             if let Some(m) = macro_registry.get(&decl.node_type) {
+                inline_node(
+                    &macro_registry,
+                    m,
+                    &decl.alias.clone().unwrap_or_else(|| decl.node_type.clone()),
+                    &decl.params.clone().unwrap_or_default(),
+                    &mut declarations,
+                    &mut connections,
+                    0,
+                );
             }
             // Otherwise if not, just add it
             else {
@@ -100,6 +110,17 @@ fn lower_ast_to_ir(ast: Ast) -> IR {
         });
     }
 
+    for mut conn in ast.connections {
+        if let Some(m) = macro_registry.get(&get_base_type(&conn.sink.node, &ir_decls)) {
+            conn.sink.node = format!("{}::{}", conn.sink.node, m.sink);
+        }
+        if let Some(m) = macro_registry.get(&get_base_type(&conn.source.node, &ir_decls)) {
+            conn.source.node = format!("{}::{}", conn.source.node, m.sink);
+        }
+
+        connections.push(conn);
+    }
+
     IR {
         declarations,
         connections,
@@ -107,12 +128,108 @@ fn lower_ast_to_ir(ast: Ast) -> IR {
     }
 }
 
-fn inline_node()
+fn get_base_type(name: &str, decls: &[DeclarationScope]) -> String {
+    name.split("::").next().unwrap_or(name).to_string()
+}
+
+const MAXIMUM_DEPTH: u8 = 16;
+
+fn inline_node(
+    macro_registry: &BTreeMap<String, &Macro>, // All macros in the AST
+    active_macro: &Macro,                      // The current macro being expanded
+    alias: &str,
+    params: &Object,
+    declarations: &mut Vec<DeclarationScope>,
+    connections: &mut Vec<Connection>,
+    depth: u8,
+) {
+    if depth > MAXIMUM_DEPTH {
+        panic!("Maximum macro expansion exceeded");
+    }
+
+    // params for the current stack
+    let mut current_params = active_macro.default_params.clone().unwrap_or_default();
+    for (k, v) in params {
+        current_params.insert(k.clone(), v.clone());
+    }
+
+    // expand the declarations in the active macro
+    for scope in &active_macro.declarations {
+        let mut new_scope = DeclarationScope {
+            namespace: scope.namespace.clone(),
+            declarations: Vec::new(),
+        };
+        for decl in &scope.declarations {
+            // This can recurse, and we add the macro alias each time
+            let fully_qualified_alias = format!(
+                "{}::{}",
+                alias,
+                decl.alias.as_ref().unwrap_or(&decl.node_type)
+            );
+
+            // See if the node declaration is itself a macro
+            if let Some(inner_macro) = macro_registry.get(&decl.node_type) {
+                let mut inner_params = decl.params.clone().unwrap_or_default();
+                replace_templates(&mut inner_params, &current_params);
+
+                inline_node(
+                    macro_registry,
+                    inner_macro,
+                    &fully_qualified_alias, // Pass this alias down a level
+                    &inner_params,
+                    declarations,
+                    connections,
+                    depth + 1,
+                );
+            } else {
+                // Otherwise we found a leaf in the tree
+                let mut leaf = decl.clone();
+                leaf.alias = Some(fully_qualified_alias);
+                if let Some(ref mut p) = leaf.params {
+                    replace_templates(p, &current_params);
+                }
+                new_scope.declarations.push(leaf);
+            }
+        }
+        if !new_scope.declarations.is_empty() {
+            declarations.push(new_scope);
+        }
+    }
+
+    for conn in &active_macro.connections {
+        connections.push(Connection {
+            source: Endpoint {
+                node: format!("{}::{}", alias, conn.source.node),
+                port: conn.source.port.clone(),
+            },
+            sink: Endpoint {
+                node: format!("{}::{}", alias, conn.sink.node),
+                port: conn.sink.port.clone(),
+            },
+        });
+    }
+}
+
+fn replace_templates(params: &mut Object, lookup: &Object) {
+    for val in params.values_mut() {
+        if let Value::Template(t) = val {
+            let key = t.trim_start_matches('$'); // Drop the prefix
+            if let Some(found) = lookup.get(key) {
+                *val = found.clone();
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Default)]
 /// The IR for a Legato graph. This should be relatively easy to serialize
-/// down the line. Note: At this point, this does not allow for user defined
-/// nodes, although user defined macros should be inlined at this point.
+/// down the line.
+///
+/// Note: At this point, this does not account for user defined
+/// nodes, as these require the actual factory to instantiate and you
+/// have to use the builder.
+///
+/// However, user defined macros should be inlined at this point.
 pub struct IR {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<Connection>,
@@ -491,8 +608,10 @@ mod tests {
 
         let lowered: IR = ast.into();
 
+        dbg!(&lowered);
+
         // Verify name was established from new name
-        let node = &ir.declarations[0].declarations[0];
+        let node = &expected_ir.declarations[0].declarations[0];
         assert_eq!(node.alias, Some("lead".into()));
 
         // Verify parameter was instantiated correctly

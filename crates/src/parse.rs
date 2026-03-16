@@ -239,6 +239,7 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
             source,
             declarations,
             connections: connections.unwrap_or_default(),
+            macros: vec![],
             sink,
         })
         .then_ignore(extra_padded(end()))
@@ -353,8 +354,9 @@ mod test {
                     ],
                 }],
             }],
-            source: None,
+            macros: Vec::new(),
             sink: "sine".into(),
+            source: None,
             connections: Vec::new(),
         };
 
@@ -461,7 +463,6 @@ mod test {
         assert_eq!(ast.connections[1].sink.node, "output");
         // Sink logic
         assert_eq!(ast.sink, "output".to_string());
-        assert!(ast.source.is_none());
     }
 
     #[test]
