@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{builder::ValidationError, registry};
+use crate::{builder::ValidationError, lower::Lowerer, registry};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -64,163 +64,6 @@ pub struct Ast {
     pub source: Option<String>,
 }
 
-impl From<Ast> for IR {
-    fn from(ast: Ast) -> Self {
-        lower_ast_to_ir(ast)
-    }
-}
-
-fn lower_ast_to_ir(ast: Ast) -> IR {
-    let mut macro_registry = BTreeMap::<String, &Macro>::new();
-
-    ast.macros.iter().for_each(|x| {
-        macro_registry.insert(x.name.clone(), x);
-    });
-
-    let mut declarations: Vec<DeclarationScope> = Vec::new();
-    let mut connections: Vec<Connection> = Vec::new();
-
-    for scope in ast.declarations {
-        let mut scope_declarations: Vec<NodeDeclaration> = Vec::new();
-        for decl in scope.declarations {
-            // If macro exists, expand
-            if let Some(m) = macro_registry.get(&decl.node_type) {
-                inline_node(
-                    &macro_registry,
-                    m,
-                    &decl.alias.clone().unwrap_or_else(|| decl.node_type.clone()),
-                    &decl.params.clone().unwrap_or_default(),
-                    &mut declarations,
-                    &mut connections,
-                    0,
-                );
-            }
-            // Otherwise if not, just add it
-            else {
-                scope_declarations.push(decl);
-            }
-        }
-        // If it's not empty, this isn't good, something could not resolve
-        if !scope_declarations.is_empty() {
-            panic!("Could not fully expand or find all scope definitions!");
-        }
-        declarations.push(DeclarationScope {
-            namespace: scope.namespace,
-            declarations: scope_declarations,
-        });
-    }
-
-    for mut conn in ast.connections {
-        if let Some(m) = macro_registry.get(&get_base_type(&conn.sink.node, &ir_decls)) {
-            conn.sink.node = format!("{}::{}", conn.sink.node, m.sink);
-        }
-        if let Some(m) = macro_registry.get(&get_base_type(&conn.source.node, &ir_decls)) {
-            conn.source.node = format!("{}::{}", conn.source.node, m.sink);
-        }
-
-        connections.push(conn);
-    }
-
-    IR {
-        declarations,
-        connections,
-        sink: ast.sink,
-    }
-}
-
-fn get_base_type(name: &str, decls: &[DeclarationScope]) -> String {
-    name.split("::").next().unwrap_or(name).to_string()
-}
-
-const MAXIMUM_DEPTH: u8 = 16;
-
-fn inline_node(
-    macro_registry: &BTreeMap<String, &Macro>, // All macros in the AST
-    active_macro: &Macro,                      // The current macro being expanded
-    alias: &str,
-    params: &Object,
-    declarations: &mut Vec<DeclarationScope>,
-    connections: &mut Vec<Connection>,
-    depth: u8,
-) {
-    if depth > MAXIMUM_DEPTH {
-        panic!("Maximum macro expansion exceeded");
-    }
-
-    // params for the current stack
-    let mut current_params = active_macro.default_params.clone().unwrap_or_default();
-    for (k, v) in params {
-        current_params.insert(k.clone(), v.clone());
-    }
-
-    // expand the declarations in the active macro
-    for scope in &active_macro.declarations {
-        let mut new_scope = DeclarationScope {
-            namespace: scope.namespace.clone(),
-            declarations: Vec::new(),
-        };
-        for decl in &scope.declarations {
-            // This can recurse, and we add the macro alias each time
-            let fully_qualified_alias = format!(
-                "{}::{}",
-                alias,
-                decl.alias.as_ref().unwrap_or(&decl.node_type)
-            );
-
-            // See if the node declaration is itself a macro
-            if let Some(inner_macro) = macro_registry.get(&decl.node_type) {
-                let mut inner_params = decl.params.clone().unwrap_or_default();
-                replace_templates(&mut inner_params, &current_params);
-
-                inline_node(
-                    macro_registry,
-                    inner_macro,
-                    &fully_qualified_alias, // Pass this alias down a level
-                    &inner_params,
-                    declarations,
-                    connections,
-                    depth + 1,
-                );
-            } else {
-                // Otherwise we found a leaf in the tree
-                let mut leaf = decl.clone();
-                leaf.alias = Some(fully_qualified_alias);
-                if let Some(ref mut p) = leaf.params {
-                    replace_templates(p, &current_params);
-                }
-                new_scope.declarations.push(leaf);
-            }
-        }
-        if !new_scope.declarations.is_empty() {
-            declarations.push(new_scope);
-        }
-    }
-
-    for conn in &active_macro.connections {
-        connections.push(Connection {
-            source: Endpoint {
-                node: format!("{}::{}", alias, conn.source.node),
-                port: conn.source.port.clone(),
-            },
-            sink: Endpoint {
-                node: format!("{}::{}", alias, conn.sink.node),
-                port: conn.sink.port.clone(),
-            },
-        });
-    }
-}
-
-fn replace_templates(params: &mut Object, lookup: &Object) {
-    for val in params.values_mut() {
-        if let Value::Template(t) = val {
-            let key = t.trim_start_matches('$'); // Drop the prefix
-            if let Some(found) = lookup.get(key) {
-                *val = found.clone();
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Default)]
 /// The IR for a Legato graph. This should be relatively easy to serialize
 /// down the line.
@@ -234,6 +77,13 @@ pub struct IR {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<Connection>,
     pub sink: String,
+}
+
+impl From<Ast> for IR {
+    fn from(value: Ast) -> Self {
+        let mut lower = Lowerer::default();
+        lower.lower(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -256,14 +106,14 @@ pub struct Connection {
     pub sink: Endpoint,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Macro {
-    name: String,
-    default_params: Option<Object>,
-    virtual_ports_in: Vec<String>,
-    declarations: Vec<DeclarationScope>,
-    connections: Vec<Connection>,
-    sink: String,
+    pub name: String,
+    pub default_params: Option<Object>,
+    pub virtual_ports_in: Vec<String>,
+    pub declarations: Vec<DeclarationScope>,
+    pub connections: Vec<Connection>,
+    pub sink: String,
 }
 
 // Logic for validation DSL params
@@ -405,31 +255,6 @@ impl<'a> DSLParams<'a> {
     }
 }
 
-#[macro_export]
-macro_rules! object {
-    () => {
-        BTreeMap::new()
-    };
-    ( $($key:expr => template $val:expr),* $(,)? ) => {
-        {
-            let mut _map = BTreeMap::new();
-            $(
-                _map.insert($key.to_string(), $crate::ir::Value::Template($val.to_string()));
-            )*
-            _map
-        }
-    };
-    ( $($key:expr => $value:expr),* $(,)? ) => {
-        {
-            let mut _map = BTreeMap::new();
-            $(
-                _map.insert($key.to_string(), $crate::ir::Value::from($value));
-            )*
-            _map
-        }
-    };
-}
-
 impl From<f32> for Value {
     fn from(v: f32) -> Self {
         Value::F32(v)
@@ -492,132 +317,4 @@ impl<'a> From<&'a Object> for DSLParams<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuildAstError {
     ConstructionError(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn basic_single_instantiation() {
-        let expected_ir = IR {
-            declarations: vec![
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        alias: Some("osc_one".into()),
-                        node_type: "sine".into(),
-                        params: Some(object! {
-                            "freq" => 440.0,
-                        }),
-                        pipes: vec![],
-                    }],
-                },
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        alias: None,
-                        node_type: "adsr".into(),
-                        params: Some(object! {
-                            "attack" => 300.0,
-                            "decay" => 600.0,
-                            "sustain" => 0.5,
-                            "release" => 800.0
-                        }),
-                        pipes: vec![],
-                    }],
-                },
-            ],
-            connections: vec![Connection {
-                source: Endpoint {
-                    node: "osc_one".into(),
-                    port: Port::None,
-                },
-                sink: Endpoint {
-                    node: "adsr".into(),
-                    port: Port::Named("gate".into()),
-                },
-            }],
-            sink: "adsr".into(),
-        };
-
-        let voice_macro = Macro {
-            name: "voice".into(),
-            default_params: Some(object! {
-                "freq" => 440.0,
-                "attack" => 300.0,
-                "decay" => 600.0,
-                "sustain" => 0.5,
-                "release" => 800.0
-            }),
-            virtual_ports_in: vec!["gate".into(), "freq_in".into()],
-            declarations: vec![
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        alias: Some("osc_one".into()),
-                        node_type: "sine".into(),
-                        params: Some(object! {
-                            "freq" => Template("$freq".into()),
-                        }),
-                        pipes: vec![],
-                    }],
-                },
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        alias: None,
-                        node_type: "adsr".into(),
-                        params: Some(object! {
-                            "attack" => Template("$attack".into()),
-                            "decay" => Template("$decay".into()),
-                            "sustain" => Template("$sustain".into()),
-                            "release" => Template("$release".into())
-                        }),
-                        pipes: vec![],
-                    }],
-                },
-            ],
-            connections: vec![Connection {
-                source: Endpoint {
-                    node: "osc_one".into(),
-                    port: Port::None,
-                },
-                sink: Endpoint {
-                    node: "adsr".into(),
-                    port: Port::Named("gate".into()),
-                },
-            }],
-            sink: "adsr".into(),
-        };
-
-        let ast = Ast {
-            macros: vec![voice_macro],
-            declarations: vec![DeclarationScope {
-                namespace: "user".into(),
-                declarations: vec![NodeDeclaration {
-                    node_type: "voice".into(),
-                    alias: Some("lead".into()),
-                    params: Some(object! { "freq" => 880.0 }),
-                    ..Default::default()
-                }],
-            }],
-            ..Default::default()
-        };
-
-        let lowered: IR = ast.into();
-
-        dbg!(&lowered);
-
-        // Verify name was established from new name
-        let node = &expected_ir.declarations[0].declarations[0];
-        assert_eq!(node.alias, Some("lead".into()));
-
-        // Verify parameter was instantiated correctly
-        let freq_val = node.params.as_ref().unwrap().get("f").unwrap();
-        assert_eq!(freq_val, &Value::F32(880.0));
-
-        assert_eq!(lowered, expected_ir);
-    }
 }
