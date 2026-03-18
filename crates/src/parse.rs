@@ -64,6 +64,11 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .to_slice()
             .map(|s: &str| Value::U32(s.parse().unwrap()));
 
+        let template = just('$')
+            .then(text::ascii::ident())
+            .to_slice()
+            .map(|s: &str| Value::Template(s.to_string()));
+
         let ident_raw = text::ascii::ident().map(ToString::to_string);
         let ident_value = ident_raw.map(|s| match s.as_str() {
             "true" => Value::Bool(true),
@@ -75,6 +80,7 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
         let kv = ident_raw
             .then_ignore(just(':').padded())
             .then(value.clone());
+
         let object = kv
             .separated_by(just(',').padded())
             .allow_trailing()
@@ -102,7 +108,7 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(Value::Array)
             .boxed();
 
-        choice((f32, i32, u32, string_value, object, array, ident_value))
+        choice((f32, i32, u32, string_value, template, object, array, ident_value))
             .padded()
             .boxed()
     })
@@ -149,6 +155,65 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
             params,
             pipes,
         })
+}
+
+fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+
+    // Default params use = for intitial values
+    let default_param = ident
+        .clone()
+        .then_ignore(just('=').padded())
+        .then(value_parser());
+
+    let default_params = default_param
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<BTreeMap<String, Value>>()
+        .delimited_by(just('(').padded(), just(')').padded())
+        .or_not();
+
+    // Virtual ports: `in gate freq_in`
+    let virtual_port_ident = ident.clone().padded_by(text::inline_whitespace());
+
+    let virtual_ports = just("in")
+        .then_ignore(text::inline_whitespace().at_least(1))
+        .ignore_then(
+            virtual_port_ident
+                .repeated()
+                .at_least(1)
+                .collect::<Vec<String>>(),
+        );
+
+    // Interior connections is the same as the normal AST
+    let inner_connections = extra_padded(connection_parser())
+        .repeated()
+        .collect::<Vec<Vec<Connection>>>()
+        .map(|v| v.into_iter().flatten().collect::<Vec<Connection>>());
+
+    let patch_body = extra_padded(virtual_ports)
+        .or_not()
+        .then(extra_padded(scope_parser()).repeated().collect::<Vec<_>>())
+        .then(inner_connections.or_not())
+        .then(extra_padded(scope_or_sink()))
+        .delimited_by(extra_padded(just('{')), extra_padded(just('}')));
+
+    // patch must be followed by whitespace
+    just("patch")
+        .then_ignore(text::whitespace().at_least(1))
+        .ignore_then(ident)
+        .then(extra_padded(default_params))
+        .then(patch_body)
+        .map(
+            |((name, params), (((vports, decls), conns), sink))| Macro {
+                name,
+                default_params: params,
+                virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
+                declarations: decls,
+                connections: conns.unwrap_or_default(),
+                sink,
+            },
+        )
 }
 
 fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
@@ -221,6 +286,10 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
     // Use the extra_padded helper here
     let source = extra_padded(scope_or_sink()).or_not();
 
+    let patches = extra_padded(patch_parser())
+        .repeated()
+        .collect::<Vec<Macro>>();
+
     let declarations = extra_padded(scope_parser()).repeated().collect();
 
     let connections = extra_padded(connection_parser())
@@ -232,14 +301,15 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
     let sink = extra_padded(scope_or_sink());
 
     source
+        .then(patches)
         .then(declarations)
         .then(connections)
         .then(sink)
-        .map(|(((source, declarations), connections), sink)| Ast {
+        .map(|((((source, macros), declarations), connections), sink)| Ast {
             source,
             declarations,
             connections: connections.unwrap_or_default(),
-            macros: vec![],
+            macros: macros,
             sink,
         })
         .then_ignore(extra_padded(end()))
@@ -581,5 +651,168 @@ mod test {
         assert_eq!(ast.connections[2].sink.port, Port::Slice(2, 4));
 
         assert_eq!(ast.sink, "track_mixer".to_string());
+    }
+
+    // New patch tests
+
+    #[test]
+    fn test_template_value() {
+        assert_parse_equals_value("$freq", Value::Template("$freq".into()));
+        assert_parse_equals_value("$attack_time", Value::Template("$attack_time".into()));
+    }
+
+    #[test]
+    fn test_patch_minimal() {
+        // just a scope and sink
+        let src = r#"
+            patch simple_gain() {
+                audio {
+                    gain { amount: 0.5 }
+                }
+                { gain }
+            }
+            { gain }
+        "#;
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        assert_eq!(ast.macros.len(), 1);
+        let m = &ast.macros[0];
+        assert_eq!(m.name, "simple_gain");
+        assert!(m.default_params.as_ref().map(|p| p.is_empty()).unwrap_or(true));
+        assert!(m.virtual_ports_in.is_empty());
+        assert_eq!(m.sink, "gain");
+    }
+
+    #[test]
+    fn test_patch_default_params() {
+        let src = r#"
+            patch voice(freq = 440.0, attack = 100.0) {
+                audio {
+                    sine: osc { freq: $freq },
+                    adsr: env { attack: $attack }
+                }
+                { env }
+            }
+            { env }
+        "#;
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        let m = &ast.macros[0];
+        assert_eq!(m.name, "voice");
+
+        let params = m.default_params.as_ref().unwrap();
+        assert_eq!(params.get("freq"), Some(&Value::F32(440.0)));
+        assert_eq!(params.get("attack"), Some(&Value::F32(100.0)));
+
+        // Template values should be present in interior node params
+        let osc = &m.declarations[0].declarations[0];
+        assert_eq!(
+            osc.params.as_ref().unwrap().get("freq"),
+            Some(&Value::Template("$freq".into()))
+        );
+    }
+
+    #[test]
+    fn test_patch_virtual_ports() {
+        let src = r#"
+            patch voice(freq = 440.0) {
+                in gate freq_in
+
+                audio {
+                    sine: osc { freq: $freq },
+                    adsr: env { attack: 100.0 }
+                }
+
+                freq_in >> osc.freq
+                gate >> env.gate
+                osc >> env[1]
+
+                { env }
+            }
+            { env }
+        "#;
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        let m = &ast.macros[0];
+
+        // Virtual ports in declaration order
+        assert_eq!(m.virtual_ports_in.len(), 2);
+        assert_eq!(m.virtual_ports_in[0], "gate");
+        assert_eq!(m.virtual_ports_in[1], "freq_in");
+
+        // All three connections parsed
+        assert_eq!(m.connections.len(), 3);
+
+        let freq_conn = m.connections.iter()
+            .find(|c| c.source.node == "freq_in")
+            .unwrap();
+        assert_eq!(freq_conn.sink.node, "osc");
+        assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
+
+        let gate_conn = m.connections.iter()
+            .find(|c| c.source.node == "gate")
+            .unwrap();
+        assert_eq!(gate_conn.sink.node, "env");
+        assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
+
+        let audio_conn = m.connections.iter()
+            .find(|c| c.source.node == "osc")
+            .unwrap();
+        assert_eq!(audio_conn.sink.node, "env");
+        assert_eq!(audio_conn.sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn test_patch_in_full_ast() {
+        // End-to-end: definition, instantiation scope, external connections, sink
+        let src = r#"
+            patch voice(freq = 440.0) {
+                in gate freq_in
+
+                audio {
+                    sine: osc { freq: $freq },
+                    adsr: env { attack: 100.0 }
+                }
+
+                freq_in >> osc.freq
+                gate >> env.gate
+                osc >> env[1]
+
+                { env }
+            }
+
+            patches {
+                voice: v1 { freq: 880.0 },
+                voice: v2 { freq: 220.0 }
+            }
+
+            midi {
+                poly_voice { chan: 0 }
+            }
+
+            poly_voice.freq >> v1.freq_in
+            poly_voice.gate >> v1.gate
+
+            { v1 }
+        "#;
+
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        assert_eq!(ast.macros.len(), 1);
+        assert_eq!(ast.macros[0].name, "voice");
+
+        // patches + midi scopes
+        assert_eq!(ast.declarations.len(), 2);
+        assert_eq!(ast.declarations[0].namespace, "patches");
+        assert_eq!(ast.declarations[0].declarations.len(), 2);
+
+        // External connections
+        assert_eq!(ast.connections.len(), 2);
+        assert_eq!(ast.connections[0].source.node, "poly_voice");
+        assert_eq!(ast.connections[0].source.port, Port::Named("freq".into()));
+        assert_eq!(ast.connections[0].sink.node, "v1");
+        assert_eq!(ast.connections[0].sink.port, Port::Named("freq_in".into()));
+
+        assert_eq!(ast.sink, "v1");
     }
 }
