@@ -3,7 +3,9 @@ use std::{
     time::Duration,
 };
 
-use crate::builder::ValidationError;
+use indexmap::IndexSet;
+
+use crate::{builder::ValidationError, lower::Lowerer};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -16,6 +18,7 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Object(BTreeMap<String, Value>),
+    Template(String),
 }
 
 pub type Object = BTreeMap<String, Value>;
@@ -27,6 +30,7 @@ pub struct ASTPipe {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+/// The definitions needed to define a node.
 pub struct NodeDeclaration {
     pub node_type: String,
     pub alias: Option<String>,
@@ -35,19 +39,53 @@ pub struct NodeDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+/// A namespace for a node, as well as all of the definitions
+/// for the specific namepspace.
 pub struct DeclarationScope {
     pub namespace: String,
     pub declarations: Vec<NodeDeclaration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+/// The AST is currently stored separately from the IR
+///
+/// This allows additional steps to lower into the IR,
+/// and leaves the IR as it's own unit that can later
+/// be easily serialized.
+///
+/// Right now, the biggest transformation that occurs before
+/// we reach the IR, is the macro step, where we define and inline
+/// node definitions. Originally, this was intended to be subgraphs,
+/// but these would have worse cache locality, so macros became a better fit.
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<Connection>,
-    // When chaining executors/graphs, this is the entry point
-    pub source: Option<String>,
+    pub macros: Vec<Macro>,
     // The exit point that the runtime/executor delivers samples from
     pub sink: String,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+/// The IR for a Legato graph. This should be relatively easy to serialize
+/// down the line.
+///
+/// Note: At this point, this does not account for user defined
+/// nodes, as these require the actual factory to instantiate and you
+/// have to use the builder.
+///
+/// However, user defined macros should be inlined at this point.
+pub struct IR {
+    pub declarations: Vec<DeclarationScope>,
+    pub connections: Vec<Connection>,
+    pub sink: String,
+}
+
+impl From<Ast> for IR {
+    fn from(value: Ast) -> Self {
+        let mut lower = Lowerer::default();
+        lower.lower(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +106,16 @@ pub struct Endpoint {
 pub struct Connection {
     pub source: Endpoint,
     pub sink: Endpoint,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Macro {
+    pub name: String,
+    pub default_params: Option<Object>,
+    pub virtual_ports_in: IndexSet<String>,
+    pub declarations: Vec<DeclarationScope>,
+    pub connections: Vec<Connection>,
+    pub sink: String,
 }
 
 // Logic for validation DSL params
@@ -206,6 +254,59 @@ impl<'a> DSLParams<'a> {
             }
         }
         Ok(())
+    }
+}
+
+impl From<f32> for Value {
+    fn from(v: f32) -> Self {
+        Value::F32(v)
+    }
+}
+impl From<i32> for Value {
+    fn from(v: i32) -> Self {
+        Value::I32(v)
+    }
+}
+impl From<u32> for Value {
+    fn from(v: u32) -> Self {
+        Value::U32(v)
+    }
+}
+impl From<bool> for Value {
+    fn from(v: bool) -> Self {
+        Value::Bool(v)
+    }
+}
+impl From<&str> for Value {
+    fn from(v: &str) -> Self {
+        Value::String(v.to_string())
+    }
+}
+impl From<String> for Value {
+    fn from(v: String) -> Self {
+        Value::String(v)
+    }
+}
+impl From<BTreeMap<String, Value>> for Value {
+    fn from(v: BTreeMap<String, Value>) -> Self {
+        Value::Object(v)
+    }
+}
+
+impl<T> From<Vec<T>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(v: Vec<T>) -> Self {
+        Value::Array(v.into_iter().map(|x| x.into()).collect())
+    }
+}
+
+pub struct Template(pub String);
+
+impl From<Template> for Value {
+    fn from(t: Template) -> Self {
+        Value::Template(t.0)
     }
 }
 

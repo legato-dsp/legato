@@ -23,6 +23,7 @@ pub mod executor;
 pub mod graph;
 pub mod harness;
 pub mod ir;
+pub mod lower;
 pub mod math;
 pub mod midi;
 pub mod msg;
