@@ -10,7 +10,7 @@ struct NodeInfo {
     /// FQN to use when this symbol is the source of a connection.
     source_fqn: String,
     /// A map from the virtual port name, to the FQN and Port definition
-    virtual_inputs: IndexMap<String, (String, Port)>
+    virtual_inputs: IndexMap<String, (String, Port)>,
 }
 
 #[derive(Default, Debug)]
@@ -164,18 +164,18 @@ impl Lowerer {
         for conn in &m.connections {
             // Virtual connection
             if m.virtual_ports_in.contains(&conn.source.node) {
-                let target_info = local_symbols
-                    .get(&conn.sink.node)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Virtual port '{}' routes to unknown node '{}' in macro '{}'",
-                            conn.source.node, conn.sink.node, m.name
-                        )
-                    });
+                let target_info = local_symbols.get(&conn.sink.node).unwrap_or_else(|| {
+                    panic!(
+                        "Virtual port '{}' routes to unknown node '{}' in macro '{}'",
+                        conn.source.node, conn.sink.node, m.name
+                    )
+                });
 
-               let (target_fqn, target_port) = match &conn.sink.port {
+                let (target_fqn, target_port) = match &conn.sink.port {
                     Port::Named(port_name) => {
-                        if let Some((nested_fqn, nested_port)) = target_info.virtual_inputs.get(port_name) {
+                        if let Some((nested_fqn, nested_port)) =
+                            target_info.virtual_inputs.get(port_name)
+                        {
                             // Follow through to the actual leaf port on the inner macro
                             (nested_fqn.clone(), nested_port.clone())
                         } else {
@@ -185,11 +185,8 @@ impl Lowerer {
                     _ => (target_info.source_fqn.clone(), conn.sink.port.clone()),
                 };
 
-                virtual_inputs.insert(
-                    conn.source.node.clone(),
-                    (target_fqn, target_port),
-                );
-            } 
+                virtual_inputs.insert(conn.source.node.clone(), (target_fqn, target_port));
+            }
             // Normal connection
             else if let Some(resolved) = Self::resolve_connection(conn, &local_symbols) {
                 ir.connections.push(resolved);
@@ -228,10 +225,8 @@ impl Lowerer {
         } else {
             match &conn.sink.port {
                 Port::Named(port_name) => {
-                    let (target_fqn, target_port) = snk_info
-                        .virtual_inputs
-                        .get(port_name)
-                        .unwrap_or_else(|| {
+                    let (target_fqn, target_port) =
+                        snk_info.virtual_inputs.get(port_name).unwrap_or_else(|| {
                             panic!(
                                 "Node '{}' has no virtual input port '{}'",
                                 conn.sink.node, port_name
@@ -245,17 +240,19 @@ impl Lowerer {
                         .virtual_inputs
                         .get_index(*i)
                         .map(|(_, v)| v)
-                        .unwrap_or_else(|| panic!(
-                            "Node '{}' has no virtual input at index {}",
-                            conn.sink.node, i
-                        ));
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Node '{}' has no virtual input at index {}",
+                                conn.sink.node, i
+                            )
+                        });
                     (target_fqn.clone(), target_port.clone())
                 }
                 Port::None => {
                     // Automap to sink
                     (snk_info.source_fqn.clone(), Port::None)
                 }
-                Port::Slice(_, _) => panic!("Slicing not yet supported on virtual ports")
+                Port::Slice(_, _) => panic!("Slicing not yet supported on virtual ports"),
             }
         };
 
@@ -282,7 +279,6 @@ impl Lowerer {
         }
     }
 }
-
 
 #[macro_export]
 macro_rules! object {
@@ -353,16 +349,34 @@ mod tests {
             }],
             connections: vec![
                 Connection {
-                    source: Endpoint { node: "freq_in".into(), port: Port::None },
-                    sink: Endpoint { node: "osc".into(), port: Port::Named("freq".into()) },
+                    source: Endpoint {
+                        node: "freq_in".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "osc".into(),
+                        port: Port::Named("freq".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "gate".into(), port: Port::None },
-                    sink: Endpoint { node: "env".into(), port: Port::Named("gate".into()) },
+                    source: Endpoint {
+                        node: "gate".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "env".into(),
+                        port: Port::Named("gate".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "osc".into(), port: Port::None },
-                    sink: Endpoint { node: "env".into(), port: Port::Index(1) },
+                    source: Endpoint {
+                        node: "osc".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "env".into(),
+                        port: Port::Index(1),
+                    },
                 },
             ],
             sink: "env".into(),
@@ -392,12 +406,19 @@ mod tests {
         // Correct node size
         assert_eq!(ir.declarations[0].declarations.len(), 2);
         // make sure the param got passed in
-        assert_eq!(*ir.declarations[0]
-            .declarations.iter()
-            .find(|x| x.alias.as_ref().unwrap() == "v1.osc").unwrap()
-            .params.as_ref().unwrap()
-            .get("freq").unwrap()
-        , Value::F32(420.0));
+        assert_eq!(
+            *ir.declarations[0]
+                .declarations
+                .iter()
+                .find(|x| x.alias.as_ref().unwrap() == "v1.osc")
+                .unwrap()
+                .params
+                .as_ref()
+                .unwrap()
+                .get("freq")
+                .unwrap(),
+            Value::F32(420.0)
+        );
 
         // we should only have an interior connection from osc -> env
         assert_eq!(ir.connections.len(), 1);
@@ -405,7 +426,6 @@ mod tests {
         assert_eq!(conn.source.node, "v1.osc");
         assert_eq!(conn.sink.node, "v1.env");
         assert_eq!(conn.sink.port, Port::Index(1));
-        
     }
 
     #[test]
@@ -435,12 +455,24 @@ mod tests {
             ],
             connections: vec![
                 Connection {
-                    source: Endpoint { node: "poly".into(), port: Port::Named("freq".into()) },
-                    sink: Endpoint { node: "v1".into(), port: Port::Named("freq_in".into()) },
+                    source: Endpoint {
+                        node: "poly".into(),
+                        port: Port::Named("freq".into()),
+                    },
+                    sink: Endpoint {
+                        node: "v1".into(),
+                        port: Port::Named("freq_in".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "poly".into(), port: Port::Named("gate".into()) },
-                    sink: Endpoint { node: "v1".into(), port: Port::Named("gate".into()) },
+                    source: Endpoint {
+                        node: "poly".into(),
+                        port: Port::Named("gate".into()),
+                    },
+                    sink: Endpoint {
+                        node: "v1".into(),
+                        port: Port::Named("gate".into()),
+                    },
                 },
             ],
             sink: "v1".into(),
@@ -452,14 +484,18 @@ mod tests {
         // macro connection plus the two external connections
         assert_eq!(ir.connections.len(), 3);
 
-        let freq_conn = ir.connections.iter()
+        let freq_conn = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "poly" && c.source.port == Port::Named("freq".into()))
             .expect("freq connection not found");
 
         assert_eq!(freq_conn.sink.node, "v1.osc");
         assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
 
-        let gate_conn = ir.connections.iter()
+        let gate_conn = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "poly" && c.source.port == Port::Named("gate".into()))
             .expect("gate connection not found");
 
@@ -495,7 +531,9 @@ mod tests {
         dbg!(&ir);
 
         // Each instance produces its own osc and env leaf
-        let all_aliases: Vec<&str> = ir.declarations.iter()
+        let all_aliases: Vec<&str> = ir
+            .declarations
+            .iter()
             .flat_map(|s| s.declarations.iter())
             .filter_map(|d| d.alias.as_deref())
             .collect();
@@ -506,7 +544,9 @@ mod tests {
         assert!(all_aliases.contains(&"v2.env"), "missing v2.env");
 
         // v2.osc should have freq 880
-        let v2_osc = ir.declarations.iter()
+        let v2_osc = ir
+            .declarations
+            .iter()
             .flat_map(|s| s.declarations.iter())
             .find(|d| d.alias.as_deref() == Some("v2.osc"))
             .expect("v2.osc not found");
@@ -524,37 +564,41 @@ mod tests {
         let ast = Ast {
             macros: vec![make_voice_macro()],
             source: None,
-            declarations: vec![
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![
-                        NodeDeclaration {
-                            node_type: "voice".into(),
-                            alias: Some("v1".into()),
-                            params: None,
-                            pipes: vec![],
-                        },
-                        NodeDeclaration {
-                            node_type: "track_mixer".into(),
-                            alias: Some("mixer".into()),
-                            params: None,
-                            pipes: vec![],
-                        },
-                    ],
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![
+                    NodeDeclaration {
+                        node_type: "voice".into(),
+                        alias: Some("v1".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                    NodeDeclaration {
+                        node_type: "track_mixer".into(),
+                        alias: Some("mixer".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                ],
+            }],
+            connections: vec![Connection {
+                source: Endpoint {
+                    node: "v1".into(),
+                    port: Port::None,
                 },
-            ],
-            connections: vec![
-                Connection {
-                    source: Endpoint { node: "v1".into(), port: Port::None },
-                    sink: Endpoint { node: "mixer".into(), port: Port::None },
+                sink: Endpoint {
+                    node: "mixer".into(),
+                    port: Port::None,
                 },
-            ],
+            }],
             sink: "mixer".into(),
         };
 
         let ir = IR::from(ast);
 
-        let passthrough = ir.connections.iter()
+        let passthrough = ir
+            .connections
+            .iter()
             .find(|c| c.sink.node == "mixer")
             .expect("passthrough connection not found");
 
@@ -598,12 +642,24 @@ mod tests {
             }],
             connections: vec![
                 Connection {
-                    source: Endpoint { node: "freq_in".into(), port: Port::None },
-                    sink: Endpoint { node: "carrier".into(), port: Port::Named("freq".into()) },
+                    source: Endpoint {
+                        node: "freq_in".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "carrier".into(),
+                        port: Port::Named("freq".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "modulator".into(), port: Port::None },
-                    sink: Endpoint { node: "carrier".into(), port: Port::Index(0) },
+                    source: Endpoint {
+                        node: "modulator".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "carrier".into(),
+                        port: Port::Index(0),
+                    },
                 },
             ],
             sink: "carrier".into(),
@@ -640,16 +696,34 @@ mod tests {
             }],
             connections: vec![
                 Connection {
-                    source: Endpoint { node: "voice_freq".into(), port: Port::None },
-                    sink: Endpoint { node: "osc_inst".into(), port: Port::Named("freq_in".into()) },
+                    source: Endpoint {
+                        node: "voice_freq".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "osc_inst".into(),
+                        port: Port::Named("freq_in".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "gate".into(), port: Port::None },
-                    sink: Endpoint { node: "env".into(), port: Port::Named("gate".into()) },
+                    source: Endpoint {
+                        node: "gate".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "env".into(),
+                        port: Port::Named("gate".into()),
+                    },
                 },
                 Connection {
-                    source: Endpoint { node: "osc_inst".into(), port: Port::None },
-                    sink: Endpoint { node: "env".into(), port: Port::Index(1) },
+                    source: Endpoint {
+                        node: "osc_inst".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "env".into(),
+                        port: Port::Index(1),
+                    },
                 },
             ],
             sink: "env".into(),
@@ -681,13 +755,25 @@ mod tests {
             connections: vec![
                 // External: poly.freq >> lead.voice_freq (should resolve to lead.osc_inst.carrier.freq)
                 Connection {
-                    source: Endpoint { node: "poly".into(), port: Port::Named("freq".into()) },
-                    sink: Endpoint { node: "lead".into(), port: Port::Named("voice_freq".into()) },
+                    source: Endpoint {
+                        node: "poly".into(),
+                        port: Port::Named("freq".into()),
+                    },
+                    sink: Endpoint {
+                        node: "lead".into(),
+                        port: Port::Named("voice_freq".into()),
+                    },
                 },
                 // External: poly.gate >> lead.gate (should resolve to lead.env.gate)
                 Connection {
-                    source: Endpoint { node: "poly".into(), port: Port::Named("gate".into()) },
-                    sink: Endpoint { node: "lead".into(), port: Port::Named("gate".into()) },
+                    source: Endpoint {
+                        node: "poly".into(),
+                        port: Port::Named("gate".into()),
+                    },
+                    sink: Endpoint {
+                        node: "lead".into(),
+                        port: Port::Named("gate".into()),
+                    },
                 },
             ],
             sink: "lead".into(),
@@ -697,18 +783,28 @@ mod tests {
         dbg!(&ir);
 
         // --- Leaf FQNs ---
-        let all_aliases: Vec<&str> = ir.declarations.iter()
+        let all_aliases: Vec<&str> = ir
+            .declarations
+            .iter()
             .flat_map(|s| s.declarations.iter())
             .filter_map(|d| d.alias.as_deref())
             .collect();
 
-        assert!(all_aliases.contains(&"lead.osc_inst.modulator"), "missing lead.osc_inst.modulator");
-        assert!(all_aliases.contains(&"lead.osc_inst.carrier"),   "missing lead.osc_inst.carrier");
-        assert!(all_aliases.contains(&"lead.env"),                "missing lead.env");
+        assert!(
+            all_aliases.contains(&"lead.osc_inst.modulator"),
+            "missing lead.osc_inst.modulator"
+        );
+        assert!(
+            all_aliases.contains(&"lead.osc_inst.carrier"),
+            "missing lead.osc_inst.carrier"
+        );
+        assert!(all_aliases.contains(&"lead.env"), "missing lead.env");
 
         // --- Param propagation ---
         // lead.osc_inst.carrier should have f=880.0 (passed through two levels of templates)
-        let carrier = ir.declarations.iter()
+        let carrier = ir
+            .declarations
+            .iter()
             .flat_map(|s| s.declarations.iter())
             .find(|d| d.alias.as_deref() == Some("lead.osc_inst.carrier"))
             .expect("lead.osc_inst.carrier not found");
@@ -719,7 +815,9 @@ mod tests {
             "freq template should have propagated to carrier"
         );
 
-        let env = ir.declarations.iter()
+        let env = ir
+            .declarations
+            .iter()
             .flat_map(|s| s.declarations.iter())
             .find(|d| d.alias.as_deref() == Some("lead.env"))
             .expect("lead.env not found");
@@ -732,7 +830,9 @@ mod tests {
 
         // --- Interior connections ---
         // fm_osc interior: modulator -> carrier[0]
-        let mod_to_carrier = ir.connections.iter()
+        let mod_to_carrier = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "lead.osc_inst.modulator")
             .expect("modulator -> carrier connection not found");
 
@@ -740,7 +840,9 @@ mod tests {
         assert_eq!(mod_to_carrier.sink.port, Port::Index(0));
 
         // voice interior: osc_inst (sink=carrier) -> env[1]
-        let osc_to_env = ir.connections.iter()
+        let osc_to_env = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "lead.osc_inst.carrier" && c.sink.node == "lead.env")
             .expect("osc_inst -> env connection not found");
 
@@ -748,7 +850,9 @@ mod tests {
 
         // --- External connections resolved through two levels of virtual ports ---
         // poly.freq >> lead.voice_freq should resolve to lead.osc_inst.carrier with port Named("freq")
-        let freq_conn = ir.connections.iter()
+        let freq_conn = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "poly" && c.source.port == Port::Named("freq".into()))
             .expect("freq external connection not found");
 
@@ -756,7 +860,9 @@ mod tests {
         assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
 
         // poly.gate >> lead.gate should resolve to lead.env with port Named("gate")
-        let gate_conn = ir.connections.iter()
+        let gate_conn = ir
+            .connections
+            .iter()
             .find(|c| c.source.node == "poly" && c.source.port == Port::Named("gate".into()))
             .expect("gate external connection not found");
 

@@ -108,9 +108,18 @@ fn value_parser<'a>() -> impl Parser<'a, &'a str, Value, Err<Rich<'a, char>>> {
             .map(Value::Array)
             .boxed();
 
-        choice((f32, i32, u32, string_value, template, object, array, ident_value))
-            .padded()
-            .boxed()
+        choice((
+            f32,
+            i32,
+            u32,
+            string_value,
+            template,
+            object,
+            array,
+            ident_value,
+        ))
+        .padded()
+        .boxed()
     })
 }
 
@@ -161,9 +170,7 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
     // Default params use = for intitial values
-    let default_param = ident
-        .then_ignore(just('=').padded())
-        .then(value_parser());
+    let default_param = ident.then_ignore(just('=').padded()).then(value_parser());
 
     let default_params = default_param
         .separated_by(just(',').padded())
@@ -203,16 +210,14 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
         .ignore_then(ident)
         .then(extra_padded(default_params))
         .then(patch_body)
-        .map(
-            |((name, params), (((vports, decls), conns), sink))| Macro {
-                name,
-                default_params: params,
-                virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
-                declarations: decls,
-                connections: conns.unwrap_or_default(),
-                sink,
-            },
-        )
+        .map(|((name, params), (((vports, decls), conns), sink))| Macro {
+            name,
+            default_params: params,
+            virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
+            declarations: decls,
+            connections: conns.unwrap_or_default(),
+            sink,
+        })
 }
 
 fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
@@ -304,13 +309,15 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
         .then(declarations)
         .then(connections)
         .then(sink)
-        .map(|((((source, macros), declarations), connections), sink)| Ast {
-            source,
-            declarations,
-            connections: connections.unwrap_or_default(),
-            macros,
-            sink,
-        })
+        .map(
+            |((((source, macros), declarations), connections), sink)| Ast {
+                source,
+                declarations,
+                connections: connections.unwrap_or_default(),
+                macros,
+                sink,
+            },
+        )
         .then_ignore(extra_padded(end()))
 }
 
@@ -677,7 +684,12 @@ mod test {
         assert_eq!(ast.macros.len(), 1);
         let m = &ast.macros[0];
         assert_eq!(m.name, "simple_gain");
-        assert!(m.default_params.as_ref().map(|p| p.is_empty()).unwrap_or(true));
+        assert!(
+            m.default_params
+                .as_ref()
+                .map(|p| p.is_empty())
+                .unwrap_or(true)
+        );
         assert!(m.virtual_ports_in.is_empty());
         assert_eq!(m.sink, "gain");
     }
@@ -742,19 +754,25 @@ mod test {
         // All three connections parsed
         assert_eq!(m.connections.len(), 3);
 
-        let freq_conn = m.connections.iter()
+        let freq_conn = m
+            .connections
+            .iter()
             .find(|c| c.source.node == "freq_in")
             .unwrap();
         assert_eq!(freq_conn.sink.node, "osc");
         assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
 
-        let gate_conn = m.connections.iter()
+        let gate_conn = m
+            .connections
+            .iter()
             .find(|c| c.source.node == "gate")
             .unwrap();
         assert_eq!(gate_conn.sink.node, "env");
         assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
 
-        let audio_conn = m.connections.iter()
+        let audio_conn = m
+            .connections
+            .iter()
             .find(|c| c.source.node == "osc")
             .unwrap();
         assert_eq!(audio_conn.sink.node, "env");
