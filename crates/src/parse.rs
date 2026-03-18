@@ -162,7 +162,6 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
 
     // Default params use = for intitial values
     let default_param = ident
-        .clone()
         .then_ignore(just('=').padded())
         .then(value_parser());
 
@@ -174,7 +173,7 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
         .or_not();
 
     // Virtual ports: `in gate freq_in`
-    let virtual_port_ident = ident.clone().padded_by(text::inline_whitespace());
+    let virtual_port_ident = ident.padded_by(text::inline_whitespace());
 
     let virtual_ports = just("in")
         .then_ignore(text::inline_whitespace().at_least(1))
@@ -309,7 +308,7 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
             source,
             declarations,
             connections: connections.unwrap_or_default(),
-            macros: macros,
+            macros,
             sink,
         })
         .then_ignore(extra_padded(end()))

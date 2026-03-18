@@ -191,10 +191,8 @@ impl Lowerer {
                 );
             } 
             // Normal connection
-            else {
-                if let Some(resolved) = Self::resolve_connection(conn, &local_symbols) {
-                    ir.connections.push(resolved);
-                }
+            else if let Some(resolved) = Self::resolve_connection(conn, &local_symbols) {
+                ir.connections.push(resolved);
             }
         }
 

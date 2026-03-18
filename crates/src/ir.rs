@@ -1,11 +1,11 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     time::Duration,
 };
 
 use indexmap::IndexSet;
 
-use crate::{builder::ValidationError, lower::Lowerer, registry};
+use crate::{builder::ValidationError, lower::Lowerer};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
