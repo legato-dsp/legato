@@ -17,6 +17,8 @@ impl Lowerer {
             self.registry.insert(item.name.clone(), item);
         }
 
+        let mut scope_map: HashMap<String, DeclarationScope> = HashMap::new();
+
         for scope in ast.declarations {
             for decl in scope.declarations {
                 let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
@@ -28,19 +30,22 @@ impl Lowerer {
                         "", // No prefix for root
                         &decl.params.clone().unwrap_or_default(),
                         &mut ir,
+                        &mut scope_map,
                         0,
                     );
                 } else {
                     // Normal leaf
                     let mut leaf = decl.clone();
                     leaf.alias = Some(alias);
-                    ir.declarations.push(DeclarationScope {
+                    scope_map.insert(scope.namespace.clone(), DeclarationScope {
                         namespace: scope.namespace.clone(),
                         declarations: vec![leaf],
                     });
                 }
             }
         }
+
+        ir.declarations = scope_map.into_values().collect();
 
         // TODO: Virtual ports
 
@@ -54,6 +59,7 @@ impl Lowerer {
         parent_prefix: &str,
         params: &Object,
         ir: &mut IR,
+        scope_map: &mut HashMap<String, DeclarationScope>,
         depth: u8,
     ) -> String {
         if depth > MAXIMUM_DEPTH {
@@ -91,6 +97,7 @@ impl Lowerer {
                         &current_prefix,
                         &inner_params,
                         ir,
+                        scope_map,
                         depth + 1,
                     );
                     local_symbols.insert(local_alias, child_sink_fqn); // Push it in here so we can check for connections later
@@ -104,10 +111,13 @@ impl Lowerer {
                         self.resolve_templates(p, &current_params);
                     }
 
-                    ir.declarations.push(DeclarationScope {
-                        namespace: scope.namespace.clone(),
-                        declarations: vec![leaf],
-                    });
+                    scope_map.entry(scope.namespace.clone())
+                        .or_insert_with(|| DeclarationScope {
+                            namespace: scope.namespace.clone(),
+                            declarations: Vec::new(),
+                        })
+                        .declarations.push(leaf);
+
                     local_symbols.insert(local_alias, fqn); // Push it in here so we can check for connections later
                 }
             }
@@ -176,7 +186,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_basic_macro_single_expansion_no_connections() {
+    fn test_single_expansion_with_connections(){
+        let fm_macro = Macro {
+            name: "fm".into(),
+            default_params: Some(object! { "modulator_freq" => 800.0, "carrier_freq" => 400.0  }),
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![NodeDeclaration {
+                    node_type: "sine".into(),
+                    alias: Some("modulator".into()),
+                    params: Some(object! { "f" => Value::Template("$modulator_freq".into()) }),
+                    pipes: vec![],
+                },
+                NodeDeclaration {
+                    node_type: "sine".into(),
+                    alias: Some("carrier".into()),
+                    params: Some(object! { "f" => Value::Template("$carrier_freq".into()) }),
+                    pipes: vec![],
+                }],
+            }],
+            connections: vec![
+                Connection {
+                    source: Endpoint { node: "modulator".into(), port: Port::None },
+                    sink: Endpoint { node: "carrier".into(), port: Port::None }
+                }
+            ],
+            sink: "carrier".into(),
+            ..Default::default()
+        };
+
+        let ast = Ast {
+            macros: vec![fm_macro],
+            declarations: vec![
+                DeclarationScope {
+                    namespace: "audio".into(),
+                    declarations: vec![
+                        NodeDeclaration {
+                            alias: None,
+                            node_type: "fm".into(),
+                            params: None,
+                            pipes: vec![]
+                        }
+                    ]
+                }
+            ],
+            ..Default::default()
+        };
+
+        let ir = IR::from(ast);
+
+        dbg!(&ir);
+
+        let modulator = &ir.declarations[0].declarations[0];
+        assert_eq!(modulator.alias.as_ref().unwrap(), "fm.modulator");
+
+        // This is faileing, it's in declarations[1] instead of adding here
+
+        let carrier = &ir.declarations[0].declarations[1];
+        assert_eq!(carrier.alias.as_ref().unwrap(), "fm.carrier");
+    }
+
+    #[test]
+    fn test_basic_macro_double_expansion_no_connections() {
         let osc_macro = Macro {
             name: "osc_unit".into(),
             default_params: Some(object! { "freq" => 220.0 }),
