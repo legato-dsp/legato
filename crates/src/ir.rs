@@ -3,6 +3,8 @@ use std::{
     time::Duration,
 };
 
+use indexmap::IndexSet;
+
 use crate::{builder::ValidationError, lower::Lowerer, registry};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -110,7 +112,7 @@ pub struct Connection {
 pub struct Macro {
     pub name: String,
     pub default_params: Option<Object>,
-    pub virtual_ports_in: Vec<String>,
+    pub virtual_ports_in: IndexSet<String>,
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<Connection>,
     pub sink: String,
