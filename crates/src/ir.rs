@@ -1,11 +1,15 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     time::Duration,
 };
 
 use indexmap::IndexSet;
 
-use crate::{builder::ValidationError, lower::Lowerer};
+use crate::builder::ValidationError;
+
+// ---------------------------------------------------------------------------
+// Shared primitive types
+// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -23,6 +27,18 @@ pub enum Value {
 
 pub type Object = BTreeMap<String, Value>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Port {
+    Named(String),
+    Index(usize),
+    Slice(usize, usize),
+    None,
+}
+
+// ---------------------------------------------------------------------------
+// AST types — produced by the parser, consumed by `ast_to_graph`
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ASTPipe {
     pub name: String,
@@ -30,7 +46,6 @@ pub struct ASTPipe {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-/// The definitions needed to define a node.
 pub struct NodeDeclaration {
     pub node_type: String,
     pub alias: Option<String>,
@@ -39,61 +54,9 @@ pub struct NodeDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-/// A namespace for a node, as well as all of the definitions
-/// for the specific namepspace.
 pub struct DeclarationScope {
     pub namespace: String,
     pub declarations: Vec<NodeDeclaration>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-/// The AST is currently stored separately from the IR
-///
-/// This allows additional steps to lower into the IR,
-/// and leaves the IR as it's own unit that can later
-/// be easily serialized.
-///
-/// Right now, the biggest transformation that occurs before
-/// we reach the IR, is the macro step, where we define and inline
-/// node definitions. Originally, this was intended to be subgraphs,
-/// but these would have worse cache locality, so macros became a better fit.
-pub struct Ast {
-    pub declarations: Vec<DeclarationScope>,
-    pub connections: Vec<Connection>,
-    pub macros: Vec<Macro>,
-    // The exit point that the runtime/executor delivers samples from
-    pub sink: String,
-    pub source: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-/// The IR for a Legato graph. This should be relatively easy to serialize
-/// down the line.
-///
-/// Note: At this point, this does not account for user defined
-/// nodes, as these require the actual factory to instantiate and you
-/// have to use the builder.
-///
-/// However, user defined macros should be inlined at this point.
-pub struct IR {
-    pub declarations: Vec<DeclarationScope>,
-    pub connections: Vec<Connection>,
-    pub sink: String,
-}
-
-impl From<Ast> for IR {
-    fn from(value: Ast) -> Self {
-        let mut lower = Lowerer::default();
-        lower.lower(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Port {
-    Named(String),
-    Index(usize),
-    Slice(usize, usize),
-    None,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,7 +81,380 @@ pub struct Macro {
     pub sink: String,
 }
 
-// Logic for validation DSL params
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Ast {
+    pub declarations: Vec<DeclarationScope>,
+    pub connections: Vec<Connection>,
+    pub macros: Vec<Macro>,
+    pub sink: String,
+    pub source: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Graph IR node kinds
+// ---------------------------------------------------------------------------
+
+/// Whether an [`IRNode`] is a concrete leaf or an unexpanded macro reference.
+///
+/// The graph passes through two broad states:
+///
+/// 1. **Before [`MacroExpansionPass`]** — the graph is a literal mirror of the
+///    DSL source.  Top-level macro instantiations appear as `MacroRef` nodes,
+///    connected to each other with the ports written in the source.  This is
+///    the most human-readable form of the graph.
+///
+/// 2. **After [`MacroExpansionPass`]** — every node is a `Leaf`.  Aliases are
+///    now fully-qualified (`"lead.osc_inst.carrier"`), params have been
+///    substituted, and virtual ports have been resolved to concrete edges.
+///    The graph is ready for the builder.
+///
+/// Subsequent passes (sample-rate boundaries, port expansion, etc.) only
+/// ever see `Leaf` nodes and operate purely on graph topology.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IRNodeKind {
+    /// A concrete, instantiable node.  The builder can call its factory
+    /// function directly.
+    Leaf,
+    /// An unexpanded macro reference.  `node_type` names the macro.
+    /// Removed by [`MacroExpansionPass`].
+    MacroRef,
+}
+
+// ---------------------------------------------------------------------------
+// Graph IR nodes and edges
+// ---------------------------------------------------------------------------
+
+/// Opaque, stable identifier for a node in the [`IRGraph`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NodeId(u32);
+
+impl NodeId {
+    pub fn index(self) -> u32 {
+        self.0
+    }
+}
+
+/// A single node in the graph IR.
+#[derive(Debug, Clone)]
+pub struct IRNode {
+    pub id: NodeId,
+    pub kind: IRNodeKind,
+    /// Namespace this node was declared in (e.g. `"audio"`, `"midi"`).
+    /// For `MacroRef` nodes this reflects the instantiation-site namespace;
+    /// after expansion each leaf carries its own scope's namespace.
+    pub namespace: String,
+    /// Concrete node type or macro name.
+    pub node_type: String,
+    /// Alias as written in source (pre-expansion) or fully-qualified name
+    /// produced by macro expansion (post-expansion).
+    pub alias: String,
+    pub params: Object,
+    pub pipes: Vec<ASTPipe>,
+}
+
+/// A directed edge connecting an output port of one node to an input port
+/// of another.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IREdge {
+    pub source: NodeId,
+    pub source_port: Port,
+    pub sink: NodeId,
+    pub sink_port: Port,
+}
+
+// ---------------------------------------------------------------------------
+// IRGraph
+// ---------------------------------------------------------------------------
+
+/// Directed graph of audio/control nodes and their connections.
+///
+/// This is the central data structure of the compiler pipeline.  Each
+/// [`GraphPass`] consumes an `IRGraph` and returns a transformed one, making
+/// every step of compilation explicit and inspectable.
+///
+/// ## Pipeline lifecycle
+///
+/// ```text
+/// Ast ──ast_to_graph()──► IRGraph            (literal; may contain MacroRef nodes)
+///                              │
+///                    MacroExpansionPass       (expands MacroRefs → Leaf clusters)
+///                              │
+///                    SampleRateBoundaryPass   (future: inserts converter nodes)
+///                    PortExpansionPass        (future: expands Port::Slice etc.)
+///                              │
+///                              ▼
+///                         IRGraph             (all Leaf nodes, builder-ready)
+/// ```
+#[derive(Debug, Default)]
+pub struct IRGraph {
+    /// IndexMap preserves insertion order, giving a stable topological-sort
+    /// baseline when independent nodes have no ordering constraint.
+    nodes: IndexMap<NodeId, IRNode>,
+    edges: Vec<IREdge>,
+    alias_index: HashMap<String, NodeId>,
+    next_id: u32,
+    pub sink: Option<NodeId>,
+    pub source: Option<NodeId>,
+    /// Macro definitions carried through the pipeline.
+    ///
+    /// Populated by [`ast_to_graph`] and kept alive so that any pass can
+    /// inspect or further expand macros.  After [`MacroExpansionPass`] this
+    /// map is still present but no longer referenced by any node in the graph.
+    pub macro_registry: HashMap<String, Macro>,
+}
+
+// IndexMap is not in std; re-export the dependency for the field type
+use indexmap::IndexMap;
+
+impl IRGraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // -----------------------------------------------------------------------
+    // Mutation
+    // -----------------------------------------------------------------------
+
+    /// Insert a node and return its [`NodeId`].
+    pub fn add_node(
+        &mut self,
+        kind: IRNodeKind,
+        namespace: impl Into<String>,
+        node_type: impl Into<String>,
+        alias: impl Into<String>,
+        params: Object,
+        pipes: Vec<ASTPipe>,
+    ) -> NodeId {
+        let id = NodeId(self.next_id);
+        self.next_id += 1;
+        let alias = alias.into();
+        let node = IRNode {
+            id,
+            kind,
+            namespace: namespace.into(),
+            node_type: node_type.into(),
+            alias: alias.clone(),
+            params,
+            pipes,
+        };
+        self.nodes.insert(id, node);
+        self.alias_index.insert(alias, id);
+        id
+    }
+
+    /// Add a directed edge.
+    pub fn connect(&mut self, source: NodeId, source_port: Port, sink: NodeId, sink_port: Port) {
+        self.edges.push(IREdge {
+            source,
+            source_port,
+            sink,
+            sink_port,
+        });
+    }
+
+    /// Splice a new node into an existing edge:
+    ///
+    /// ```text
+    /// before:  A ──[edge]──► B
+    /// after:   A ──► new ──► B
+    /// ```
+    ///
+    /// The original source port is preserved on the A→new half; the original
+    /// sink port is preserved on the new→B half.  The caller receives the
+    /// `NodeId` of the inserted node.
+    pub fn insert_between(
+        &mut self,
+        edge_index: usize,
+        namespace: impl Into<String>,
+        node_type: impl Into<String>,
+        alias: impl Into<String>,
+        params: Object,
+    ) -> NodeId {
+        let edge = self.edges.remove(edge_index);
+        let new_id = self.add_node(
+            IRNodeKind::Leaf,
+            namespace,
+            node_type,
+            alias,
+            params,
+            vec![],
+        );
+        self.edges.push(IREdge {
+            source: edge.source,
+            source_port: edge.source_port,
+            sink: new_id,
+            sink_port: Port::None,
+        });
+        self.edges.push(IREdge {
+            source: new_id,
+            source_port: Port::None,
+            sink: edge.sink,
+            sink_port: edge.sink_port,
+        });
+        new_id
+    }
+
+    /// Remove a node and all of its incident edges.
+    pub fn remove_node(&mut self, id: NodeId) {
+        if let Some(node) = self.nodes.remove(&id) {
+            self.alias_index.remove(&node.alias);
+        }
+        self.edges.retain(|e| e.source != id && e.sink != id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Queries
+    // -----------------------------------------------------------------------
+
+    pub fn nodes(&self) -> impl Iterator<Item = &IRNode> {
+        self.nodes.values()
+    }
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+    pub fn edges(&self) -> &[IREdge] {
+        &self.edges
+    }
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    pub fn get_node(&self, id: NodeId) -> Option<&IRNode> {
+        self.nodes.get(&id)
+    }
+    pub fn get_node_mut(&mut self, id: NodeId) -> Option<&mut IRNode> {
+        self.nodes.get_mut(&id)
+    }
+
+    pub fn find_node_by_alias(&self, alias: &str) -> Option<&IRNode> {
+        self.alias_index
+            .get(alias)
+            .and_then(|id| self.nodes.get(id))
+    }
+
+    pub fn resolve_alias(&self, alias: &str) -> Option<NodeId> {
+        self.alias_index.get(alias).copied()
+    }
+
+    /// All nodes whose kind is [`IRNodeKind::Leaf`].
+    pub fn leaf_nodes(&self) -> impl Iterator<Item = &IRNode> {
+        self.nodes.values().filter(|n| n.kind == IRNodeKind::Leaf)
+    }
+
+    /// All nodes whose kind is [`IRNodeKind::MacroRef`].
+    pub fn macro_nodes(&self) -> impl Iterator<Item = &IRNode> {
+        self.nodes
+            .values()
+            .filter(|n| n.kind == IRNodeKind::MacroRef)
+    }
+
+    /// `true` if any [`IRNodeKind::MacroRef`] nodes remain.
+    /// Should be `false` after a successful [`MacroExpansionPass`].
+    pub fn has_unresolved_macros(&self) -> bool {
+        self.nodes.values().any(|n| n.kind == IRNodeKind::MacroRef)
+    }
+
+    pub fn outgoing_edges(&self, id: NodeId) -> impl Iterator<Item = &IREdge> {
+        self.edges.iter().filter(move |e| e.source == id)
+    }
+
+    pub fn incoming_edges(&self, id: NodeId) -> impl Iterator<Item = &IREdge> {
+        self.edges.iter().filter(move |e| e.sink == id)
+    }
+
+    pub fn successors(&self, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+        self.edges
+            .iter()
+            .filter(move |e| e.source == id)
+            .map(|e| e.sink)
+    }
+
+    pub fn predecessors(&self, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+        self.edges
+            .iter()
+            .filter(move |e| e.sink == id)
+            .map(|e| e.source)
+    }
+
+    pub fn find_edges_between(&self, src_alias: &str, snk_alias: &str) -> Vec<&IREdge> {
+        let Some(&src) = self.alias_index.get(src_alias) else {
+            return vec![];
+        };
+        let Some(&snk) = self.alias_index.get(snk_alias) else {
+            return vec![];
+        };
+        self.edges
+            .iter()
+            .filter(|e| e.source == src && e.sink == snk)
+            .collect()
+    }
+
+    pub fn find_edges_from(&self, src_alias: &str) -> Vec<&IREdge> {
+        let Some(&src) = self.alias_index.get(src_alias) else {
+            return vec![];
+        };
+        self.edges.iter().filter(|e| e.source == src).collect()
+    }
+
+    pub fn find_edges_to(&self, snk_alias: &str) -> Vec<&IREdge> {
+        let Some(&snk) = self.alias_index.get(snk_alias) else {
+            return vec![];
+        };
+        self.edges.iter().filter(|e| e.sink == snk).collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // Graph algorithms
+    // -----------------------------------------------------------------------
+
+    /// Topological sort (Kahn's algorithm).
+    ///
+    /// Returns node IDs in producer-before-consumer order.  Independent nodes
+    /// are yielded in insertion order (stable).  Panics on a cycle.
+    pub fn topological_sort(&self) -> Vec<NodeId> {
+        let mut in_degree: HashMap<NodeId, usize> = self.nodes.keys().map(|&k| (k, 0)).collect();
+
+        for edge in &self.edges {
+            *in_degree.entry(edge.sink).or_insert(0) += 1;
+        }
+
+        let mut queue: VecDeque<NodeId> = in_degree
+            .iter()
+            .filter(|(_, d)| **d == 0)
+            .map(|(&k, _)| k)
+            .collect();
+        queue.make_contiguous().sort();
+
+        let mut sorted = Vec::with_capacity(self.nodes.len());
+        while let Some(id) = queue.pop_front() {
+            sorted.push(id);
+            let mut next: Vec<NodeId> = self
+                .edges
+                .iter()
+                .filter(|e| e.source == id)
+                .filter_map(|e| {
+                    let deg = in_degree.get_mut(&e.sink)?;
+                    *deg -= 1;
+                    (*deg == 0).then_some(e.sink)
+                })
+                .collect();
+            next.sort();
+            queue.extend(next);
+        }
+
+        assert_eq!(
+            sorted.len(),
+            self.nodes.len(),
+            "IRGraph contains a cycle — topological sort is undefined"
+        );
+        sorted
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DSLParams (unchanged)
+// ---------------------------------------------------------------------------
+
 pub struct DSLParams<'a>(pub &'a Object);
 
 impl<'a> DSLParams<'a> {
@@ -136,7 +472,6 @@ impl<'a> DSLParams<'a> {
         }
     }
 
-    // Just ms for the time being
     pub fn get_duration(&self, key: &str) -> Option<Duration> {
         match self.0.get(key) {
             Some(Value::F32(ms)) => Some(Duration::from_secs_f32(ms / 1000.0)),
@@ -198,7 +533,6 @@ impl<'a> DSLParams<'a> {
             Some(x) => panic!("Expected array param, found {:?}", x),
             _ => None,
         }?;
-
         Some(
             arr.into_iter()
                 .map(|x| match x {
@@ -213,26 +547,23 @@ impl<'a> DSLParams<'a> {
 
     pub fn get_array_duration_ms(&self, key: &str) -> Option<Vec<Duration>> {
         let arr = match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
+            Some(Value::Array(v)) => v.clone(),
             Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
+            _ => return None,
         };
-
         Some(
-            arr.unwrap()
-                .into_iter()
+            arr.into_iter()
                 .map(|x| match x {
                     Value::F32(x) => Duration::from_secs_f32(x / 1000.0),
                     Value::I32(x) => Duration::from_millis(x as u64),
                     Value::U32(x) => Duration::from_millis(x as u64),
-                    _ => panic!("Unexpected value in f32 array {:?}", x),
+                    _ => panic!("Unexpected value in duration array {:?}", x),
                 })
                 .collect(),
         )
     }
 
     pub fn validate(&self, allowed: &BTreeSet<String>) -> Result<(), ValidationError> {
-        // Iterate through keys. If we have one that's not allowed, return an error
         for k in self.0.keys() {
             if !allowed.contains(k) {
                 return Err(ValidationError::InvalidParameter(format!(
@@ -248,7 +579,7 @@ impl<'a> DSLParams<'a> {
         for k in required {
             if !self.0.contains_key(k) {
                 return Err(ValidationError::MissingRequiredParameter(format!(
-                    "Missing required perameter {}",
+                    "Missing required parameter {}",
                     k,
                 )));
             }
@@ -256,6 +587,10 @@ impl<'a> DSLParams<'a> {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Value conversions
+// ---------------------------------------------------------------------------
 
 impl From<f32> for Value {
     fn from(v: f32) -> Self {
@@ -292,27 +627,21 @@ impl From<BTreeMap<String, Value>> for Value {
         Value::Object(v)
     }
 }
-
-impl<T> From<Vec<T>> for Value
-where
-    T: Into<Value>,
-{
+impl<T: Into<Value>> From<Vec<T>> for Value {
     fn from(v: Vec<T>) -> Self {
         Value::Array(v.into_iter().map(|x| x.into()).collect())
     }
 }
 
 pub struct Template(pub String);
-
 impl From<Template> for Value {
     fn from(t: Template) -> Self {
         Value::Template(t.0)
     }
 }
-
 impl<'a> From<&'a Object> for DSLParams<'a> {
-    fn from(value: &'a Object) -> Self {
-        DSLParams(value)
+    fn from(v: &'a Object) -> Self {
+        DSLParams(v)
     }
 }
 

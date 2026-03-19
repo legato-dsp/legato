@@ -4,92 +4,271 @@ use std::collections::HashMap;
 
 const MAXIMUM_DEPTH: u8 = 16;
 
-// The last 20% and a number of tests were pushed through with LLM usage, I would appreciate a second eye down the line
+// ---------------------------------------------------------------------------
+// GraphPass trait
+// ---------------------------------------------------------------------------
 
-struct NodeInfo {
-    /// FQN to use when this symbol is the source of a connection.
-    source_fqn: String,
-    /// A map from the virtual port name, to the FQN and Port definition
-    virtual_inputs: IndexMap<String, (String, Port)>,
+/// A single, named transformation of an [`IRGraph`].
+pub trait GraphPass {
+    fn name(&self) -> &'static str;
+    fn run(&self, graph: IRGraph) -> IRGraph;
 }
 
-#[derive(Default, Debug)]
-pub struct Lowerer {
-    registry: HashMap<String, Macro>,
+// ---------------------------------------------------------------------------
+// Pipeline
+// ---------------------------------------------------------------------------
+
+/// An ordered sequence of [`GraphPass`]es applied to an [`IRGraph`].
+pub struct Pipeline {
+    passes: Vec<Box<dyn GraphPass>>,
 }
 
-impl Lowerer {
-    pub fn lower(&mut self, ast: Ast) -> IR {
-        let mut ir = IR::default();
-        ir.sink = ast.sink.clone();
-
-        for item in ast.macros {
-            self.registry.insert(item.name.clone(), item);
-        }
-
-        let mut scope_map: HashMap<String, DeclarationScope> = HashMap::new();
-        let mut top_symbols: HashMap<String, NodeInfo> = HashMap::new();
-
-        for scope in &ast.declarations {
-            for decl in &scope.declarations {
-                let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
-
-                if let Some(m) = self.registry.get(&decl.node_type).cloned() {
-                    let info = self.expand_macro(
-                        &m,
-                        &alias,
-                        "",
-                        &decl.params.clone().unwrap_or_default(),
-                        &mut ir,
-                        &mut scope_map,
-                        0,
-                    );
-                    top_symbols.insert(alias, info);
-                } else {
-                    let mut leaf = decl.clone();
-                    leaf.alias = Some(alias.clone());
-
-                    scope_map
-                        .entry(scope.namespace.clone())
-                        .or_insert_with(|| DeclarationScope {
-                            namespace: scope.namespace.clone(),
-                            declarations: Vec::new(),
-                        })
-                        .declarations
-                        .push(leaf);
-
-                    top_symbols.insert(
-                        alias.clone(),
-                        NodeInfo {
-                            source_fqn: alias,
-                            virtual_inputs: IndexMap::new(),
-                        },
-                    );
-                }
-            }
-        }
-
-        // resolve top lvl connections
-        for conn in &ast.connections {
-            if let Some(resolved) = Self::resolve_connection(conn, &top_symbols) {
-                ir.connections.push(resolved);
-            }
-        }
-
-        ir.declarations = scope_map.into_values().collect();
-        ir
+impl Pipeline {
+    pub fn new() -> Self {
+        Self { passes: vec![] }
     }
 
-    fn expand_macro(
-        &mut self,
+    /// Append a pass to the end of the pipeline.
+    pub fn add_pass<P: GraphPass + 'static>(mut self, pass: P) -> Self {
+        self.passes.push(Box::new(pass));
+        self
+    }
+
+    /// Translate `ast` to a literal [`IRGraph`] (see [`ast_to_graph`]), then
+    /// run all passes in order.
+    pub fn run_from_ast(self, ast: Ast) -> IRGraph {
+        let initial = ast_to_graph(ast);
+        self.run(initial)
+    }
+
+    /// Run all passes on an already-constructed graph.
+    pub fn run(self, graph: IRGraph) -> IRGraph {
+        self.passes.into_iter().fold(graph, |g, pass| pass.run(g))
+    }
+}
+
+impl Default for Pipeline {
+    /// The standard pipeline: literal translation → macro expansion.
+    /// Further passes (sample-rate conversion, port expansion, etc.) are
+    /// added on top of this baseline.
+    fn default() -> Self {
+        Self::new().add_pass(MacroExpansionPass::default())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ast_to_graph  —  step 0: pure literal translation
+// ---------------------------------------------------------------------------
+
+/// Translate an [`Ast`] into a literal [`IRGraph`] **without any expansion**.
+///
+/// This is always the first step in any pipeline.  The graph produced here
+/// mirrors the DSL source text exactly:
+///
+/// - Macro definitions are stored in [`IRGraph::macro_registry`].
+/// - Macro instantiations become [`IRNodeKind::MacroRef`] nodes.
+/// - Connections are preserved verbatim (virtual ports are *not* resolved yet).
+/// - Parameters are stored as-is (templates are *not* substituted yet).
+///
+/// Inspecting the graph at this stage is the easiest way to understand the
+/// high-level topology the developer wrote.
+pub fn ast_to_graph(ast: Ast) -> IRGraph {
+    let mut graph = IRGraph::new();
+
+    // Register all macro definitions first so we can classify node types.
+    for m in ast.macros {
+        graph.macro_registry.insert(m.name.clone(), m);
+    }
+
+    // Add one node per declaration; classify each as Leaf or MacroRef.
+    let mut alias_to_id: HashMap<String, NodeId> = HashMap::new();
+
+    for scope in &ast.declarations {
+        for decl in &scope.declarations {
+            let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
+
+            let kind = if graph.macro_registry.contains_key(&decl.node_type) {
+                IRNodeKind::MacroRef
+            } else {
+                IRNodeKind::Leaf
+            };
+
+            let id = graph.add_node(
+                kind,
+                scope.namespace.clone(),
+                decl.node_type.clone(),
+                alias.clone(),
+                decl.params.clone().unwrap_or_default(),
+                decl.pipes.clone(),
+            );
+            alias_to_id.insert(alias, id);
+        }
+    }
+
+    // Preserve connections verbatim.  Virtual ports are not resolved here;
+    // they pass through as `Port::Named` and are handled by MacroExpansionPass.
+    for conn in &ast.connections {
+        let src = *alias_to_id.get(&conn.source.node).unwrap_or_else(|| {
+            panic!("ast_to_graph: source node '{}' not found", conn.source.node)
+        });
+        let snk = *alias_to_id
+            .get(&conn.sink.node)
+            .unwrap_or_else(|| panic!("ast_to_graph: sink node '{}' not found", conn.sink.node));
+        graph.connect(src, conn.source.port.clone(), snk, conn.sink.port.clone());
+    }
+
+    graph.sink = alias_to_id.get(&ast.sink).copied();
+    graph.source = ast
+        .source
+        .as_ref()
+        .and_then(|s| alias_to_id.get(s).copied());
+
+    graph
+}
+
+// ---------------------------------------------------------------------------
+// MacroExpansionPass
+// ---------------------------------------------------------------------------
+
+/// Expands all [`IRNodeKind::MacroRef`] nodes into their constituent leaf
+/// nodes, resolves virtual ports to concrete edges, and applies template
+/// parameter substitution.
+///
+/// After this pass, [`IRGraph::has_unresolved_macros`] will return `false`
+/// and every alias will be a fully-qualified name.
+///
+/// The macro registry on the graph is **not** cleared after expansion so
+/// that later passes or the builder can still consult it if needed.
+#[derive(Default)]
+pub struct MacroExpansionPass;
+
+impl GraphPass for MacroExpansionPass {
+    fn name(&self) -> &'static str {
+        "MacroExpansionPass"
+    }
+
+    fn run(&self, mut graph: IRGraph) -> IRGraph {
+        // Collect all MacroRef nodes that were present *before* we start
+        // expanding.  Expansion adds only Leaf nodes, so one pass is enough
+        // to resolve all top-level macro instantiations; recursive calls
+        // inside `expand_macro_into_graph` handle nested macros.
+        let macro_ids: Vec<NodeId> = graph.macro_nodes().map(|n| n.id).collect();
+
+        for macro_id in macro_ids {
+            self.expand_node(&mut graph, macro_id, 0);
+        }
+
+        debug_assert!(
+            !graph.has_unresolved_macros(),
+            "MacroExpansionPass finished but unresolved MacroRef nodes remain"
+        );
+
+        graph
+    }
+}
+
+impl MacroExpansionPass {
+    /// Expand a single `MacroRef` node in-place:
+    ///
+    /// 1. Recursively expand the macro's definition into the graph.
+    /// 2. Collect all edges incident to the macro node.
+    /// 3. Remove the macro node (and its incident edges).
+    /// 4. Rewire the collected edges through the expansion result.
+    fn expand_node(&self, graph: &mut IRGraph, node_id: NodeId, depth: u8) {
+        let node = graph
+            .get_node(node_id)
+            .expect("expand_node: NodeId not in graph")
+            .clone();
+
+        debug_assert_eq!(
+            node.kind,
+            IRNodeKind::MacroRef,
+            "expand_node called on a Leaf node"
+        );
+
+        let macro_def = graph
+            .macro_registry
+            .get(&node.node_type)
+            .cloned()
+            .unwrap_or_else(|| panic!("Macro '{}' not found in registry", node.node_type));
+
+        // Snapshot incident edges before we mutate the graph.
+        let incoming: Vec<IREdge> = graph.incoming_edges(node_id).cloned().collect();
+        let outgoing: Vec<IREdge> = graph.outgoing_edges(node_id).cloned().collect();
+
+        // Remove the macro node — this also drops its incident edges.
+        graph.remove_node(node_id);
+
+        // Recursively expand the macro definition into `graph`.
+        let ExpansionResult {
+            source_id,
+            virtual_inputs,
+        } = self.expand_macro_into_graph(
+            graph,
+            &macro_def,
+            &node.alias, // becomes the FQN prefix for children
+            "",
+            &node.params,
+            &node.namespace,
+            depth,
+        );
+
+        // Rewire incoming edges.
+        //
+        // An incoming edge to a macro node either:
+        //   (a) targets a named/indexed virtual port → route to the concrete
+        //       leaf that the virtual port maps to, or
+        //   (b) uses Port::None → wire to the macro's sink leaf.
+        for edge in incoming {
+            let (new_sink_id, new_sink_port) = match &edge.sink_port {
+                Port::Named(name) => virtual_inputs
+                    .get(name)
+                    .map_or((source_id, edge.sink_port.clone()), |(id, port)| {
+                        (*id, port.clone())
+                    }),
+                Port::Index(i) => virtual_inputs
+                    .get_index(*i)
+                    .map_or((source_id, edge.sink_port.clone()), |(_, (id, port))| {
+                        (*id, port.clone())
+                    }),
+                Port::None => (source_id, Port::None),
+                Port::Slice(_, _) => panic!(
+                    "Port::Slice is not supported on virtual ports (macro '{}')",
+                    node.node_type
+                ),
+            };
+            graph.connect(edge.source, edge.source_port, new_sink_id, new_sink_port);
+        }
+
+        // Rewire outgoing edges: they all originate from the macro's sink leaf.
+        for edge in outgoing {
+            graph.connect(source_id, edge.source_port, edge.sink, edge.sink_port);
+        }
+
+        // Update the graph-level sink / source pointers.
+        if graph.sink == Some(node_id) {
+            graph.sink = Some(source_id);
+        }
+        if graph.source == Some(node_id) {
+            graph.source = Some(source_id);
+        }
+    }
+
+    /// Recursively expand one macro definition into `graph`.
+    ///
+    /// Adds all leaf descendant nodes and their internal edges.  Returns the
+    /// [`ExpansionResult`] that lets the caller rewire connections through
+    /// virtual ports.
+    fn expand_macro_into_graph(
+        &self,
+        graph: &mut IRGraph,
         m: &Macro,
         instance_name: &str,
         parent_prefix: &str,
         params: &Object,
-        ir: &mut IR,
-        scope_map: &mut HashMap<String, DeclarationScope>,
+        outer_namespace: &str,
         depth: u8,
-    ) -> NodeInfo {
+    ) -> ExpansionResult {
         if depth > MAXIMUM_DEPTH {
             panic!(
                 "Max macro depth ({}) exceeded at {}::{}",
@@ -103,55 +282,58 @@ impl Lowerer {
             format!("{}.{}", parent_prefix, instance_name)
         };
 
-        // Merge default params, then override with call-site params
-        let mut current_params = m.default_params.clone().unwrap_or_default();
+        // Merge default params, then override with call-site params.
+        let mut resolved_params = m.default_params.clone().unwrap_or_default();
         for (k, v) in params {
-            current_params.insert(k.clone(), v.clone());
+            resolved_params.insert(k.clone(), v.clone());
         }
 
-        // Build the local symbol table for this macro's scope
-        let mut local_symbols: HashMap<String, NodeInfo> = HashMap::new();
+        // Build a local symbol table: local alias → ExpansionResult.
+        // For leaf nodes the virtual_inputs map is empty and source_id
+        // is the node's own id.
+        let mut local: HashMap<String, ExpansionResult> = HashMap::new();
 
         for scope in &m.declarations.clone() {
+            let ns = if scope.namespace.is_empty() {
+                outer_namespace
+            } else {
+                &scope.namespace
+            };
+
             for decl in &scope.declarations {
                 let local_alias = decl.alias.as_ref().unwrap_or(&decl.node_type).clone();
 
-                if let Some(inner_macro) = self.registry.get(&decl.node_type).cloned() {
+                if let Some(inner_macro) = graph.macro_registry.get(&decl.node_type).cloned() {
                     let mut inner_params = decl.params.clone().unwrap_or_default();
-                    self.resolve_templates(&mut inner_params, &current_params);
+                    Self::substitute_templates(&mut inner_params, &resolved_params);
 
-                    let info = self.expand_macro(
+                    let result = self.expand_macro_into_graph(
+                        graph,
                         &inner_macro,
                         &local_alias,
                         &current_prefix,
                         &inner_params,
-                        ir,
-                        scope_map,
+                        ns,
                         depth + 1,
                     );
-                    local_symbols.insert(local_alias, info);
+                    local.insert(local_alias, result);
                 } else {
                     let fqn = format!("{}.{}", current_prefix, local_alias);
-                    let mut leaf = decl.clone();
-                    leaf.alias = Some(fqn.clone());
+                    let mut node_params = decl.params.clone().unwrap_or_default();
+                    Self::substitute_templates(&mut node_params, &resolved_params);
 
-                    if let Some(ref mut p) = leaf.params {
-                        self.resolve_templates(p, &current_params);
-                    }
-
-                    scope_map
-                        .entry(scope.namespace.clone())
-                        .or_insert_with(|| DeclarationScope {
-                            namespace: scope.namespace.clone(),
-                            declarations: Vec::new(),
-                        })
-                        .declarations
-                        .push(leaf);
-
-                    local_symbols.insert(
+                    let id = graph.add_node(
+                        IRNodeKind::Leaf,
+                        ns,
+                        decl.node_type.clone(),
+                        fqn,
+                        node_params,
+                        decl.pipes.clone(),
+                    );
+                    local.insert(
                         local_alias,
-                        NodeInfo {
-                            source_fqn: fqn,
+                        ExpansionResult {
+                            source_id: id,
                             virtual_inputs: IndexMap::new(),
                         },
                     );
@@ -159,116 +341,91 @@ impl Lowerer {
             }
         }
 
-        let mut virtual_inputs: IndexMap<String, (String, Port)> = IndexMap::new();
+        // Process this macro's internal connections.
+        // Virtual connections populate the virtual_inputs map returned to the
+        // caller; real connections are committed to the graph immediately.
+        let mut virtual_inputs: IndexMap<String, (NodeId, Port)> = IndexMap::new();
 
         for conn in &m.connections {
-            // Virtual connection
             if m.virtual_ports_in.contains(&conn.source.node) {
-                let target_info = local_symbols.get(&conn.sink.node).unwrap_or_else(|| {
+                // Virtual port: record where it routes, for the caller to use
+                // when rewiring incoming edges.
+                let target = local.get(&conn.sink.node).unwrap_or_else(|| {
                     panic!(
                         "Virtual port '{}' routes to unknown node '{}' in macro '{}'",
                         conn.source.node, conn.sink.node, m.name
                     )
                 });
 
-                let (target_fqn, target_port) = match &conn.sink.port {
+                let (target_id, target_port) = match &conn.sink.port {
                     Port::Named(port_name) => {
-                        if let Some((nested_fqn, nested_port)) =
-                            target_info.virtual_inputs.get(port_name)
-                        {
-                            // Follow through to the actual leaf port on the inner macro
-                            (nested_fqn.clone(), nested_port.clone())
-                        } else {
-                            (target_info.source_fqn.clone(), conn.sink.port.clone())
-                        }
+                        // If the target itself is a macro with virtual inputs,
+                        // follow through to the actual leaf.
+                        target
+                            .virtual_inputs
+                            .get(port_name)
+                            .map_or((target.source_id, conn.sink.port.clone()), |(id, port)| {
+                                (*id, port.clone())
+                            })
                     }
-                    _ => (target_info.source_fqn.clone(), conn.sink.port.clone()),
+                    _ => (target.source_id, conn.sink.port.clone()),
                 };
 
-                virtual_inputs.insert(conn.source.node.clone(), (target_fqn, target_port));
-            }
-            // Normal connection
-            else if let Some(resolved) = Self::resolve_connection(conn, &local_symbols) {
-                ir.connections.push(resolved);
+                virtual_inputs.insert(conn.source.node.clone(), (target_id, target_port));
+            } else {
+                // Normal internal connection.
+                let src = local.get(&conn.source.node).unwrap_or_else(|| {
+                    panic!(
+                        "Source '{}' not found in macro '{}' scope",
+                        conn.source.node, m.name
+                    )
+                });
+                let snk = local.get(&conn.sink.node).unwrap_or_else(|| {
+                    panic!(
+                        "Sink '{}' not found in macro '{}' scope",
+                        conn.sink.node, m.name
+                    )
+                });
+
+                let source_id = src.source_id;
+                let (sink_id, sink_port) = if snk.virtual_inputs.is_empty() {
+                    (snk.source_id, conn.sink.port.clone())
+                } else {
+                    match &conn.sink.port {
+                        Port::Named(name) => snk
+                            .virtual_inputs
+                            .get(name)
+                            .map_or((snk.source_id, Port::None), |(id, port)| {
+                                (*id, port.clone())
+                            }),
+                        Port::Index(i) => snk
+                            .virtual_inputs
+                            .get_index(*i)
+                            .map_or((snk.source_id, Port::None), |(_, (id, port))| {
+                                (*id, port.clone())
+                            }),
+                        Port::None => (snk.source_id, Port::None),
+                        Port::Slice(_, _) => panic!("Slices are not supported on virtual ports"),
+                    }
+                };
+
+                graph.connect(source_id, conn.source.port.clone(), sink_id, sink_port);
             }
         }
 
-        // The sink FQN that will exist for future connections
-        let sink_info = local_symbols
+        let sink_result = local
             .get(&m.sink)
             .unwrap_or_else(|| panic!("Sink alias '{}' not found in macro '{}'", m.sink, m.name));
 
-        NodeInfo {
-            source_fqn: sink_info.source_fqn.clone(),
+        ExpansionResult {
+            source_id: sink_result.source_id,
             virtual_inputs,
         }
     }
 
-    fn resolve_connection(
-        conn: &Connection,
-        symbols: &HashMap<String, NodeInfo>,
-    ) -> Option<Connection> {
-        let src_info = symbols
-            .get(&conn.source.node)
-            .unwrap_or_else(|| panic!("Source node '{}' not found in scope", conn.source.node));
-
-        let snk_info = symbols
-            .get(&conn.sink.node)
-            .unwrap_or_else(|| panic!("Sink node '{}' not found in scope", conn.sink.node));
-
-        // for macros, we always use the sink leaf, otherwise it's a normal fqn path
-        let source_fqn = src_info.source_fqn.clone();
-
-        // if the target has virtual inputs, the port MUST be named
-        let (sink_fqn, sink_port) = if snk_info.virtual_inputs.is_empty() {
-            (snk_info.source_fqn.clone(), conn.sink.port.clone())
-        } else {
-            match &conn.sink.port {
-                Port::Named(port_name) => {
-                    let (target_fqn, target_port) =
-                        snk_info.virtual_inputs.get(port_name).unwrap_or_else(|| {
-                            panic!(
-                                "Node '{}' has no virtual input port '{}'",
-                                conn.sink.node, port_name
-                            )
-                        });
-                    (target_fqn.clone(), target_port.clone())
-                }
-                // Specifically using an index set so we can select the virtual port in order
-                Port::Index(i) => {
-                    let (target_fqn, target_port) = snk_info
-                        .virtual_inputs
-                        .get_index(*i)
-                        .map(|(_, v)| v)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Node '{}' has no virtual input at index {}",
-                                conn.sink.node, i
-                            )
-                        });
-                    (target_fqn.clone(), target_port.clone())
-                }
-                Port::None => {
-                    // Automap to sink
-                    (snk_info.source_fqn.clone(), Port::None)
-                }
-                Port::Slice(_, _) => panic!("Slicing not yet supported on virtual ports"),
-            }
-        };
-
-        Some(Connection {
-            source: Endpoint {
-                node: source_fqn,
-                port: conn.source.port.clone(),
-            },
-            sink: Endpoint {
-                node: sink_fqn,
-                port: sink_port,
-            },
-        })
-    }
-
-    fn resolve_templates(&self, params: &mut Object, lookup: &Object) {
+    /// Replace every `Value::Template("$key")` in `params` with the
+    /// matching value from `lookup`.
+    fn substitute_templates(params: &mut Object, lookup: &Object) {
         for val in params.values_mut() {
             if let Value::Template(tpl) = val {
                 let key = tpl.trim_start_matches('$');
@@ -280,32 +437,43 @@ impl Lowerer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// object! — lives here because it constructs ir::Object values
+// ---------------------------------------------------------------------------
+
 #[macro_export]
 macro_rules! object {
-    () => {
-        BTreeMap::new()
-    };
-    ( $($key:expr => template $val:expr),* $(,)? ) => {
-        {
-            use std::collections::BTreeMap;
-            let mut _map = BTreeMap::new();
-            $(
-                _map.insert($key.to_string(), $crate::ir::Value::Template($val.to_string()));
-            )*
-            _map
-        }
-    };
-    ( $($key:expr => $value:expr),* $(,)? ) => {
-        {
-            use std::collections::BTreeMap;
-            let mut _map = BTreeMap::new();
-            $(
-                _map.insert($key.to_string(), $crate::ir::Value::from($value));
-            )*
-            _map
-        }
-    };
+    () => { ::std::collections::BTreeMap::new() };
+    ( $($key:expr => template $val:expr),* $(,)? ) => {{
+        let mut _map = ::std::collections::BTreeMap::new();
+        $( _map.insert($key.to_string(), $crate::ir::Value::Template($val.to_string())); )*
+        _map
+    }};
+    ( $($key:expr => $value:expr),* $(,)? ) => {{
+        let mut _map = ::std::collections::BTreeMap::new();
+        $( _map.insert($key.to_string(), $crate::ir::Value::from($value)); )*
+        _map
+    }};
 }
+
+// ---------------------------------------------------------------------------
+// Internal helper
+// ---------------------------------------------------------------------------
+
+/// The result of expanding one macro instance.
+///
+/// Used only within [`MacroExpansionPass`]; not part of the public API.
+struct ExpansionResult {
+    /// The NodeId of the leaf that serves as this macro's audio output
+    /// (i.e. the macro's `sink` leaf after full recursive expansion).
+    source_id: NodeId,
+    /// Virtual port name → (target NodeId, target Port).
+    virtual_inputs: IndexMap<String, (NodeId, Port)>,
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -383,8 +551,68 @@ mod tests {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // ast_to_graph tests: verify the literal (pre-expansion) graph
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn test_virtual_port_routing_recorded() {
+    fn test_ast_to_graph_produces_macro_ref_nodes() {
+        let ast = Ast {
+            macros: vec![make_voice_macro()],
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![
+                    NodeDeclaration {
+                        node_type: "voice".into(),
+                        alias: Some("v1".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                    NodeDeclaration {
+                        node_type: "track_mixer".into(),
+                        alias: Some("mixer".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                ],
+            }],
+            connections: vec![Connection {
+                source: Endpoint {
+                    node: "v1".into(),
+                    port: Port::None,
+                },
+                sink: Endpoint {
+                    node: "mixer".into(),
+                    port: Port::None,
+                },
+            }],
+            sink: "mixer".into(),
+            ..Default::default()
+        };
+
+        let graph = ast_to_graph(ast);
+
+        // Literal graph: one MacroRef + one Leaf, not yet expanded.
+        assert_eq!(graph.node_count(), 2);
+        assert!(graph.has_unresolved_macros());
+
+        let v1 = graph.find_node_by_alias("v1").expect("v1 missing");
+        assert_eq!(v1.kind, IRNodeKind::MacroRef);
+        assert_eq!(v1.node_type, "voice");
+
+        let mixer = graph.find_node_by_alias("mixer").expect("mixer missing");
+        assert_eq!(mixer.kind, IRNodeKind::Leaf);
+
+        // Connection is present verbatim — virtual ports not resolved.
+        assert_eq!(graph.edge_count(), 1);
+        let edges = graph.find_edges_between("v1", "mixer");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].source_port, Port::None);
+    }
+
+    #[test]
+    fn test_ast_to_graph_preserves_raw_params() {
+        // Template values should be left unsubstituted in the literal graph.
         let ast = Ast {
             macros: vec![make_voice_macro()],
             declarations: vec![DeclarationScope {
@@ -392,47 +620,63 @@ mod tests {
                 declarations: vec![NodeDeclaration {
                     node_type: "voice".into(),
                     alias: Some("v1".into()),
-                    params: Some(object!("freq" => 420.0)),
+                    params: Some(object! { "freq" => 420.0f32 }),
                     pipes: vec![],
                 }],
             }],
+            sink: "v1".into(),
             ..Default::default()
         };
 
-        let ir = IR::from(ast);
+        let graph = ast_to_graph(ast);
+        let v1 = graph.find_node_by_alias("v1").unwrap();
+        // The call-site param should be on the MacroRef node as written.
+        assert_eq!(v1.params.get("freq"), Some(&Value::F32(420.0)));
+    }
 
-        dbg!(&ir);
+    // -----------------------------------------------------------------------
+    // MacroExpansionPass tests (mirror the original lower.rs tests)
+    // -----------------------------------------------------------------------
 
-        // Correct node size
-        assert_eq!(ir.declarations[0].declarations.len(), 2);
-        // make sure the param got passed in
-        assert_eq!(
-            *ir.declarations[0]
-                .declarations
-                .iter()
-                .find(|x| x.alias.as_ref().unwrap() == "v1.osc")
-                .unwrap()
-                .params
-                .as_ref()
-                .unwrap()
-                .get("freq")
-                .unwrap(),
-            Value::F32(420.0)
-        );
+    fn expand(ast: Ast) -> IRGraph {
+        Pipeline::default().run_from_ast(ast)
+    }
 
-        // we should only have an interior connection from osc -> env
-        assert_eq!(ir.connections.len(), 1);
-        let conn = &ir.connections[0];
-        assert_eq!(conn.source.node, "v1.osc");
-        assert_eq!(conn.sink.node, "v1.env");
-        assert_eq!(conn.sink.port, Port::Index(1));
+    #[test]
+    fn test_expansion_replaces_macro_ref_with_leaves() {
+        let ast = Ast {
+            macros: vec![make_voice_macro()],
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![NodeDeclaration {
+                    node_type: "voice".into(),
+                    alias: Some("v1".into()),
+                    params: Some(object!("freq" => 420.0f32)),
+                    pipes: vec![],
+                }],
+            }],
+            sink: "v1".into(),
+            ..Default::default()
+        };
+
+        let graph = expand(ast);
+
+        assert!(!graph.has_unresolved_macros());
+        assert_eq!(graph.node_count(), 2);
+
+        let osc = graph.find_node_by_alias("v1.osc").expect("v1.osc missing");
+        assert_eq!(osc.params.get("freq"), Some(&Value::F32(420.0)));
+
+        // Only the interior osc → env edge; virtual-port connections produce no edge.
+        assert_eq!(graph.edge_count(), 1);
+        let edges = graph.find_edges_between("v1.osc", "v1.env");
+        assert_eq!(edges[0].sink_port, Port::Index(1));
     }
 
     #[test]
     fn test_external_connection_through_virtual_port() {
         let ast = Ast {
             macros: vec![make_voice_macro()],
-            source: None,
             declarations: vec![
                 DeclarationScope {
                     namespace: "audio".into(),
@@ -476,35 +720,35 @@ mod tests {
                 },
             ],
             sink: "v1".into(),
+            ..Default::default()
         };
 
-        let ir = IR::from(ast);
-        dbg!(&ir);
+        let graph = expand(ast);
 
-        // macro connection plus the two external connections
-        assert_eq!(ir.connections.len(), 3);
+        // 1 interior + 2 external
+        assert_eq!(graph.edge_count(), 3);
 
-        let freq_conn = ir
-            .connections
+        let osc = graph.find_node_by_alias("v1.osc").unwrap();
+        let env = graph.find_node_by_alias("v1.env").unwrap();
+        let poly_edges = graph.find_edges_from("poly");
+
+        let freq_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "poly" && c.source.port == Port::Named("freq".into()))
-            .expect("freq connection not found");
+            .find(|e| e.source_port == Port::Named("freq".into()))
+            .expect("poly.freq edge missing");
+        assert_eq!(freq_edge.sink, osc.id);
+        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
 
-        assert_eq!(freq_conn.sink.node, "v1.osc");
-        assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
-
-        let gate_conn = ir
-            .connections
+        let gate_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "poly" && c.source.port == Port::Named("gate".into()))
-            .expect("gate connection not found");
-
-        assert_eq!(gate_conn.sink.node, "v1.env");
-        assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
+            .find(|e| e.source_port == Port::Named("gate".into()))
+            .expect("poly.gate edge missing");
+        assert_eq!(gate_edge.sink, env.id);
+        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
     }
 
     #[test]
-    fn test_multiple_patch_instances_get_distinct_fqns() {
+    fn test_multiple_instances_get_distinct_fqns() {
         let ast = Ast {
             macros: vec![make_voice_macro()],
             declarations: vec![DeclarationScope {
@@ -527,43 +771,25 @@ mod tests {
             ..Default::default()
         };
 
-        let ir = IR::from(ast);
-        dbg!(&ir);
+        let graph = expand(ast);
+        assert_eq!(graph.node_count(), 4);
 
-        // Each instance produces its own osc and env leaf
-        let all_aliases: Vec<&str> = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .filter_map(|d| d.alias.as_deref())
-            .collect();
+        for alias in ["v1.osc", "v1.env", "v2.osc", "v2.env"] {
+            assert!(
+                graph.find_node_by_alias(alias).is_some(),
+                "missing {}",
+                alias
+            );
+        }
 
-        assert!(all_aliases.contains(&"v1.osc"), "missing v1.osc");
-        assert!(all_aliases.contains(&"v1.env"), "missing v1.env");
-        assert!(all_aliases.contains(&"v2.osc"), "missing v2.osc");
-        assert!(all_aliases.contains(&"v2.env"), "missing v2.env");
-
-        // v2.osc should have freq 880
-        let v2_osc = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("v2.osc"))
-            .expect("v2.osc not found");
-
-        assert_eq!(
-            v2_osc.params.as_ref().unwrap().get("freq"),
-            Some(&Value::F32(880.0))
-        );
+        let v2_osc = graph.find_node_by_alias("v2.osc").unwrap();
+        assert_eq!(v2_osc.params.get("freq"), Some(&Value::F32(880.0)));
     }
 
     #[test]
-    fn test_patch_audio_passthrough_via_sink() {
-        // When no virtual port is named, connecting patch >> next_node
-        // should wire through the patch's sink leaf
+    fn test_passthrough_via_sink() {
         let ast = Ast {
             macros: vec![make_voice_macro()],
-            source: None,
             declarations: vec![DeclarationScope {
                 namespace: "audio".into(),
                 declarations: vec![
@@ -592,32 +818,22 @@ mod tests {
                 },
             }],
             sink: "mixer".into(),
+            ..Default::default()
         };
 
-        let ir = IR::from(ast);
+        let graph = expand(ast);
+        let edges_to_mixer = graph.find_edges_to("mixer");
+        assert_eq!(edges_to_mixer.len(), 1);
 
-        let passthrough = ir
-            .connections
-            .iter()
-            .find(|c| c.sink.node == "mixer")
-            .expect("passthrough connection not found");
-
-        // Source should be the sink leaf of the voice
-        assert_eq!(passthrough.source.node, "v1.env");
+        let env = graph.find_node_by_alias("v1.env").unwrap();
+        assert_eq!(edges_to_mixer[0].source, env.id);
     }
 
     #[test]
     fn test_nested_macro_virtual_ports_and_connections() {
-        // Inner macro: fm_osc
-        //   virtual in: freq_in -> modulator.freq, carrier.freq
-        //   internal connection: modulator -> carrier[0]
-        //   sink: carrier
-        let fm_osc_macro = Macro {
+        let fm_osc = Macro {
             name: "fm_osc".into(),
-            default_params: Some(object! {
-                "freq" => 440.0f32,
-                "mod_freq" => 880.0f32
-            }),
+            default_params: Some(object! { "freq" => 440.0f32, "mod_freq" => 880.0f32 }),
             virtual_ports_in: {
                 let mut s = IndexSet::new();
                 s.insert("freq_in".into());
@@ -665,12 +881,9 @@ mod tests {
             sink: "carrier".into(),
         };
 
-        let voice_macro = Macro {
+        let voice = Macro {
             name: "voice".into(),
-            default_params: Some(object! {
-                "freq" => 440.0f32,
-                "attack" => 100.0f32
-            }),
+            default_params: Some(object! { "freq" => 440.0f32, "attack" => 100.0f32 }),
             virtual_ports_in: {
                 let mut s = IndexSet::new();
                 s.insert("gate".into());
@@ -730,8 +943,7 @@ mod tests {
         };
 
         let ast = Ast {
-            macros: vec![fm_osc_macro, voice_macro],
-            source: None,
+            macros: vec![fm_osc, voice],
             declarations: vec![
                 DeclarationScope {
                     namespace: "audio".into(),
@@ -753,7 +965,6 @@ mod tests {
                 },
             ],
             connections: vec![
-                // External: poly.freq >> lead.voice_freq (should resolve to lead.osc_inst.carrier.freq)
                 Connection {
                     source: Endpoint {
                         node: "poly".into(),
@@ -764,7 +975,6 @@ mod tests {
                         port: Port::Named("voice_freq".into()),
                     },
                 },
-                // External: poly.gate >> lead.gate (should resolve to lead.env.gate)
                 Connection {
                     source: Endpoint {
                         node: "poly".into(),
@@ -777,102 +987,178 @@ mod tests {
                 },
             ],
             sink: "lead".into(),
+            ..Default::default()
         };
 
-        let ir = IR::from(ast);
-        dbg!(&ir);
+        let graph = expand(ast);
 
-        // --- Leaf FQNs ---
-        let all_aliases: Vec<&str> = ir
-            .declarations
+        for alias in [
+            "lead.osc_inst.modulator",
+            "lead.osc_inst.carrier",
+            "lead.env",
+        ] {
+            assert!(
+                graph.find_node_by_alias(alias).is_some(),
+                "missing {}",
+                alias
+            );
+        }
+
+        let carrier = graph.find_node_by_alias("lead.osc_inst.carrier").unwrap();
+        assert_eq!(carrier.params.get("freq"), Some(&Value::F32(880.0)));
+
+        let env = graph.find_node_by_alias("lead.env").unwrap();
+        assert_eq!(env.params.get("attack"), Some(&Value::F32(200.0)));
+
+        let mod_to_carrier =
+            graph.find_edges_between("lead.osc_inst.modulator", "lead.osc_inst.carrier");
+        assert_eq!(mod_to_carrier.len(), 1);
+        assert_eq!(mod_to_carrier[0].sink_port, Port::Index(0));
+
+        let osc_to_env = graph.find_edges_between("lead.osc_inst.carrier", "lead.env");
+        assert_eq!(osc_to_env.len(), 1);
+        assert_eq!(osc_to_env[0].sink_port, Port::Index(1));
+
+        let poly_edges = graph.find_edges_from("poly");
+        let freq_edge = poly_edges
             .iter()
-            .flat_map(|s| s.declarations.iter())
-            .filter_map(|d| d.alias.as_deref())
-            .collect();
+            .find(|e| e.source_port == Port::Named("freq".into()))
+            .unwrap();
+        assert_eq!(freq_edge.sink, carrier.id);
+        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
 
-        assert!(
-            all_aliases.contains(&"lead.osc_inst.modulator"),
-            "missing lead.osc_inst.modulator"
-        );
-        assert!(
-            all_aliases.contains(&"lead.osc_inst.carrier"),
-            "missing lead.osc_inst.carrier"
-        );
-        assert!(all_aliases.contains(&"lead.env"), "missing lead.env");
-
-        // --- Param propagation ---
-        // lead.osc_inst.carrier should have f=880.0 (passed through two levels of templates)
-        let carrier = ir
-            .declarations
+        let gate_edge = poly_edges
             .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("lead.osc_inst.carrier"))
-            .expect("lead.osc_inst.carrier not found");
+            .find(|e| e.source_port == Port::Named("gate".into()))
+            .unwrap();
+        assert_eq!(gate_edge.sink, env.id);
+        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
 
+        // 1 fm_osc interior + 1 voice interior + 2 external = 4
+        assert_eq!(graph.edge_count(), 4);
+    }
+
+    // -----------------------------------------------------------------------
+    // Graph algorithm tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_topological_sort_respects_edges() {
+        let ast = Ast {
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![
+                    NodeDeclaration {
+                        node_type: "osc".into(),
+                        alias: Some("src".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                    NodeDeclaration {
+                        node_type: "filter".into(),
+                        alias: Some("mid".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                    NodeDeclaration {
+                        node_type: "output".into(),
+                        alias: Some("snk".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                ],
+            }],
+            connections: vec![
+                Connection {
+                    source: Endpoint {
+                        node: "src".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "mid".into(),
+                        port: Port::None,
+                    },
+                },
+                Connection {
+                    source: Endpoint {
+                        node: "mid".into(),
+                        port: Port::None,
+                    },
+                    sink: Endpoint {
+                        node: "snk".into(),
+                        port: Port::None,
+                    },
+                },
+            ],
+            sink: "snk".into(),
+            ..Default::default()
+        };
+
+        // No macros → default pipeline is a no-op expansion, graph is unchanged.
+        let graph = Pipeline::default().run_from_ast(ast);
+        let order = graph.topological_sort();
+
+        let pos = |alias: &str| {
+            let id = graph.resolve_alias(alias).unwrap();
+            order.iter().position(|&x| x == id).unwrap()
+        };
+        assert!(pos("src") < pos("mid"));
+        assert!(pos("mid") < pos("snk"));
+    }
+
+    #[test]
+    fn test_insert_between_splits_edge() {
+        let ast = Ast {
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![
+                    NodeDeclaration {
+                        node_type: "osc".into(),
+                        alias: Some("src".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                    NodeDeclaration {
+                        node_type: "output".into(),
+                        alias: Some("snk".into()),
+                        params: None,
+                        pipes: vec![],
+                    },
+                ],
+            }],
+            connections: vec![Connection {
+                source: Endpoint {
+                    node: "src".into(),
+                    port: Port::None,
+                },
+                sink: Endpoint {
+                    node: "snk".into(),
+                    port: Port::None,
+                },
+            }],
+            sink: "snk".into(),
+            ..Default::default()
+        };
+
+        let mut graph = Pipeline::default().run_from_ast(ast);
+        assert_eq!(graph.edge_count(), 1);
+
+        graph.insert_between(0, "audio", "meter", "meter_0", Default::default());
+
+        assert_eq!(graph.node_count(), 3);
+        assert_eq!(graph.edge_count(), 2);
+        assert_eq!(graph.find_edges_between("src", "meter_0").len(), 1);
+        assert_eq!(graph.find_edges_between("meter_0", "snk").len(), 1);
+
+        let src_id = graph.resolve_alias("src").unwrap();
+        let snk_id = graph.resolve_alias("snk").unwrap();
         assert_eq!(
-            carrier.params.as_ref().unwrap().get("freq"),
-            Some(&Value::F32(880.0)),
-            "freq template should have propagated to carrier"
+            graph
+                .outgoing_edges(src_id)
+                .filter(|e| e.sink == snk_id)
+                .count(),
+            0,
+            "original direct edge should be removed"
         );
-
-        let env = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("lead.env"))
-            .expect("lead.env not found");
-
-        assert_eq!(
-            env.params.as_ref().unwrap().get("attack"),
-            Some(&Value::F32(200.0)),
-            "attack template should have propagated to env"
-        );
-
-        // --- Interior connections ---
-        // fm_osc interior: modulator -> carrier[0]
-        let mod_to_carrier = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "lead.osc_inst.modulator")
-            .expect("modulator -> carrier connection not found");
-
-        assert_eq!(mod_to_carrier.sink.node, "lead.osc_inst.carrier");
-        assert_eq!(mod_to_carrier.sink.port, Port::Index(0));
-
-        // voice interior: osc_inst (sink=carrier) -> env[1]
-        let osc_to_env = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "lead.osc_inst.carrier" && c.sink.node == "lead.env")
-            .expect("osc_inst -> env connection not found");
-
-        assert_eq!(osc_to_env.sink.port, Port::Index(1));
-
-        // --- External connections resolved through two levels of virtual ports ---
-        // poly.freq >> lead.voice_freq should resolve to lead.osc_inst.carrier with port Named("freq")
-        let freq_conn = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "poly" && c.source.port == Port::Named("freq".into()))
-            .expect("freq external connection not found");
-
-        assert_eq!(freq_conn.sink.node, "lead.osc_inst.carrier");
-        assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
-
-        // poly.gate >> lead.gate should resolve to lead.env with port Named("gate")
-        let gate_conn = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "poly" && c.source.port == Port::Named("gate".into()))
-            .expect("gate external connection not found");
-
-        assert_eq!(gate_conn.sink.node, "lead.env");
-        assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
-
-        // --- Total connection count ---
-        // 1 fm_osc interior (mod->carrier)
-        // 1 voice interior (carrier->env)
-        // 2 external (poly.freq->carrier, poly.gate->env)
-        assert_eq!(ir.connections.len(), 4);
     }
 }

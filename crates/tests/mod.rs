@@ -1,14 +1,35 @@
 #[cfg(test)]
 mod parse_and_lower {
     use legato::{
-        ir::{IR, Port, Value},
+        ir::{IRGraph, Port, Value},
+        lower::Pipeline,
         parse::legato_parser,
     };
 
-    fn parse_and_lower(src: &str) -> IR {
+    fn parse_and_lower(src: &str) -> IRGraph {
         let ast = legato_parser(src).expect("Parse failed");
-        IR::from(ast)
+        Pipeline::default().run_from_ast(ast)
     }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /// Retrieve a param value from a node by alias, panicking with a clear
+    /// message if either the node or the key is absent.
+    fn get_param(graph: &IRGraph, alias: &str, key: &str) -> Value {
+        graph
+            .find_node_by_alias(alias)
+            .unwrap_or_else(|| panic!("node '{}' not found in graph", alias))
+            .params
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| panic!("param '{}' not found on node '{}'", key, alias))
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn test_e2e_simple_patch_instantiation() {
@@ -35,58 +56,34 @@ mod parse_and_lower {
             { v1 }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        // Correct leaves emitted
-        let aliases: Vec<&str> = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .filter_map(|d| d.alias.as_deref())
-            .collect();
-
-        assert!(aliases.contains(&"v1.osc"), "missing v1.osc");
-        assert!(aliases.contains(&"v1.env"), "missing v1.env");
-
-        // Params propagated from call site
-        let osc = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("v1.osc"))
-            .expect("v1.osc not found");
-
-        assert_eq!(
-            osc.params.as_ref().unwrap().get("freq"),
-            Some(&Value::F32(880.0)),
-            "freq should be 880.0 from call site"
+        // Both leaf nodes are present.
+        assert!(
+            graph.find_node_by_alias("v1.osc").is_some(),
+            "missing v1.osc"
+        );
+        assert!(
+            graph.find_node_by_alias("v1.env").is_some(),
+            "missing v1.env"
         );
 
-        let env = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("v1.env"))
-            .expect("v1.env not found");
+        // Call-site params were substituted correctly.
+        assert_eq!(get_param(&graph, "v1.osc", "freq"), Value::F32(880.0));
+        assert_eq!(get_param(&graph, "v1.env", "attack"), Value::F32(200.0));
+        assert_eq!(get_param(&graph, "v1.env", "release"), Value::F32(300.0));
 
-        assert_eq!(
-            env.params.as_ref().unwrap().get("attack"),
-            Some(&Value::F32(200.0)),
-        );
-        assert_eq!(
-            env.params.as_ref().unwrap().get("release"),
-            Some(&Value::F32(300.0)),
-        );
+        // The two virtual-port connections (freq_in>>osc, gate>>env) produce
+        // no graph edges — only the interior osc>>env[1] edge should exist.
+        assert_eq!(graph.edge_count(), 1);
 
-        // the virtual port connections are used to build these new internal connections
-        assert_eq!(ir.connections.len(), 1);
-        let conn = &ir.connections[0];
-        assert_eq!(conn.source.node, "v1.osc");
-        assert_eq!(conn.sink.node, "v1.env");
-        assert_eq!(conn.sink.port, Port::Index(1));
+        let edges = graph.find_edges_between("v1.osc", "v1.env");
+        assert_eq!(edges.len(), 1, "expected exactly one osc→env edge");
+        assert_eq!(edges[0].sink_port, Port::Index(1));
 
-        assert_eq!(ir.sink, "v1");
+        // Graph sink points to the voice's sink leaf (v1.env).
+        let env_id = graph.find_node_by_alias("v1.env").unwrap().id;
+        assert_eq!(graph.sink, Some(env_id), "graph sink should be v1.env");
     }
 
     #[test]
@@ -121,29 +118,35 @@ mod parse_and_lower {
             { v1 }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        // Interior + 2 external
-        assert_eq!(ir.connections.len(), 3);
+        // 1 interior (osc→env) + 2 external (poly_voice→osc, poly_voice→env)
+        assert_eq!(graph.edge_count(), 3);
 
-        let freq_conn = ir
-            .connections
+        let osc = graph.find_node_by_alias("v1.osc").expect("v1.osc missing");
+        let env = graph.find_node_by_alias("v1.env").expect("v1.env missing");
+
+        let poly_edges = graph.find_edges_from("poly_voice");
+
+        let freq_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "poly_voice" && c.source.port == Port::Named("freq".into()))
-            .expect("freq connection not found");
+            .find(|e| e.source_port == Port::Named("freq".into()))
+            .expect("poly_voice.freq edge not found");
+        assert_eq!(
+            freq_edge.sink, osc.id,
+            "poly_voice.freq should route to v1.osc"
+        );
+        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
 
-        assert_eq!(freq_conn.sink.node, "v1.osc");
-        assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
-
-        let gate_conn = ir
-            .connections
+        let gate_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "poly_voice" && c.source.port == Port::Named("gate".into()))
-            .expect("gate connection not found");
-
-        assert_eq!(gate_conn.sink.node, "v1.env");
-        assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
+            .find(|e| e.source_port == Port::Named("gate".into()))
+            .expect("poly_voice.gate edge not found");
+        assert_eq!(
+            gate_edge.sink, env.id,
+            "poly_voice.gate should route to v1.env"
+        );
+        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
     }
 
     #[test]
@@ -165,32 +168,12 @@ mod parse_and_lower {
             { v1 }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        let get_freq = |alias: &str| -> f32 {
-            ir.declarations
-                .iter()
-                .flat_map(|s| s.declarations.iter())
-                .find(|d| d.alias.as_deref() == Some(alias))
-                .unwrap_or_else(|| panic!("{} not found", alias))
-                .params
-                .as_ref()
-                .unwrap()
-                .get("freq")
-                .and_then(|v| {
-                    if let Value::F32(f) = v {
-                        Some(*f)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| panic!("no freq on {}", alias))
-        };
-
-        assert_eq!(get_freq("v1.osc"), 110.0);
-        assert_eq!(get_freq("v2.osc"), 220.0);
-        assert_eq!(get_freq("v3.osc"), 440.0);
+        // Each instance has its own leaf with its own substituted freq.
+        assert_eq!(get_param(&graph, "v1.osc", "freq"), Value::F32(110.0));
+        assert_eq!(get_param(&graph, "v2.osc", "freq"), Value::F32(220.0));
+        assert_eq!(get_param(&graph, "v3.osc", "freq"), Value::F32(440.0));
     }
 
     #[test]
@@ -239,80 +222,74 @@ mod parse_and_lower {
             { lead }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        let aliases: Vec<&str> = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .filter_map(|d| d.alias.as_deref())
-            .collect();
+        // Four leaf nodes total (modulator, carrier, env, poly_voice).
+        assert_eq!(graph.node_count(), 4);
 
-        // Should have four nodes
-        assert_eq!(aliases.len(), 4);
+        for alias in [
+            "lead.osc_inst.modulator",
+            "lead.osc_inst.carrier",
+            "lead.env",
+        ] {
+            assert!(
+                graph.find_node_by_alias(alias).is_some(),
+                "missing {}",
+                alias
+            );
+        }
 
-        assert!(aliases.contains(&"lead.osc_inst.modulator"));
-        assert!(aliases.contains(&"lead.osc_inst.carrier"));
-        assert!(aliases.contains(&"lead.env"));
-
-        // Param propagated through two template levels
-        let carrier = ir
-            .declarations
-            .iter()
-            .flat_map(|s| s.declarations.iter())
-            .find(|d| d.alias.as_deref() == Some("lead.osc_inst.carrier"))
-            .expect("lead.osc_inst.carrier not found");
-
+        // Param propagated through two levels of template substitution.
         assert_eq!(
-            carrier.params.as_ref().unwrap().get("freq"),
-            Some(&Value::F32(880.0))
+            get_param(&graph, "lead.osc_inst.carrier", "freq"),
+            Value::F32(880.0)
         );
+        assert_eq!(get_param(&graph, "lead.env", "attack"), Value::F32(200.0));
 
-        // interior connections
-        let mod_to_carrier = ir
-            .connections
+        let carrier = graph.find_node_by_alias("lead.osc_inst.carrier").unwrap();
+        let env = graph.find_node_by_alias("lead.env").unwrap();
+
+        // fm_osc interior: modulator → carrier[0]
+        let mod_to_carrier =
+            graph.find_edges_between("lead.osc_inst.modulator", "lead.osc_inst.carrier");
+        assert_eq!(mod_to_carrier.len(), 1, "expected modulator→carrier edge");
+        assert_eq!(mod_to_carrier[0].sink_port, Port::Index(0));
+
+        // voice interior: carrier (osc_inst sink) → env[1]
+        let osc_to_env = graph.find_edges_between("lead.osc_inst.carrier", "lead.env");
+        assert_eq!(osc_to_env.len(), 1, "expected carrier→env edge");
+        assert_eq!(osc_to_env[0].sink_port, Port::Index(1));
+
+        // External connections resolved through two levels of virtual ports.
+        let poly_edges = graph.find_edges_from("poly_voice");
+
+        let freq_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "lead.osc_inst.modulator")
-            .expect("modulator -> carrier not found");
-        assert_eq!(mod_to_carrier.sink.node, "lead.osc_inst.carrier");
-        assert_eq!(mod_to_carrier.sink.port, Port::Index(0));
+            .find(|e| e.source_port == Port::Named("freq".into()))
+            .expect("poly_voice.freq edge missing");
+        assert_eq!(
+            freq_edge.sink, carrier.id,
+            "poly_voice.freq should route to lead.osc_inst.carrier"
+        );
+        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
 
-        let osc_to_env = ir
-            .connections
+        let gate_edge = poly_edges
             .iter()
-            .find(|c| c.source.node == "lead.osc_inst.carrier" && c.sink.node == "lead.env")
-            .expect("osc_inst -> env not found");
-        assert_eq!(osc_to_env.sink.port, Port::Index(1));
+            .find(|e| e.source_port == Port::Named("gate".into()))
+            .expect("poly_voice.gate edge missing");
+        assert_eq!(
+            gate_edge.sink, env.id,
+            "poly_voice.gate should route to lead.env"
+        );
+        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
 
-        // double virtual port resolution:
-        // poly_voice.freq >> lead.voice_freq → lead.osc_inst.carrier Named("freq")
-        let freq_conn = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "poly_voice" && c.source.port == Port::Named("freq".into()))
-            .expect("freq external connection not found");
-
-        assert_eq!(freq_conn.sink.node, "lead.osc_inst.carrier");
-        assert_eq!(freq_conn.sink.port, Port::Named("freq".into()));
-
-        // poly_voice.gate >> lead.gate → lead.env Named("gate")
-        let gate_conn = ir
-            .connections
-            .iter()
-            .find(|c| c.source.node == "poly_voice" && c.source.port == Port::Named("gate".into()))
-            .expect("gate external connection not found");
-
-        assert_eq!(gate_conn.sink.node, "lead.env");
-        assert_eq!(gate_conn.sink.port, Port::Named("gate".into()));
-
-        // Total: 1 fm_osc interior + 1 voice interior + 2 external
-        assert_eq!(ir.connections.len(), 4);
+        // 1 fm_osc interior + 1 voice interior + 2 external = 4
+        assert_eq!(graph.edge_count(), 4);
     }
 
     #[test]
     fn test_e2e_passthrough_via_sink_no_virtual_port() {
-        // Connecting a patch with Port::None should wire from its sink
+        // Connecting a patch with Port::None should originate from its sink leaf.
         let src = r#"
             patch voice(freq = 440.0) {
                 audio {
@@ -338,17 +315,20 @@ mod parse_and_lower {
             { mixer }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        let passthrough = ir
-            .connections
-            .iter()
-            .find(|c| c.sink.node == "mixer")
-            .expect("passthrough to mixer not found");
+        let edges_to_mixer = graph.find_edges_to("mixer");
+        assert_eq!(
+            edges_to_mixer.len(),
+            1,
+            "expected exactly one edge into mixer"
+        );
 
-        // Should originate from the sink leaf, not the alias
-        assert_eq!(passthrough.source.node, "v1.env");
+        let env = graph.find_node_by_alias("v1.env").expect("v1.env missing");
+        assert_eq!(
+            edges_to_mixer[0].source, env.id,
+            "passthrough should originate from v1.env (the voice sink leaf), not the macro alias"
+        );
     }
 
     #[test]
@@ -362,34 +342,18 @@ mod parse_and_lower {
             }
 
             patches {
-                osc_unit: a { freq: 880.0 }, // overrides freq, gain stays default
-                osc_unit: b {}               // both default
+                osc_unit: a { freq: 880.0 }, // overrides freq; gain stays default
+                osc_unit: b {}               // both params use defaults
             }
 
             { a }
         "#;
 
-        let ir = parse_and_lower(src);
-        dbg!(&ir);
+        let graph = parse_and_lower(src);
 
-        let get_param = |alias: &str, key: &str| -> Value {
-            ir.declarations
-                .iter()
-                .flat_map(|s| s.declarations.iter())
-                .find(|d| d.alias.as_deref() == Some(alias))
-                .unwrap_or_else(|| panic!("{} not found", alias))
-                .params
-                .as_ref()
-                .unwrap()
-                .get(key)
-                .cloned()
-                .unwrap_or_else(|| panic!("no {} on {}", key, alias))
-        };
-
-        // a -> freq overridden
-        assert_eq!(get_param("a.sine", "freq"), Value::F32(880.0));
-
-        // b -> default freq 220.0
-        assert_eq!(get_param("b.sine", "freq"), Value::F32(220.0));
+        // a.sine: freq override applied.
+        assert_eq!(get_param(&graph, "a.sine", "freq"), Value::F32(880.0));
+        // b.sine: default
+        assert_eq!(get_param(&graph, "b.sine", "freq"), Value::F32(220.0));
     }
 }
