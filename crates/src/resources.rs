@@ -25,6 +25,10 @@ impl ResourceBuilder {
         self.delay_lines.insert(delay_line)
     }
 
+    pub fn replace_delay_line(&mut self, key: DelayLineKey, delay_line: DelayLine) {
+        *self.delay_lines.get_mut(key).expect("Delay line not found") = delay_line;
+    }
+
     pub fn add_sample_resource(&mut self, sample: Arc<AudioSampleHandle>) -> SampleKey {
         self.sample_handles.insert(sample)
     }

@@ -642,10 +642,12 @@ impl<'a> ResourceBuilderView<'a> {
         key
     }
 
-    pub fn get_delay_line_key(&self, name: &String) -> Result<DelayLineKey, ValidationError> {
-        self.delay_keys.get(name).cloned().ok_or_else(|| {
-            ValidationError::ResourceNotFound(format!("Could not find delay key {}", name))
-        })
+    pub fn replace_delay_line(&mut self, key: DelayLineKey, delay_line: DelayLine) {
+        self.resource_builder.replace_delay_line(key, delay_line);
+    }
+
+    pub fn get_delay_line_key(&self, name: &String) -> Option<DelayLineKey> {
+        self.delay_keys.get(name).cloned()
     }
 
     pub fn add_sampler(&mut self, name: &String) -> SampleKey {

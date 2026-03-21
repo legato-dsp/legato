@@ -128,7 +128,15 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let delay_line = DelayLine::new(capacity as usize, chans);
 
-                let key = rb.add_delay_line(&name, delay_line);
+                // Replace this with the correct line if it was already made with default args.
+                let key = match rb.get_delay_line_key(&name) {
+                    Some(key) => {
+                        rb.replace_delay_line(key, delay_line);
+                        key
+                    }
+                    // Otherwise instantiate a new delay line
+                    None => rb.add_delay_line(&name, delay_line),
+                };
 
                 let node = DelayWrite::new(key, chans);
 
@@ -143,6 +151,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let name = p
                     .get_str("delay_name")
                     .expect("Could not find required parameter sampler_name");
+
                 let len = p
                     .get_array_duration_ms("delay_length")
                     .unwrap_or(vec![Duration::from_secs(1); 2]);
@@ -151,7 +160,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let key = rb
                     .get_delay_line_key(&name)
-                    .unwrap_or_else(|_| panic!("Could not find delay line key {}", name));
+                    .unwrap_or_else(|| rb.add_delay_line(&name, DelayLine::default()));
 
                 let node = DelayRead::new(chans, key, len);
 

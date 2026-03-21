@@ -15,6 +15,15 @@ pub struct DelayLine {
     write_pos: Vec<usize>,
 }
 
+impl Default for DelayLine {
+    fn default() -> Self {
+        Self {
+            buffers: vec![RingBuffer::new(1024), RingBuffer::new(1024)],
+            write_pos: vec![0, 0],
+        }
+    }
+}
+
 impl DelayLine {
     pub fn new(capacity: usize, chans: usize) -> Self {
         let buffers = vec![RingBuffer::new(capacity); chans];
