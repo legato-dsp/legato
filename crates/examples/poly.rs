@@ -15,60 +15,71 @@ fn main() {
     let graph = String::from(
         r#"
 
+        patch voice(
+            freq = 440.0,
+            attack = 200.0,
+            decay = 200.0,
+            sustain = 0.3,
+            release = 200.0
+        ) {
+            in freq gate
+
+            audio {
+                sine { freq: $freq },
+                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+            }
+
+            gate >> adsr.gate
+
+            freq >> sine.freq
+            sine >> adsr[1]
+
+            { adsr }
+        }
+
+        patches {
+            voice: v1 { },
+            voice: v2 { },
+            voice: v3 { },
+            voice: v4 { },
+            voice: v5 { },
+        }
+
         audio {
-            sine: sine_one { freq: 440.0, chans: 1 },
-            sine: sine_two { freq: 440.0, chans: 1 },
-            sine: sine_three { freq: 440.0, chans: 1 },
-            sine: sine_four { freq: 440.0, chans: 1 },
-            sine: sine_five { freq: 440.0, chans: 1 },
-
-            adsr: adsr_one { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
-            adsr: adsr_two { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
-            adsr: adsr_three { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
-            adsr: adsr_four { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
-            adsr: adsr_five { attack: 100.0, decay: 700.0, sustain: 0.3, release: 400.0, chans: 1 },
-
             track_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
 
             delay_write: dw1 { delay_name: "d_one", chans: 2 },
             delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 600, 731 ] },
             delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 459, 643 ] },
-            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [1.0, 0.3, 0.2] },
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.6, 0.6] },
             
-            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.6, 0.8] }
         }
 
         midi { 
             poly_voice { chan: 0, voices: 5 }
         }
 
-        // sine waves
-        sine_one >> adsr_one[1]
-        sine_two >> adsr_two[1]
-        sine_three >> adsr_three[1]
-        sine_four >> adsr_four[1]
-        sine_five >> adsr_five[1]
-
         // gate
-        poly_voice[0] >> adsr_one.gate
-        poly_voice[3] >> adsr_two.gate
-        poly_voice[6] >> adsr_three.gate
-        poly_voice[9] >> adsr_four.gate
-        poly_voice[12] >> adsr_five.gate
+        poly_voice[0] >> v1.gate
+        poly_voice[3] >> v2.gate
+        poly_voice[6] >> v3.gate
+        poly_voice[9] >> v4.gate
+        poly_voice[12] >> v5.gate
 
         // freq
-        poly_voice[1] >> sine_one.freq
-        poly_voice[4] >> sine_two.freq
-        poly_voice[7] >> sine_three.freq
-        poly_voice[10] >> sine_four.freq
-        poly_voice[13] >> sine_five.freq
+        poly_voice[1] >> v1.freq
+        poly_voice[4] >> v2.freq
+        poly_voice[7] >> v3.freq
+        poly_voice[10] >> v4.freq
+        poly_voice[13] >> v5.freq
 
-        adsr_one >> track_mixer[0]
-        adsr_two >> track_mixer[1]
-        adsr_three >> track_mixer[2]
-        adsr_four >> track_mixer[3]
-        adsr_five >> track_mixer[4]
+        v1 >> track_mixer[0]
+        v2 >> track_mixer[1]
+        v3 >> track_mixer[2]
+        v4 >> track_mixer[3]
+        v5 >> track_mixer[4]
 
         track_mixer >> mono_fan_out
 
