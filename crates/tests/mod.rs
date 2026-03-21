@@ -11,10 +11,6 @@ mod parse_and_lower {
         Pipeline::default().run_from_ast(ast)
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
     /// Retrieve a param value from a node by alias, panicking with a clear
     /// message if either the node or the key is absent.
     fn get_param(graph: &IRGraph, alias: &str, key: &str) -> Value {
@@ -26,10 +22,6 @@ mod parse_and_lower {
             .cloned()
             .unwrap_or_else(|| panic!("param '{}' not found on node '{}'", key, alias))
     }
-
-    // -----------------------------------------------------------------------
-    // Tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_e2e_simple_patch_instantiation() {
@@ -342,8 +334,8 @@ mod parse_and_lower {
             }
 
             patches {
-                osc_unit: a { freq: 880.0 }, // overrides freq; gain stays default
-                osc_unit: b {}               // both params use defaults
+                osc_unit: a { freq: 880.0 }, // overrides freq
+                osc_unit: b {}               // use defaults
             }
 
             { a }
