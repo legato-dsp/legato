@@ -233,7 +233,11 @@ impl MacroExpansionPass {
                     }),
                 Port::None => (source_id, Port::None),
                 Port::Slice(_, _) => panic!(
-                    "Port::Slice is not supported on virtual ports (macro '{}')",
+                    "Port::Slice is not yet supported on virtual ports (macro '{}')",
+                    node.node_type
+                ),
+                Port::Stride { .. } => panic!(
+                    "Port::Stride is not yet supported on virtual ports (macro '{}')",
                     node.node_type
                 ),
             };
@@ -405,7 +409,12 @@ impl MacroExpansionPass {
                                 (*id, port.clone())
                             }),
                         Port::None => (snk.source_id, Port::None),
-                        Port::Slice(_, _) => panic!("Slices are not supported on virtual ports"),
+                        Port::Slice(_, _) => {
+                            panic!("Port slices are not supported on virtual ports")
+                        }
+                        Port::Stride { .. } => {
+                            panic!("Port striding is not supported on virtual ports")
+                        }
                     }
                 };
 

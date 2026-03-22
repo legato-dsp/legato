@@ -33,6 +33,11 @@ pub enum Port {
     Named(String),
     Index(usize),
     Slice(usize, usize),
+    Stride {
+        start: usize,
+        end: usize,
+        stride: usize,
+    },
     None,
 }
 

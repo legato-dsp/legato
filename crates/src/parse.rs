@@ -229,6 +229,18 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
     let port = choice((
         // node.mono
         just('.').ignore_then(ident).map(Port::Named),
+        // port stride e.g [0:10:2]: this maps to [start:end:step].
+        // NOTE: Unlike python we don't take implicit values, this is not good [::-1]!
+        uint.then_ignore(just(":"))
+            .then(uint)
+            .then_ignore(just(":"))
+            .then(uint)
+            .delimited_by(just("["), just("]"))
+            .map(|((start, end), stride)| Port::Stride {
+                start: start as usize,
+                end: end as usize,
+                stride: stride as usize,
+            }),
         // node[0..2]
         uint.then_ignore(just(".."))
             .then(uint)
@@ -437,6 +449,24 @@ mod test {
         };
 
         assert_parse_equals_ast(src, expected);
+    }
+
+    #[test]
+    fn test_port_stride() {
+        let src = r#"test_node[0:10:2]"#;
+        let res = endpoint_parser().parse(src).unwrap();
+
+        assert_eq!(
+            res,
+            Endpoint {
+                node: "test_node".into(),
+                port: Port::Stride {
+                    start: 0,
+                    end: 10,
+                    stride: 2
+                }
+            }
+        )
     }
 
     #[test]

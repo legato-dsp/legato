@@ -300,6 +300,13 @@ where
 
                 (start..end).collect::<Vec<_>>()
             }
+            Port::Stride { start, end, stride } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).step_by(stride).collect()
+            }
         };
 
         let sink_indicies: Vec<usize> = match connection.sink_kind {
@@ -325,6 +332,13 @@ where
                 }
 
                 (start..end).collect::<Vec<_>>()
+            }
+            Port::Stride { start, end, stride } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).step_by(stride).collect()
             }
         };
 
