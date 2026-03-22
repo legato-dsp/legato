@@ -1,10 +1,10 @@
 #![allow(unused_mut)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
-    ir::DSLParams,
+    ir::{DSLParams, Object},
     node::DynNode,
 };
 
@@ -21,6 +21,18 @@ pub struct NodeSpec {
     pub required_params: BTreeSet<String>,
     pub optional_params: BTreeSet<String>,
     pub build: NodeFactory,
+}
+
+impl NodeSpec {
+    /// A quick pass to simply see if there are any keys
+    /// we do not need in this context.
+    pub fn check_for_bad_params(&self, params: &DSLParams) {
+        for k in params.0.keys() {
+            if !self.required_params.contains(k) && !self.optional_params.contains(k) {
+                panic!("Invalid params {} found on node {}", k, self.name);
+            }
+        }
+    }
 }
 
 #[macro_export]

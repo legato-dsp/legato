@@ -54,7 +54,10 @@ impl NodeRegistry {
         params: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
-            Some(spec) => (spec.build)(resource_builder, params),
+            Some(spec) => {
+                spec.check_for_bad_params(&params);
+                (spec.build)(resource_builder, params)
+            }
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
                 node_name
@@ -118,7 +121,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                     .expect("Could not find required parameter delay_name");
 
                 let len = p
-                    .get_duration("delay_length")
+                    .get_duration_ms("delay_length")
                     .unwrap_or(Duration::from_secs(1));
 
                 let chans = p.get_usize("chans").unwrap_or(2);
@@ -312,7 +315,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
             build = |_, p| {
                 let chans = p.get_usize("chans").unwrap_or(2);
                 let duration = p
-                    .get_duration("duration")
+                    .get_duration_ms("duration")
                     .unwrap_or(Duration::from_secs_f32(5.0));
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
@@ -345,7 +348,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let chans = p.get_usize("chans").unwrap_or(2);
 
                 let delay_length = p
-                    .get_duration("delay_length")
+                    .get_duration_ms("delay_length")
                     .unwrap_or(Duration::from_millis(200));
 
                 let delay_length_samples = sr as f32 * (delay_length.as_secs_f32());

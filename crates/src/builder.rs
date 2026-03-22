@@ -24,7 +24,7 @@ use crate::{
 };
 use arc_swap::ArcSwapOption;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     marker::PhantomData,
     sync::{Arc, atomic::AtomicU64},
 };
@@ -453,23 +453,25 @@ impl LegatoBuilder<DslBuilding> {
         let ast = legato_parser(content).unwrap();
 
         // Passes transform the graph one step at a time.
-        let graph = Pipeline::new()
+        let ir = Pipeline::new()
             .add_pass(MacroExpansionPass::default())
             // .add_pass(SampleRateBoundaryPass::new(self.runtime.get_config()))
             // .add_pass(PortExpansionPass::default())
             .run_from_ast(ast);
 
+        println!("{}", &ir);
+
         // Sanity check: every node must be a leaf before the builder runs.
         debug_assert!(
-            !graph.has_unresolved_macros(),
+            !ir.has_unresolved_macros(),
             "_build_dsl: unresolved MacroRef nodes remain after pipeline"
         );
 
         // Map each IRNode (by NodeId) to a runtime NodeKey as we add nodes.
         let mut ir_to_runtime: HashMap<NodeId, NodeKey> = HashMap::new();
 
-        for node_id in graph.topological_sort() {
-            let node = graph.get_node(node_id).unwrap();
+        for node_id in ir.topological_sort() {
+            let node = ir.get_node(node_id).unwrap();
             let dsl_params = DSLParams::new(&node.params);
 
             // _add_node_ref_self populates working_name_lookup (needed by
@@ -491,7 +493,7 @@ impl LegatoBuilder<DslBuilding> {
         }
 
         // Wire edges using the NodeId → NodeKey map (no string lookups).
-        for edge in graph.edges() {
+        for edge in ir.edges() {
             self._connect_ref_self(AddConnectionProps {
                 source: ir_to_runtime[&edge.source],
                 source_kind: edge.source_port.clone(),
@@ -501,14 +503,14 @@ impl LegatoBuilder<DslBuilding> {
         }
 
         // Resolve sink / source.
-        let sink_id = graph
+        let sink_id = ir
             .sink
             .expect("IRGraph has no sink — check the DSL for a `sink:` declaration");
         self.runtime
             .set_sink_key(ir_to_runtime[&sink_id])
             .expect("Could not set sink");
 
-        if let Some(source_id) = graph.source {
+        if let Some(source_id) = ir.source {
             self.runtime
                 .set_source_key(ir_to_runtime[&source_id])
                 .expect("Could not set runtime source");

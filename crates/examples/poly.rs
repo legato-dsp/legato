@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
@@ -10,17 +8,14 @@ use legato::{
 };
 
 fn main() {
-    // Note: In reality, you would not do this. A custom node or subgraph is preferable.
-
     let graph = String::from(
         r#"
-
         patch voice(
             freq = 440.0,
-            attack = 200.0,
-            decay = 200.0,
-            sustain = 0.3,
-            release = 200.0
+            attack = 100.0,
+            decay = 50.0,
+            sustain = 0.0,
+            release = 30.0
         ) {
             in freq gate
 
@@ -46,15 +41,16 @@ fn main() {
         }
 
         audio {
-            track_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
 
-            delay_write: dw1 { delay_name: "d_one", chans: 2 },
-            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 600, 731 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 459, 643 ] },
-            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.6, 0.6] },
+            delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
+
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.0, 0.0] },
             
-            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.6, 0.8] }
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.0, 0.2] }
         }
 
         midi { 
@@ -75,27 +71,25 @@ fn main() {
         poly_voice[10] >> v4.freq
         poly_voice[13] >> v5.freq
 
-        v1 >> track_mixer[0]
-        v2 >> track_mixer[1]
-        v3 >> track_mixer[2]
-        v4 >> track_mixer[3]
-        v5 >> track_mixer[4]
+        v1 >> osc_mixer[0]
+        v2 >> osc_mixer[1]
+        v3 >> osc_mixer[2]
+        v4 >> osc_mixer[3]
+        v5 >> osc_mixer[4]
 
-        track_mixer >> mono_fan_out
+        osc_mixer >> mono_fan_out
 
         mono_fan_out >> master[0..2]
         mono_fan_out >> dw1[0..2]
 
-    
         dr1[0..2] >> master[2..4]
+        dr2[0..2] >> master[4..6]
 
         // feedback    
         dr1 >> feedback[0..2]
         dr2 >> feedback[2..4]
 
         feedback >> dw1
-
-        dr2[0] >> master[4..6]
 
         { master }
     "#,
@@ -119,16 +113,9 @@ fn main() {
     )
     .unwrap();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .set_midi_runtime(midi_rt_fe)
         .build_dsl(&graph);
-
-    let _ = frontend.load_sample(
-        &String::from("amen"),
-        Path::new("../samples/amen.wav"),
-        2,
-        config.sample_rate as u32,
-    );
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");

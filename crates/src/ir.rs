@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    fmt,
     time::Duration,
 };
 
@@ -451,6 +452,45 @@ impl IRGraph {
     }
 }
 
+impl fmt::Display for IRGraph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Build reverse map once: NodeId -> alias
+        let id_to_alias: HashMap<NodeId, &str> = self
+            .alias_index
+            .iter()
+            .map(|(alias, &id)| (id, alias.as_str()))
+            .collect();
+
+        writeln!(f, "nodes:")?;
+        for node in self
+            .topological_sort()
+            .into_iter()
+            .map(|x| self.get_node(x).unwrap())
+        {
+            writeln!(
+                f,
+                "  [{:?}] {} ({}::{})",
+                node.id,
+                id_to_alias.get(&node.id).unwrap_or(&"?"),
+                node.namespace,
+                node.node_type
+            )?;
+        }
+
+        writeln!(f, "edges:")?;
+        for edge in &self.edges {
+            let src = id_to_alias.get(&edge.source).unwrap_or(&"?");
+            let snk = id_to_alias.get(&edge.sink).unwrap_or(&"?");
+            writeln!(
+                f,
+                "  {} {:?} -> {} {:?}",
+                src, edge.source_port, snk, edge.sink_port
+            )?;
+        }
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DSLParams (unchanged)
 // ---------------------------------------------------------------------------
@@ -472,7 +512,8 @@ impl<'a> DSLParams<'a> {
         }
     }
 
-    pub fn get_duration(&self, key: &str) -> Option<Duration> {
+    // TODO: More units
+    pub fn get_duration_ms(&self, key: &str) -> Option<Duration> {
         match self.0.get(key) {
             Some(Value::F32(ms)) => Some(Duration::from_secs_f32(ms / 1000.0)),
             Some(Value::I32(ms)) => Some(Duration::from_millis(*ms as u64)),
