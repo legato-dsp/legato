@@ -12,10 +12,10 @@ fn main() {
         r#"
         patch voice(
             freq = 440.0,
-            attack = 100.0,
-            decay = 50.0,
-            sustain = 0.0,
-            release = 30.0
+            attack = 200.0,
+            decay = 200.0,
+            sustain = 0.3,
+            release = 200.0
         ) {
             in freq gate
 
@@ -48,9 +48,9 @@ fn main() {
             delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
             delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
 
-            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.0, 0.0] },
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
             
-            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.0, 0.2] }
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
         }
 
         midi { 
