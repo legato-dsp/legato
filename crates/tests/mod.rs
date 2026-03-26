@@ -348,4 +348,46 @@ mod parse_and_lower {
         // b.sine: default
         assert_eq!(get_param(&graph, "b.sine", "freq"), Value::F32(220.0));
     }
+
+    // #[test]
+    // fn test_e2e_multi_nodes_nested() {
+    //     let src = r#"
+    //         patch fm(freq = 220.0) {
+    //             audio {
+    //                 sine: carrier { freq: $freq },
+    //                 sine: mod { freq: $freq }
+    //             }
+
+    //             carrier >> mod.freq
+
+    //             { mod }
+    //         }
+
+    //         patch reverb {
+    //             in audio_in
+
+    //             audio {
+    //                 allpass * 4 { delay_length: 20, feedback: 0.5, chans: 1 },
+    //             }
+
+    //             audio_in >> allpass(0)
+    //             allpass(0) >> allpass(1)
+    //             allpass(1) >> allpass(2)
+    //             allpass(2) >> allpass(3)
+
+    //             { allpass(3) }
+    //         }
+
+    //         audio {
+    //             fm * 8 { freq: 880.0 },
+    //             track_mixer { tracks: 8, chans_per_track: 1 }
+    //         }
+
+    //         fm(*) >> track_mixer
+
+    //         { track_mixer }
+    //     "#;
+
+    //     let graph = parse_and_lower(src);
+    // }
 }

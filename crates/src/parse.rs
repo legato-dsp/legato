@@ -1,6 +1,7 @@
 use crate::{builder::ValidationError, ir::*};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
+use heapless::sorted_linked_list::Node;
 use std::collections::BTreeMap;
 
 fn comment<'a>() -> impl Parser<'a, &'a str, (), Err<Rich<'a, char>>> {
@@ -238,6 +239,23 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
         .to_slice()
         .map(|s: &str| s.parse::<u32>().unwrap());
 
+    let selector = choice((
+        // Single node selection
+        uint.delimited_by(just('('), just(')'))
+            .map(|x| NodeSelector::Index(x as usize)),
+        // Range node selection
+        uint.then_ignore(just(".."))
+            .then(uint)
+            .delimited_by(just('('), just(')'))
+            .map(|(s, e)| NodeSelector::Range(s as usize, e as usize)),
+        // Wildcard
+        just("*")
+            .delimited_by(just('('), just(')'))
+            .map(|_| NodeSelector::All),
+    ))
+    .or_not()
+    .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
+
     let port = choice((
         // node.mono
         just('.').ignore_then(ident).map(Port::Named),
@@ -265,7 +283,14 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
     .or_not()
     .map(|p| p.unwrap_or(Port::None));
 
-    ident.then(port).map(|(node, port)| Endpoint { node, port })
+    ident
+        .then(selector)
+        .then(port)
+        .map(|((node, node_selector), port)| Endpoint {
+            node,
+            port,
+            node_selector,
+        })
 }
 
 fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich<'a, char>>> {
@@ -473,6 +498,7 @@ mod test {
             res,
             Endpoint {
                 node: "test_node".into(),
+                node_selector: NodeSelector::Single,
                 port: Port::Stride {
                     start: 0,
                     end: 10,

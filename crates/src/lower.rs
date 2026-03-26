@@ -4,19 +4,11 @@ use std::collections::HashMap;
 
 const MAXIMUM_DEPTH: u8 = 16;
 
-// ---------------------------------------------------------------------------
-// GraphPass trait
-// ---------------------------------------------------------------------------
-
 /// A single, named transformation of an [`IRGraph`].
 pub trait GraphPass {
     fn name(&self) -> &'static str;
     fn run(&self, graph: IRGraph) -> IRGraph;
 }
-
-// ---------------------------------------------------------------------------
-// Pipeline
-// ---------------------------------------------------------------------------
 
 /// An ordered sequence of [`GraphPass`]es applied to an [`IRGraph`].
 pub struct Pipeline {
@@ -50,7 +42,9 @@ impl Pipeline {
 impl Default for Pipeline {
     /// The default pipeline. This will eventually handle sample rates, spawning nodes N times, etc.
     fn default() -> Self {
-        Self::new().add_pass(MacroExpansionPass::default())
+        Self::new()
+            .add_pass(MacroExpansionPass::default())
+            .add_pass(SpawnKNodesPass::default())
     }
 }
 
@@ -112,7 +106,14 @@ fn convert_macro(
         }
         let src = local_alias_to_id[&conn.source.node];
         let snk = local_alias_to_id[&conn.sink.node];
-        body.connect(src, conn.source.port.clone(), snk, conn.sink.port.clone());
+        body.connect_multi(
+            src,
+            conn.source.node_selector.clone(),
+            conn.source.port.clone(),
+            snk,
+            conn.sink.node_selector.clone(),
+            conn.sink.port.clone(),
+        );
     }
 
     let virtual_input_map = ast_macro
@@ -191,13 +192,20 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
     // Preserve connections verbatim.  Virtual ports are not resolved here;
     // they pass through as `Port::Named` and are handled by MacroExpansionPass.
     for conn in &ast.connections {
-        let src = *alias_to_id.get(&conn.source.node).unwrap_or_else(|| {
-            panic!("ast_to_graph: source node '{}' not found", conn.source.node)
-        });
+        let src = *alias_to_id
+            .get(&conn.source.node)
+            .unwrap_or_else(|| panic!("ast_to_graph: source '{}' not found", conn.source.node));
         let snk = *alias_to_id
             .get(&conn.sink.node)
-            .unwrap_or_else(|| panic!("ast_to_graph: sink node '{}' not found", conn.sink.node));
-        graph.connect(src, conn.source.port.clone(), snk, conn.sink.port.clone());
+            .unwrap_or_else(|| panic!("ast_to_graph: sink '{}' not found", conn.sink.node));
+        graph.connect_multi(
+            src,
+            conn.source.node_selector.clone(),
+            conn.source.port.clone(),
+            snk,
+            conn.sink.node_selector.clone(),
+            conn.sink.port.clone(),
+        );
     }
 
     graph.sink = alias_to_id.get(&ast.sink).copied();
@@ -290,12 +298,26 @@ impl MacroExpansionPass {
                     node.node_type
                 ),
             };
-            graph.connect(edge.source, edge.source_port, target_id, target_port);
+            graph.connect_multi(
+                edge.source,
+                edge.source_selector.clone(),
+                edge.source_port,
+                target_id,
+                NodeSelector::Single,
+                target_port,
+            );
         }
 
         // Rewire outgoing edges
         for edge in outgoing {
-            graph.connect(new_sink, edge.source_port, edge.sink, edge.sink_port);
+            graph.connect_multi(
+                new_sink,
+                NodeSelector::Single,
+                edge.source_port,
+                edge.sink,
+                edge.sink_selector.clone(),
+                edge.sink_port,
+            );
         }
 
         // Update sink and source
@@ -338,12 +360,7 @@ impl MacroExpansionPass {
 
         // Clone edges
         for edge in ir_macro.body.edges() {
-            graph.connect(
-                id_map[&edge.source],
-                edge.source_port.clone(),
-                id_map[&edge.sink],
-                edge.sink_port.clone(),
-            );
+            graph.reconnect(id_map[&edge.source], id_map[&edge.sink], edge);
         }
 
         id_map
@@ -357,6 +374,155 @@ impl MacroExpansionPass {
                     *val = replacement.clone();
                 }
             }
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct SpawnKNodesPass;
+
+impl GraphPass for SpawnKNodesPass {
+    fn name(&self) -> &'static str {
+        "SpawnKNodesPass"
+    }
+
+    fn run(&self, graph: IRGraph) -> IRGraph {
+        self.expand_nodes(graph)
+    }
+}
+
+impl SpawnKNodesPass {
+    fn expand_nodes(&self, mut graph: IRGraph) -> IRGraph {
+        let multi: Vec<(NodeId, IRNode)> = graph
+            .nodes()
+            .filter(|n| n.count > 1)
+            .map(|n| (n.id, n.clone()))
+            .collect();
+
+        if multi.is_empty() {
+            return graph;
+        }
+
+        let multi_ids: std::collections::HashSet<NodeId> =
+            multi.iter().map(|(id, _)| *id).collect();
+
+        // ── Phase 1: spawn N instances for every multi-node ────────────────
+        let mut expansion: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+
+        for (orig_id, node) in &multi {
+            let mut instances = Vec::with_capacity(node.count as usize);
+            for i in 0..node.count as usize {
+                let alias = format!("{}.{}", node.alias, i);
+                let new_id = graph.add_node(
+                    node.kind.clone(),
+                    node.namespace.clone(),
+                    node.node_type.clone(),
+                    alias,
+                    node.params.clone(),
+                    node.pipes.clone(),
+                    1,
+                );
+                instances.push(new_id);
+            }
+            expansion.insert(*orig_id, instances);
+        }
+
+        // ── Phase 2: expand edges that touch any multi-node ────────────────
+        let snapshot: Vec<IREdge> = graph.edges().to_vec();
+
+        for edge in &snapshot {
+            let src_multi = multi_ids.contains(&edge.source);
+            let snk_multi = multi_ids.contains(&edge.sink);
+            if !src_multi && !snk_multi {
+                continue; // unaffected — left in place
+            }
+
+            let src_pool: Vec<NodeId> = if src_multi {
+                expansion[&edge.source].clone()
+            } else {
+                vec![edge.source]
+            };
+            let snk_pool: Vec<NodeId> = if snk_multi {
+                expansion[&edge.sink].clone()
+            } else {
+                vec![edge.sink]
+            };
+
+            let srcs = edge.source_selector.select(&src_pool).to_vec();
+            let snks = edge.sink_selector.select(&snk_pool).to_vec();
+
+            Self::expand_edge(&mut graph, edge, &srcs, &snks);
+        }
+
+        // ── Phase 3: remove originals (also removes their incident edges) ──
+        for (orig_id, _) in &multi {
+            if graph.sink == Some(*orig_id) {
+                // Last instance is the natural graph output.
+                graph.sink = expansion[orig_id].last().copied();
+            }
+            if graph.source == Some(*orig_id) {
+                graph.source = expansion[orig_id].first().copied();
+            }
+            graph.remove_node(*orig_id);
+        }
+
+        graph
+    }
+
+    /// Wire up a concrete set of source and sink NodeIds according to the
+    /// original edge's port configuration.
+    fn expand_edge(graph: &mut IRGraph, edge: &IREdge, srcs: &[NodeId], snks: &[NodeId]) {
+        match &edge.sink_port {
+            Port::Slice(start, end) => {
+                assert_eq!(
+                    srcs.len(),
+                    end - start,
+                    "SpawnKNodesPass: source instance count ({}) must equal \
+                     port slice width ({}) for edge to {:?}",
+                    srcs.len(),
+                    end - start,
+                    edge.sink,
+                );
+                let snk = snks[0];
+                for (i, &src) in srcs.iter().enumerate() {
+                    graph.connect(src, edge.source_port.clone(), snk, Port::Index(start + i));
+                }
+            }
+            _ => match (srcs.len(), snks.len()) {
+                (1, _) => {
+                    // Broadcast: one source → all sinks.
+                    for &snk in snks {
+                        graph.connect(
+                            srcs[0],
+                            edge.source_port.clone(),
+                            snk,
+                            edge.sink_port.clone(),
+                        );
+                    }
+                }
+                (_, 1) => {
+                    // Fan-in: all sources → single sink.
+                    for &src in srcs {
+                        graph.connect(
+                            src,
+                            edge.source_port.clone(),
+                            snks[0],
+                            edge.sink_port.clone(),
+                        );
+                    }
+                }
+                (n, m) => {
+                    // Automap / zip.
+                    assert_eq!(
+                        n, m,
+                        "SpawnKNodesPass: cannot automap nodes with different \
+                         instance counts ({n} vs {m})"
+                    );
+                    for (&src, &snk) in srcs.iter().zip(snks.iter()) {
+                        graph.connect(src, edge.source_port.clone(), snk, edge.sink_port.clone());
+                    }
+                }
+            },
         }
     }
 }
@@ -377,719 +543,332 @@ macro_rules! object {
 }
 
 #[cfg(test)]
-mod tests {
-    use indexmap::IndexSet;
-
+mod spawn_tests {
     use super::*;
-
-    fn make_voice_macro() -> AstMacro {
-        AstMacro {
-            name: "voice".into(),
-            default_params: Some(object! {
-                "freq"    => 440.0f32,
-                "attack"  => 100.0f32,
-                "release" => 500.0f32
-            }),
-            virtual_ports_in: {
-                let mut s = IndexSet::new();
-                s.insert("gate".into());
-                s.insert("freq_in".into());
-                s
-            },
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "sine".into(),
-                        alias: Some("osc".into()),
-                        params: Some(object! { "freq" => Value::Template("$freq".into()) }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "adsr".into(),
-                        alias: Some("env".into()),
-                        params: Some(object! {
-                            "attack"  => Value::Template("$attack".into()),
-                            "release" => Value::Template("$release".into())
-                        }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
-            }],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "freq_in".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "osc".into(),
-                        port: Port::Named("freq".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "gate".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "env".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "osc".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "env".into(),
-                        port: Port::Index(1),
-                    },
-                },
-            ],
-            sink: "env".into(),
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // ast_to_graph tests: verify the literal (pre-expansion) graph
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_ast_to_graph_produces_macro_ref_nodes() {
-        let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("v1".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "track_mixer".into(),
-                        alias: Some("mixer".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
-            }],
-            connections: vec![Connection {
-                source: Endpoint {
-                    node: "v1".into(),
-                    port: Port::None,
-                },
-                sink: Endpoint {
-                    node: "mixer".into(),
-                    port: Port::None,
-                },
-            }],
-            sink: "mixer".into(),
-            ..Default::default()
-        };
-
-        let graph = ast_to_graph(ast);
-
-        // Literal graph: one MacroRef + one Leaf, not yet expanded.
-        assert_eq!(graph.node_count(), 2);
-        assert!(graph.has_unresolved_macros());
-
-        let v1 = graph.find_node_by_alias("v1").expect("v1 missing");
-        assert_eq!(v1.kind, IRNodeKind::MacroRef);
-        assert_eq!(v1.node_type, "voice");
-
-        let mixer = graph.find_node_by_alias("mixer").expect("mixer missing");
-        assert_eq!(mixer.kind, IRNodeKind::Leaf);
-
-        // Connection is present verbatim — virtual ports not resolved yet.
-        assert_eq!(graph.edge_count(), 1);
-        let edges = graph.find_edges_between("v1", "mixer");
-        assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].source_port, Port::None);
-    }
-
-    #[test]
-    fn test_ast_to_graph_preserves_raw_params() {
-        // Template values should be left unsubstituted in the literal graph.
-        let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![NodeDeclaration {
-                    node_type: "voice".into(),
-                    alias: Some("v1".into()),
-                    params: Some(object! { "freq" => 420.0f32 }),
-                    pipes: vec![],
-                    count: 1,
-                }],
-            }],
-            sink: "v1".into(),
-            ..Default::default()
-        };
-
-        let graph = ast_to_graph(ast);
-        let v1 = graph.find_node_by_alias("v1").unwrap();
-        // The call-site param should be on the MacroRef node as written.
-        assert_eq!(v1.params.get("freq"), Some(&Value::F32(420.0)));
-    }
-
-    // MacroExpansionPass tests
 
     fn expand(ast: Ast) -> IRGraph {
         Pipeline::default().run_from_ast(ast)
     }
 
-    #[test]
-    fn test_expansion_replaces_macro_ref_with_leaves() {
-        let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![NodeDeclaration {
-                    node_type: "voice".into(),
-                    alias: Some("v1".into()),
-                    params: Some(object! { "freq" => 420.0f32 }),
-                    pipes: vec![],
-                    count: 1,
-                }],
-            }],
-            sink: "v1".into(),
+    fn multi_decl(node_type: &str, alias: &str, count: u32) -> NodeDeclaration {
+        NodeDeclaration {
+            node_type: node_type.into(),
+            alias: Some(alias.into()),
+            count,
             ..Default::default()
-        };
+        }
+    }
 
-        let graph = expand(ast);
+    fn scope(ns: &str, decls: Vec<NodeDeclaration>) -> DeclarationScope {
+        DeclarationScope {
+            namespace: ns.into(),
+            declarations: decls,
+        }
+    }
 
-        assert!(!graph.has_unresolved_macros());
-        assert_eq!(graph.node_count(), 2);
-
-        let osc = graph.find_node_by_alias("v1.osc").expect("v1.osc missing");
-        assert_eq!(osc.params.get("freq"), Some(&Value::F32(420.0)));
-
-        // Only the interior osc→env edge; virtual-port connections produce no edge.
-        assert_eq!(graph.edge_count(), 1);
-        let edges = graph.find_edges_between("v1.osc", "v1.env");
-        assert_eq!(edges[0].sink_port, Port::Index(1));
+    fn conn(
+        src: &str,
+        src_sel: NodeSelector,
+        src_port: Port,
+        snk: &str,
+        snk_sel: NodeSelector,
+        snk_port: Port,
+    ) -> Connection {
+        Connection {
+            source: Endpoint {
+                node: src.into(),
+                node_selector: src_sel,
+                port: src_port,
+            },
+            sink: Endpoint {
+                node: snk.into(),
+                node_selector: snk_sel,
+                port: snk_port,
+            },
+        }
     }
 
     #[test]
-    fn test_external_connection_through_virtual_port() {
+    fn test_spawn_creates_n_instances() {
         let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("v1".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    }],
-                },
-                DeclarationScope {
-                    namespace: "midi".into(),
-                    declarations: vec![NodeDeclaration {
-                        node_type: "poly_voice".into(),
-                        alias: Some("poly".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    }],
-                },
-            ],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "poly".into(),
-                        port: Port::Named("freq".into()),
-                    },
-                    sink: Endpoint {
-                        node: "v1".into(),
-                        port: Port::Named("freq_in".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "poly".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                    sink: Endpoint {
-                        node: "v1".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                },
-            ],
-            sink: "v1".into(),
+            declarations: vec![scope("audio", vec![multi_decl("sine", "osc", 4)])],
+            sink: "osc".into(),
             ..Default::default()
         };
-
         let graph = expand(ast);
 
-        // 1 interior + 2 external
-        assert_eq!(graph.edge_count(), 3);
-
-        let osc = graph.find_node_by_alias("v1.osc").unwrap();
-        let env = graph.find_node_by_alias("v1.env").unwrap();
-        let poly_edges = graph.find_edges_from("poly");
-
-        let freq_edge = poly_edges
-            .iter()
-            .find(|e| e.source_port == Port::Named("freq".into()))
-            .expect("poly.freq edge missing");
-        assert_eq!(freq_edge.sink, osc.id);
-        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
-
-        let gate_edge = poly_edges
-            .iter()
-            .find(|e| e.source_port == Port::Named("gate".into()))
-            .expect("poly.gate edge missing");
-        assert_eq!(gate_edge.sink, env.id);
-        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
-    }
-
-    #[test]
-    fn test_multiple_instances_get_distinct_fqns() {
-        let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("v1".into()),
-                        params: Some(object! { "freq" => 440.0f32 }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("v2".into()),
-                        params: Some(object! { "freq" => 880.0f32 }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
-            }],
-            ..Default::default()
-        };
-
-        let graph = expand(ast);
         assert_eq!(graph.node_count(), 4);
-
-        for alias in ["v1.osc", "v1.env", "v2.osc", "v2.env"] {
+        for i in 0..4 {
             assert!(
-                graph.find_node_by_alias(alias).is_some(),
-                "missing {}",
-                alias
+                graph.find_node_by_alias(&format!("osc.{i}")).is_some(),
+                "missing osc.{i}"
             );
         }
-
-        let v2_osc = graph.find_node_by_alias("v2.osc").unwrap();
-        assert_eq!(v2_osc.params.get("freq"), Some(&Value::F32(880.0)));
+        // No edges declared → no edges produced.
+        assert_eq!(graph.edge_count(), 0);
     }
 
     #[test]
-    fn test_passthrough_via_sink() {
+    fn test_spawn_instances_inherit_params() {
         let ast = Ast {
-            macros: vec![make_voice_macro()],
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("v1".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "track_mixer".into(),
-                        alias: Some("mixer".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
+            declarations: vec![scope(
+                "audio",
+                vec![NodeDeclaration {
+                    node_type: "sine".into(),
+                    alias: Some("osc".into()),
+                    count: 3,
+                    params: Some(object! { "freq" => 220.0f32 }),
+                    ..Default::default()
+                }],
+            )],
+            sink: "osc".into(),
+            ..Default::default()
+        };
+        let graph = expand(ast);
+
+        for i in 0..3 {
+            assert_eq!(
+                graph
+                    .find_node_by_alias(&format!("osc.{i}"))
+                    .unwrap()
+                    .params
+                    .get("freq"),
+                Some(&Value::F32(220.0)),
+                "osc.{i} should have freq=220.0"
+            );
+        }
+    }
+
+    // ── automap (*) >> (*) ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_automap_all_to_all() {
+        // my_mod(*) >> my_carrier(*)  — both count=4
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![
+                    multi_decl("sine", "modulator", 4),
+                    multi_decl("sine", "carrier", 4),
                 ],
-            }],
-            connections: vec![Connection {
-                source: Endpoint {
-                    node: "v1".into(),
-                    port: Port::None,
-                },
-                sink: Endpoint {
-                    node: "mixer".into(),
-                    port: Port::None,
-                },
-            }],
+            )],
+            connections: vec![conn(
+                "modulator",
+                NodeSelector::All,
+                Port::None,
+                "carrier",
+                NodeSelector::All,
+                Port::Index(0),
+            )],
+            sink: "carrier".into(),
+            ..Default::default()
+        };
+        let graph = expand(ast);
+
+        assert_eq!(graph.node_count(), 8);
+        // One edge per pair: 4 modulator→carrier edges.
+        assert_eq!(graph.edge_count(), 4);
+        for i in 0..4 {
+            let src_alias = format!("modulator.{i}");
+            let snk_alias = format!("carrier.{i}");
+            let edges = graph.find_edges_between(&src_alias, &snk_alias);
+            assert_eq!(edges.len(), 1, "expected edge {src_alias} → {snk_alias}");
+            assert_eq!(edges[0].sink_port, Port::Index(0));
+        }
+    }
+
+    // ── range selector ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_range_selector_partial_zip() {
+        // my_source(1..3).out >> my_sink(1..3).audio_in — pick instances 1 and 2
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![multi_decl("osc", "src", 4), multi_decl("filter", "snk", 4)],
+            )],
+            connections: vec![conn(
+                "src",
+                NodeSelector::Range(1, 3),
+                Port::Named("out".into()),
+                "snk",
+                NodeSelector::Range(1, 3),
+                Port::Named("audio_in".into()),
+            )],
+            sink: "snk".into(),
+            ..Default::default()
+        };
+        let graph = expand(ast);
+
+        assert_eq!(graph.edge_count(), 2);
+        for i in 1..3 {
+            let edges = graph.find_edges_between(&format!("src.{i}"), &format!("snk.{i}"));
+            assert_eq!(edges.len(), 1, "expected src.{i} → snk.{i}");
+            assert_eq!(edges[0].source_port, Port::Named("out".into()));
+            assert_eq!(edges[0].sink_port, Port::Named("audio_in".into()));
+        }
+        // src.0 and src.3 should have no edges.
+        assert!(graph.find_edges_from("src.0").is_empty());
+        assert!(graph.find_edges_from("src.3").is_empty());
+    }
+
+    #[test]
+    fn test_source_range_to_sink_port_slice() {
+        // my_example(0..2).out >> mixer[0..2]
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![multi_decl("osc", "src", 4), multi_decl("mixer", "mixer", 1)],
+            )],
+            connections: vec![conn(
+                "src",
+                NodeSelector::Range(0, 2),
+                Port::Named("out".into()),
+                "mixer",
+                NodeSelector::Single,
+                Port::Slice(0, 2),
+            )],
             sink: "mixer".into(),
             ..Default::default()
         };
 
         let graph = expand(ast);
-        let edges_to_mixer = graph.find_edges_to("mixer");
-        assert_eq!(edges_to_mixer.len(), 1);
 
-        let env = graph.find_node_by_alias("v1.env").unwrap();
-        assert_eq!(
-            edges_to_mixer[0].source, env.id,
-            "passthrough should originate from v1.env (the voice sink leaf)"
-        );
+        assert_eq!(graph.edge_count(), 2);
+
+        let edges_to_mixer = graph.find_edges_to("mixer");
+        assert_eq!(edges_to_mixer.len(), 2);
+
+        let slot0 = edges_to_mixer
+            .iter()
+            .find(|e| e.sink_port == Port::Index(0))
+            .expect("[0] missing");
+
+        let slot1 = edges_to_mixer
+            .iter()
+            .find(|e| e.sink_port == Port::Index(1))
+            .expect("[1] missing");
+
+        let src0 = graph.find_node_by_alias("src.0").unwrap();
+        let src1 = graph.find_node_by_alias("src.1").unwrap();
+        assert_eq!(slot0.source, src0.id);
+        assert_eq!(slot1.source, src1.id);
     }
 
     #[test]
-    fn test_nested_macro_virtual_ports_and_connections() {
-        let fm_osc = AstMacro {
-            name: "fm_osc".into(),
-            default_params: Some(object! { "freq" => 440.0f32, "mod_freq" => 880.0f32 }),
-            virtual_ports_in: {
-                let mut s = IndexSet::new();
-                s.insert("freq_in".into());
-                s
-            },
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
+    fn test_broadcast_single_source_to_multi_sink() {
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![
                     NodeDeclaration {
-                        node_type: "sine".into(),
-                        alias: Some("modulator".into()),
-                        params: Some(object! { "freq" => Value::Template("$mod_freq".into()) }),
-                        pipes: vec![],
+                        node_type: "lfo".into(),
+                        alias: Some("lfo".into()),
                         count: 1,
+                        ..Default::default()
                     },
-                    NodeDeclaration {
-                        node_type: "sine".into(),
-                        alias: Some("carrier".into()),
-                        params: Some(object! { "freq" => Value::Template("$freq".into()) }),
-                        pipes: vec![],
-                        count: 1,
-                    },
+                    multi_decl("filter", "filt", 4),
                 ],
-            }],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "freq_in".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "carrier".into(),
-                        port: Port::Named("freq".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "modulator".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "carrier".into(),
-                        port: Port::Index(0),
-                    },
-                },
-            ],
-            sink: "carrier".into(),
+            )],
+            connections: vec![conn(
+                "lfo",
+                NodeSelector::Single,
+                Port::None,
+                "filt",
+                NodeSelector::All,
+                Port::Named("cutoff".into()),
+            )],
+            sink: "filt".into(),
+            ..Default::default()
         };
+        let graph = expand(ast);
 
-        let voice = AstMacro {
-            name: "voice".into(),
-            default_params: Some(object! { "freq" => 440.0f32, "attack" => 100.0f32 }),
-            virtual_ports_in: {
-                let mut s = IndexSet::new();
-                s.insert("gate".into());
-                s.insert("voice_freq".into());
-                s
-            },
+        assert_eq!(graph.edge_count(), 4);
+        let lfo = graph.find_node_by_alias("lfo").unwrap();
+        for i in 0..4 {
+            let filt = graph.find_node_by_alias(&format!("filt.{i}")).unwrap();
+            let edges = graph.find_edges_between("lfo", &format!("filt.{i}"));
+            assert_eq!(edges.len(), 1, "expected lfo → filt.{i}");
+            assert_eq!(edges[0].source, lfo.id);
+            assert_eq!(edges[0].sink, filt.id);
+            assert_eq!(edges[0].sink_port, Port::Named("cutoff".into()));
+        }
+    }
+
+    #[test]
+    fn test_multi_node_inside_macro_expands_with_fqn() {
+        // patch poly_voice { sine: osc * 4 { freq: 440.0 } }
+        let poly_voice = AstMacro {
+            name: "poly_voice".into(),
+            default_params: Some(object! { "freq" => 440.0f32 }),
             declarations: vec![DeclarationScope {
                 namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "fm_osc".into(),
-                        alias: Some("osc_inst".into()),
-                        params: Some(object! { "freq" => Value::Template("$freq".into()) }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "adsr".into(),
-                        alias: Some("env".into()),
-                        params: Some(object! { "attack" => Value::Template("$attack".into()) }),
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
+                declarations: vec![NodeDeclaration {
+                    node_type: "sine".into(),
+                    alias: Some("osc".into()),
+                    count: 4,
+                    params: Some(object! { "freq" => Value::Template("$freq".into()) }),
+                    ..Default::default()
+                }],
             }],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "voice_freq".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "osc_inst".into(),
-                        port: Port::Named("freq_in".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "gate".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "env".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "osc_inst".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "env".into(),
-                        port: Port::Index(1),
-                    },
-                },
-            ],
-            sink: "env".into(),
+            sink: "osc".into(),
+            ..Default::default()
         };
 
         let ast = Ast {
-            macros: vec![fm_osc, voice],
-            declarations: vec![
-                DeclarationScope {
-                    namespace: "audio".into(),
-                    declarations: vec![NodeDeclaration {
-                        node_type: "voice".into(),
-                        alias: Some("lead".into()),
-                        params: Some(object! { "freq" => 880.0f32, "attack" => 200.0f32 }),
-                        pipes: vec![],
-                        count: 1,
-                    }],
-                },
-                DeclarationScope {
-                    namespace: "midi".into(),
-                    declarations: vec![NodeDeclaration {
-                        node_type: "poly_voice".into(),
-                        alias: Some("poly".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    }],
-                },
-            ],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "poly".into(),
-                        port: Port::Named("freq".into()),
-                    },
-                    sink: Endpoint {
-                        node: "lead".into(),
-                        port: Port::Named("voice_freq".into()),
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "poly".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                    sink: Endpoint {
-                        node: "lead".into(),
-                        port: Port::Named("gate".into()),
-                    },
-                },
-            ],
+            macros: vec![poly_voice],
+            declarations: vec![DeclarationScope {
+                namespace: "audio".into(),
+                declarations: vec![NodeDeclaration {
+                    node_type: "poly_voice".into(),
+                    alias: Some("lead".into()),
+                    params: Some(object! { "freq" => 880.0f32 }),
+                    count: 1,
+                    ..Default::default()
+                }],
+            }],
             sink: "lead".into(),
             ..Default::default()
         };
 
+        dbg!(&ast);
+
+        let graph = expand(ast);
+        assert_eq!(graph.node_count(), 4);
+
+        for i in 0..4 {
+            let alias = format!("lead.osc.{i}");
+            let node = graph
+                .find_node_by_alias(&alias)
+                .unwrap_or_else(|| panic!("missing {alias}"));
+            // Param substituted through the macro.
+            assert_eq!(node.params.get("freq"), Some(&Value::F32(880.0)));
+        }
+    }
+
+    #[test]
+    fn test_index_selector_connects_single_instance() {
+        // connect only osc(2) → filter
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![multi_decl("osc", "osc", 4), multi_decl("filter", "filt", 1)],
+            )],
+            connections: vec![conn(
+                "osc",
+                NodeSelector::Index(2),
+                Port::None,
+                "filt",
+                NodeSelector::Single,
+                Port::None,
+            )],
+            sink: "filt".into(),
+            ..Default::default()
+        };
         let graph = expand(ast);
 
-        for alias in [
-            "lead.osc_inst.modulator",
-            "lead.osc_inst.carrier",
-            "lead.env",
-        ] {
-            assert!(
-                graph.find_node_by_alias(alias).is_some(),
-                "missing {}",
-                alias
-            );
-        }
-
-        let carrier = graph.find_node_by_alias("lead.osc_inst.carrier").unwrap();
-        assert_eq!(carrier.params.get("freq"), Some(&Value::F32(880.0)));
-
-        let env = graph.find_node_by_alias("lead.env").unwrap();
-        assert_eq!(env.params.get("attack"), Some(&Value::F32(200.0)));
-
-        // fm_osc interior: modulator → carrier[0]
-        let mod_to_carrier =
-            graph.find_edges_between("lead.osc_inst.modulator", "lead.osc_inst.carrier");
-        assert_eq!(mod_to_carrier.len(), 1);
-        assert_eq!(mod_to_carrier[0].sink_port, Port::Index(0));
-
-        // voice interior: osc_inst (carrier) → env[1]
-        let osc_to_env = graph.find_edges_between("lead.osc_inst.carrier", "lead.env");
-        assert_eq!(osc_to_env.len(), 1);
-        assert_eq!(osc_to_env[0].sink_port, Port::Index(1));
-
-        // External connections resolved through two levels of virtual ports.
-        let poly_edges = graph.find_edges_from("poly");
-
-        let freq_edge = poly_edges
-            .iter()
-            .find(|e| e.source_port == Port::Named("freq".into()))
-            .expect("poly.freq edge missing");
-        assert_eq!(
-            freq_edge.sink, carrier.id,
-            "poly.freq should route through voice_freq → freq_in → carrier.freq"
-        );
-        assert_eq!(freq_edge.sink_port, Port::Named("freq".into()));
-
-        let gate_edge = poly_edges
-            .iter()
-            .find(|e| e.source_port == Port::Named("gate".into()))
-            .expect("poly.gate edge missing");
-        assert_eq!(
-            gate_edge.sink, env.id,
-            "poly.gate should route through gate → env.gate"
-        );
-        assert_eq!(gate_edge.sink_port, Port::Named("gate".into()));
-
-        // 1 fm_osc interior + 1 voice interior + 2 external = 4
-        assert_eq!(graph.edge_count(), 4);
-    }
-
-    #[test]
-    fn test_topological_sort_respects_edges() {
-        let ast = Ast {
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "osc".into(),
-                        alias: Some("src".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "filter".into(),
-                        alias: Some("mid".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "output".into(),
-                        alias: Some("snk".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
-            }],
-            connections: vec![
-                Connection {
-                    source: Endpoint {
-                        node: "src".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "mid".into(),
-                        port: Port::None,
-                    },
-                },
-                Connection {
-                    source: Endpoint {
-                        node: "mid".into(),
-                        port: Port::None,
-                    },
-                    sink: Endpoint {
-                        node: "snk".into(),
-                        port: Port::None,
-                    },
-                },
-            ],
-            sink: "snk".into(),
-            ..Default::default()
-        };
-
-        // No macros -> default pipeline is a no-op expansion, graph is unchanged.
-        let graph = Pipeline::default().run_from_ast(ast);
-        let order = graph.topological_sort();
-
-        let pos = |alias: &str| {
-            let id = graph.resolve_alias(alias).unwrap();
-            order.iter().position(|&x| x == id).unwrap()
-        };
-        assert!(pos("src") < pos("mid"));
-        assert!(pos("mid") < pos("snk"));
-    }
-
-    #[test]
-    fn test_insert_between_splits_edge() {
-        let ast = Ast {
-            declarations: vec![DeclarationScope {
-                namespace: "audio".into(),
-                declarations: vec![
-                    NodeDeclaration {
-                        node_type: "osc".into(),
-                        alias: Some("src".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                    NodeDeclaration {
-                        node_type: "output".into(),
-                        alias: Some("snk".into()),
-                        params: None,
-                        pipes: vec![],
-                        count: 1,
-                    },
-                ],
-            }],
-            connections: vec![Connection {
-                source: Endpoint {
-                    node: "src".into(),
-                    port: Port::None,
-                },
-                sink: Endpoint {
-                    node: "snk".into(),
-                    port: Port::None,
-                },
-            }],
-            sink: "snk".into(),
-            ..Default::default()
-        };
-
-        let mut graph = Pipeline::default().run_from_ast(ast);
         assert_eq!(graph.edge_count(), 1);
-
-        graph.insert_between(0, "audio", "meter", "meter_0", Default::default());
-
-        assert_eq!(graph.node_count(), 3);
-        assert_eq!(graph.edge_count(), 2);
-        assert_eq!(graph.find_edges_between("src", "meter_0").len(), 1);
-        assert_eq!(graph.find_edges_between("meter_0", "snk").len(), 1);
-
-        let src_id = graph.resolve_alias("src").unwrap();
-        let snk_id = graph.resolve_alias("snk").unwrap();
-        assert_eq!(
-            graph
-                .outgoing_edges(src_id)
-                .filter(|e| e.sink == snk_id)
-                .count(),
-            0,
-            "original direct edge should be removed"
-        );
+        let edges = graph.find_edges_between("osc.2", "filt");
+        assert_eq!(edges.len(), 1);
     }
 }

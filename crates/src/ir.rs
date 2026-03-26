@@ -60,6 +60,31 @@ pub struct NodeDeclaration {
     pub count: u32,
 }
 
+/// Yields a selection of a group of spawned nodes
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum NodeSelector {
+    #[default]
+    Single,
+    All,
+    Index(usize),
+    Range(usize, usize),
+}
+
+impl NodeSelector {
+    /// Return the sub-slice this selector selects.
+    pub fn select<'a, T>(&self, instances: &'a [T]) -> &'a [T] {
+        match self {
+            Self::Single | Self::All => instances,
+            Self::Index(i) => &instances[*i..*i + 1],
+            Self::Range(s, e) => &instances[*s..*e],
+        }
+    }
+
+    pub fn selected_count(&self, total: usize) -> usize {
+        self.select(&vec![(); total]).len()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DeclarationScope {
     pub namespace: String,
@@ -69,6 +94,7 @@ pub struct DeclarationScope {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Endpoint {
     pub node: String,
+    pub node_selector: NodeSelector,
     pub port: Port,
 }
 
@@ -177,8 +203,10 @@ pub struct IRMacro {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IREdge {
     pub source: NodeId,
+    pub source_selector: NodeSelector,
     pub source_port: Port,
     pub sink: NodeId,
+    pub sink_selector: NodeSelector,
     pub sink_port: Port,
 }
 
@@ -243,9 +271,43 @@ impl IRGraph {
     pub fn connect(&mut self, source: NodeId, source_port: Port, sink: NodeId, sink_port: Port) {
         self.edges.push(IREdge {
             source,
+            source_selector: NodeSelector::Single,
             source_port,
             sink,
+            sink_selector: NodeSelector::Single,
             sink_port,
+        });
+    }
+
+    /// Create an edge with explicit node selectors (multi-node connections).
+    pub fn connect_multi(
+        &mut self,
+        source: NodeId,
+        source_selector: NodeSelector,
+        source_port: Port,
+        sink: NodeId,
+        sink_selector: NodeSelector,
+        sink_port: Port,
+    ) {
+        self.edges.push(IREdge {
+            source,
+            source_selector,
+            source_port,
+            sink,
+            sink_selector,
+            sink_port,
+        });
+    }
+
+    /// Re-add an edge with new endpoints but the same selector/port configuration.
+    pub fn reconnect(&mut self, source: NodeId, sink: NodeId, template: &IREdge) {
+        self.edges.push(IREdge {
+            source,
+            source_selector: template.source_selector.clone(),
+            source_port: template.source_port.clone(),
+            sink,
+            sink_selector: template.sink_selector.clone(),
+            sink_port: template.sink_port.clone(),
         });
     }
 
@@ -270,14 +332,18 @@ impl IRGraph {
         );
         self.edges.push(IREdge {
             source: edge.source,
+            source_selector: NodeSelector::Single,
             source_port: edge.source_port,
             sink: new_id,
+            sink_selector: NodeSelector::Single,
             sink_port: Port::None,
         });
         self.edges.push(IREdge {
             source: new_id,
+            source_selector: NodeSelector::Single,
             source_port: Port::None,
             sink: edge.sink,
+            sink_selector: NodeSelector::Single,
             sink_port: edge.sink_port,
         });
         new_id
