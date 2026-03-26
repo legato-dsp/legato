@@ -57,6 +57,7 @@ pub struct NodeDeclaration {
     pub alias: Option<String>,
     pub params: Option<Object>,
     pub pipes: Vec<ASTPipe>,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -78,7 +79,7 @@ pub struct Connection {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct Macro {
+pub struct AstMacro {
     pub name: String,
     pub default_params: Option<Object>,
     pub virtual_ports_in: IndexSet<String>,
@@ -91,7 +92,7 @@ pub struct Macro {
 pub struct Ast {
     pub declarations: Vec<DeclarationScope>,
     pub connections: Vec<Connection>,
-    pub macros: Vec<Macro>,
+    pub macros: Vec<AstMacro>,
     pub sink: String,
     pub source: Option<String>,
 }
@@ -141,7 +142,7 @@ impl NodeId {
 }
 
 /// A single node in the graph IR.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IRNode {
     pub id: NodeId,
     pub kind: IRNodeKind,
@@ -156,6 +157,19 @@ pub struct IRNode {
     pub alias: String,
     pub params: Object,
     pub pipes: Vec<ASTPipe>,
+    /// How many times the node is spawned. After the multi-node pass, this should be 1.
+    pub count: u32,
+}
+
+/// This struct lets us spawn a subgraph, and has the information to wire the
+/// inputs and outputs for this subgraph once it is instanced.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IRMacro {
+    pub name: String,
+    pub virtual_input_map: IndexMap<String, (NodeId, Port)>,
+    pub default_params: Option<Object>,
+    pub body: IRGraph,
+    pub sink: NodeId,
 }
 
 /// A directed edge connecting an output port of one node to an input port
@@ -168,58 +182,33 @@ pub struct IREdge {
     pub sink_port: Port,
 }
 
-// ---------------------------------------------------------------------------
-// IRGraph
-// ---------------------------------------------------------------------------
-
-/// Directed graph of audio/control nodes and their connections.
+/// Directed graph of nodes and their connections.
 ///
-/// This is the central data structure of the compiler pipeline.  Each
-/// [`GraphPass`] consumes an `IRGraph` and returns a transformed one, making
-/// every step of compilation explicit and inspectable.
+/// The IRGraph simply maps to commands that are easy for the builder to use,
+/// any operation here has an equivalent step of builder commands.
 ///
-/// ## Pipeline lifecycle
+/// The macro registry contains a number of definitions to graph subgraph patches,
+/// where macro_a is replaced with say three nodes, connections between them, etc.
 ///
-/// ```text
-/// Ast ──ast_to_graph()──► IRGraph            (literal; may contain MacroRef nodes)
-///                              │
-///                    MacroExpansionPass       (expands MacroRefs → Leaf clusters)
-///                              │
-///                    SampleRateBoundaryPass   (future: inserts converter nodes)
-///                    PortExpansionPass        (future: expands Port::Slice etc.)
-///                              │
-///                              ▼
-///                         IRGraph             (all Leaf nodes, builder-ready)
-/// ```
-#[derive(Debug, Default)]
+/// This is nice, as it allows us to inline nodes on the runtime, giving better cache performance.
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct IRGraph {
-    /// IndexMap preserves insertion order, giving a stable topological-sort
-    /// baseline when independent nodes have no ordering constraint.
+    /// IndexMap preserves insertion order, giving a stable topo sort.
     nodes: IndexMap<NodeId, IRNode>,
-    edges: Vec<IREdge>,
+    edges: Vec<IREdge>, // Relatively small graphs so O(n) lookup is fine here and convenient for now
     alias_index: HashMap<String, NodeId>,
     next_id: u32,
     pub sink: Option<NodeId>,
     pub source: Option<NodeId>,
-    /// Macro definitions carried through the pipeline.
-    ///
-    /// Populated by [`ast_to_graph`] and kept alive so that any pass can
-    /// inspect or further expand macros.  After [`MacroExpansionPass`] this
-    /// map is still present but no longer referenced by any node in the graph.
-    pub macro_registry: HashMap<String, Macro>,
+    pub macro_registry: HashMap<String, IRMacro>,
 }
 
-// IndexMap is not in std; re-export the dependency for the field type
 use indexmap::IndexMap;
 
 impl IRGraph {
     pub fn new() -> Self {
         Self::default()
     }
-
-    // -----------------------------------------------------------------------
-    // Mutation
-    // -----------------------------------------------------------------------
 
     /// Insert a node and return its [`NodeId`].
     pub fn add_node(
@@ -230,6 +219,7 @@ impl IRGraph {
         alias: impl Into<String>,
         params: Object,
         pipes: Vec<ASTPipe>,
+        count: u32,
     ) -> NodeId {
         let id = NodeId(self.next_id);
         self.next_id += 1;
@@ -242,6 +232,7 @@ impl IRGraph {
             alias: alias.clone(),
             params,
             pipes,
+            count,
         };
         self.nodes.insert(id, node);
         self.alias_index.insert(alias, id);
@@ -258,16 +249,7 @@ impl IRGraph {
         });
     }
 
-    /// Splice a new node into an existing edge:
-    ///
-    /// ```text
-    /// before:  A ──[edge]──► B
-    /// after:   A ──► new ──► B
-    /// ```
-    ///
-    /// The original source port is preserved on the A→new half; the original
-    /// sink port is preserved on the new→B half.  The caller receives the
-    /// `NodeId` of the inserted node.
+    /// Splice a new node into an existing edge
     pub fn insert_between(
         &mut self,
         edge_index: usize,
@@ -284,6 +266,7 @@ impl IRGraph {
             alias,
             params,
             vec![],
+            1,
         );
         self.edges.push(IREdge {
             source: edge.source,
@@ -302,15 +285,11 @@ impl IRGraph {
 
     /// Remove a node and all of its incident edges.
     pub fn remove_node(&mut self, id: NodeId) {
-        if let Some(node) = self.nodes.remove(&id) {
+        if let Some(node) = self.nodes.swap_remove(&id) {
             self.alias_index.remove(&node.alias);
         }
         self.edges.retain(|e| e.source != id && e.sink != id);
     }
-
-    // -----------------------------------------------------------------------
-    // Queries
-    // -----------------------------------------------------------------------
 
     pub fn nodes(&self) -> impl Iterator<Item = &IRNode> {
         self.nodes.values()
@@ -409,14 +388,11 @@ impl IRGraph {
         self.edges.iter().filter(|e| e.sink == snk).collect()
     }
 
-    // -----------------------------------------------------------------------
-    // Graph algorithms
-    // -----------------------------------------------------------------------
-
-    /// Topological sort (Kahn's algorithm).
+    /// Returns node IDs in sournce -> sink order.  
     ///
-    /// Returns node IDs in producer-before-consumer order.  Independent nodes
-    /// are yielded in insertion order (stable).  Panics on a cycle.
+    /// Independent nodes are yielded in insertion order.  
+    ///
+    /// This will panic on a cycle.
     pub fn topological_sort(&self) -> Vec<NodeId> {
         let mut in_degree: HashMap<NodeId, usize> = self.nodes.keys().map(|&k| (k, 0)).collect();
 
@@ -459,7 +435,6 @@ impl IRGraph {
 
 impl fmt::Display for IRGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Build reverse map once: NodeId -> alias
         let id_to_alias: HashMap<NodeId, &str> = self
             .alias_index
             .iter()
@@ -495,10 +470,6 @@ impl fmt::Display for IRGraph {
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// DSLParams (unchanged)
-// ---------------------------------------------------------------------------
 
 pub struct DSLParams<'a>(pub &'a Object);
 
@@ -633,10 +604,6 @@ impl<'a> DSLParams<'a> {
         Ok(())
     }
 }
-
-// ---------------------------------------------------------------------------
-// Value conversions
-// ---------------------------------------------------------------------------
 
 impl From<f32> for Value {
     fn from(v: f32) -> Self {

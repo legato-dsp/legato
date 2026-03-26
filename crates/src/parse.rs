@@ -1,6 +1,6 @@
 use crate::{builder::ValidationError, ir::*};
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::{extra::Err, prelude::*};
+use chumsky::{extra::Err, prelude::*, text::digits};
 use std::collections::BTreeMap;
 
 fn comment<'a>() -> impl Parser<'a, &'a str, (), Err<Rich<'a, char>>> {
@@ -128,6 +128,12 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
     let alias = just(':').padded().ignore_then(ident).or_not();
 
+    let digits = text::digits(10);
+
+    let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap());
+
+    let count = just("*").padded().ignore_then(u32).or_not();
+
     let obj_parser = ident
         .then_ignore(just(':').padded())
         .then(value_parser())
@@ -156,17 +162,21 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
     ident
         .then(alias)
+        .then(count)
         .then(params)
         .then(pipe.repeated().collect())
-        .map(|(((node_type, alias), params), pipes)| NodeDeclaration {
-            node_type,
-            alias,
-            params,
-            pipes,
-        })
+        .map(
+            |((((node_type, alias), count), params), pipes)| NodeDeclaration {
+                node_type,
+                alias,
+                params,
+                pipes,
+                count: count.unwrap_or(1),
+            },
+        )
 }
 
-fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
+fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
     // Default params use = for intitial values
@@ -210,14 +220,16 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
         .ignore_then(ident)
         .then(extra_padded(default_params))
         .then(patch_body)
-        .map(|((name, params), (((vports, decls), conns), sink))| Macro {
-            name,
-            default_params: params,
-            virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
-            declarations: decls,
-            connections: conns.unwrap_or_default(),
-            sink,
-        })
+        .map(
+            |((name, params), (((vports, decls), conns), sink))| AstMacro {
+                name,
+                default_params: params,
+                virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
+                declarations: decls,
+                connections: conns.unwrap_or_default(),
+                sink,
+            },
+        )
 }
 
 fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
@@ -304,7 +316,7 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
 
     let patches = extra_padded(patch_parser())
         .repeated()
-        .collect::<Vec<Macro>>();
+        .collect::<Vec<AstMacro>>();
 
     let declarations = extra_padded(scope_parser()).repeated().collect();
 
@@ -417,7 +429,7 @@ mod test {
     fn test_node_pipes_and_aliases() {
         let src = r#"
             audio {
-                osc: sine { freq: 440 } | lowpass(100.5) | gain(null)
+                osc: sine * 4 { freq: 440 } | lowpass(100.5) | gain(null)
             }
 
             { sine }
@@ -440,6 +452,7 @@ mod test {
                             params: Some(Value::Null),
                         },
                     ],
+                    count: 4,
                 }],
             }],
             macros: Vec::new(),
