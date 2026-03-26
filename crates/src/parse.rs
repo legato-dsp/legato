@@ -1,6 +1,6 @@
 use crate::{builder::ValidationError, ir::*};
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::{extra::Err, prelude::*, text::digits};
+use chumsky::{extra::Err, prelude::*};
 use std::collections::BTreeMap;
 
 fn comment<'a>() -> impl Parser<'a, &'a str, (), Err<Rich<'a, char>>> {

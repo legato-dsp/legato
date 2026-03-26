@@ -1,10 +1,10 @@
 #![allow(unused_mut)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
-    ir::{DSLParams, Object},
+    ir::DSLParams,
     node::DynNode,
 };
 
