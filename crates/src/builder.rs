@@ -506,7 +506,7 @@ impl LegatoBuilder<DslBuilding> {
             }
         }
 
-        // Wire edges using the NodeId → NodeKey map (no string lookups).
+        // Wire edges using the NodeId -> NodeKey map (no string lookups).
         for edge in ir.edges() {
             self._connect_ref_self(AddConnectionProps {
                 source: ir_to_runtime[&edge.source],

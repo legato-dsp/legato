@@ -268,7 +268,7 @@ impl Debug for AudioGraph {
 
         let fmt_edge = |con: &Connection| {
             format!(
-                "{}:{} → {}:{}",
+                "{}:{} -> {}:{}",
                 node_name(con.source.node_key),
                 con.source.port_index,
                 node_name(con.sink.node_key),

@@ -505,7 +505,7 @@ impl SpawnKNodesPass {
             }
             _ => match (srcs.len(), snks.len()) {
                 (1, _) => {
-                    // Broadcast: one source → all sinks.
+                    // Broadcast: one source -> all sinks.
                     for &snk in snks {
                         graph.connect(
                             srcs[0],
@@ -516,7 +516,7 @@ impl SpawnKNodesPass {
                     }
                 }
                 (_, 1) => {
-                    // Fan-in: all sources → single sink.
+                    // Fan-in: all sources -> single sink.
                     for &src in srcs {
                         graph.connect(
                             src,
@@ -619,7 +619,7 @@ mod spawn_tests {
                 "missing osc.{i}"
             );
         }
-        // No edges declared → no edges produced.
+        // No edges declared -> no edges produced.
         assert_eq!(graph.edge_count(), 0);
     }
 
@@ -681,13 +681,13 @@ mod spawn_tests {
         let graph = expand(ast);
 
         assert_eq!(graph.node_count(), 8);
-        // One edge per pair: 4 modulator→carrier edges.
+        // One edge per pair: 4 modulator->carrier edges.
         assert_eq!(graph.edge_count(), 4);
         for i in 0..4 {
             let src_alias = format!("modulator.{i}");
             let snk_alias = format!("carrier.{i}");
             let edges = graph.find_edges_between(&src_alias, &snk_alias);
-            assert_eq!(edges.len(), 1, "expected edge {src_alias} → {snk_alias}");
+            assert_eq!(edges.len(), 1, "expected edge {src_alias} -> {snk_alias}");
             assert_eq!(edges[0].sink_port, Port::Index(0));
         }
     }
@@ -718,7 +718,7 @@ mod spawn_tests {
         assert_eq!(graph.edge_count(), 2);
         for i in 1..3 {
             let edges = graph.find_edges_between(&format!("src.{i}"), &format!("snk.{i}"));
-            assert_eq!(edges.len(), 1, "expected src.{i} → snk.{i}");
+            assert_eq!(edges.len(), 1, "expected src.{i} -> snk.{i}");
             assert_eq!(edges[0].source_port, Port::Named("out".into()));
             assert_eq!(edges[0].sink_port, Port::Named("audio_in".into()));
         }
@@ -803,7 +803,7 @@ mod spawn_tests {
         for i in 0..4 {
             let filt = graph.find_node_by_alias(&format!("filt.{i}")).unwrap();
             let edges = graph.find_edges_between("lfo", &format!("filt.{i}"));
-            assert_eq!(edges.len(), 1, "expected lfo → filt.{i}");
+            assert_eq!(edges.len(), 1, "expected lfo -> filt.{i}");
             assert_eq!(edges[0].source, lfo.id);
             assert_eq!(edges[0].sink, filt.id);
             assert_eq!(edges[0].sink_port, Port::Named("cutoff".into()));
@@ -863,7 +863,7 @@ mod spawn_tests {
 
     #[test]
     fn test_index_selector_connects_single_instance() {
-        // connect only osc(2) → filter
+        // connect only osc(2) -> filter
         let ast = Ast {
             declarations: vec![scope(
                 "audio",

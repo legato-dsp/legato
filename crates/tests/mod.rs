@@ -70,7 +70,7 @@ mod parse_and_lower {
         assert_eq!(graph.edge_count(), 1);
 
         let edges = graph.find_edges_between("v1.osc", "v1.env");
-        assert_eq!(edges.len(), 1, "expected exactly one osc→env edge");
+        assert_eq!(edges.len(), 1, "expected exactly one osc->env edge");
         assert_eq!(edges[0].sink_port, Port::Index(1));
 
         // Graph sink points to the voice's sink leaf (v1.env).
@@ -112,7 +112,7 @@ mod parse_and_lower {
 
         let graph = parse_and_lower(src);
 
-        // 1 interior (osc→env) + 2 external (poly_voice→osc, poly_voice→env)
+        // 1 interior (osc->env) + 2 external (poly_voice->osc, poly_voice->env)
         assert_eq!(graph.edge_count(), 3);
 
         let osc = graph.find_node_by_alias("v1.osc").expect("v1.osc missing");
@@ -241,15 +241,15 @@ mod parse_and_lower {
         let carrier = graph.find_node_by_alias("lead.osc_inst.carrier").unwrap();
         let env = graph.find_node_by_alias("lead.env").unwrap();
 
-        // fm_osc interior: modulator → carrier[0]
+        // fm_osc interior: modulator -> carrier[0]
         let mod_to_carrier =
             graph.find_edges_between("lead.osc_inst.modulator", "lead.osc_inst.carrier");
-        assert_eq!(mod_to_carrier.len(), 1, "expected modulator→carrier edge");
+        assert_eq!(mod_to_carrier.len(), 1, "expected modulator->carrier edge");
         assert_eq!(mod_to_carrier[0].sink_port, Port::Index(0));
 
-        // voice interior: carrier (osc_inst sink) → env[1]
+        // voice interior: carrier (osc_inst sink) -> env[1]
         let osc_to_env = graph.find_edges_between("lead.osc_inst.carrier", "lead.env");
-        assert_eq!(osc_to_env.len(), 1, "expected carrier→env edge");
+        assert_eq!(osc_to_env.len(), 1, "expected carrier->env edge");
         assert_eq!(osc_to_env[0].sink_port, Port::Index(1));
 
         // External connections resolved through two levels of virtual ports.
@@ -462,7 +462,7 @@ mod parse_and_lower {
             { mixer }
         }
 
-        // Top level: two named triads + four spawned triads → master gain
+        // Top level: two named triads + four spawned triads -> master gain
         patches {
             triad: chord_lo { root: 110.0 },
             triad: chord_hi { root: 880.0 },
@@ -535,7 +535,7 @@ mod parse_and_lower {
             );
         }
 
-        // ── Interior edges (osc sinks → mixer ports) ───────────────────────────
+        // ── Interior edges (osc sinks -> mixer ports) ───────────────────────────
         // 6 named-instance interiors + 4 × 3 spawned interiors = 18
         for prefix in ["chord_lo", "chord_hi"] {
             for (osc, slot) in [("r", 0usize), ("f", 1), ("o", 2)] {
@@ -546,7 +546,7 @@ mod parse_and_lower {
                 assert_eq!(
                     edges.len(),
                     1,
-                    "expected {prefix}.{osc}.sine → {prefix}.mixer"
+                    "expected {prefix}.{osc}.sine -> {prefix}.mixer"
                 );
                 assert_eq!(edges[0].sink_port, Port::Index(slot));
             }
@@ -560,13 +560,13 @@ mod parse_and_lower {
                 assert_eq!(
                     edges.len(),
                     1,
-                    "expected triad.{i}.{osc}.sine → triad.{i}.mixer"
+                    "expected triad.{i}.{osc}.sine -> triad.{i}.mixer"
                 );
                 assert_eq!(edges[0].sink_port, Port::Index(slot));
             }
         }
 
-        // ── Cross edges (mixer → gain) ─────────────────────────────────────────
+        // ── Cross edges (mixer -> gain) ─────────────────────────────────────────
         // chord_lo + chord_hi + triad.0..3 = 6
         let gain_edges = graph.find_edges_to("gain");
         assert_eq!(gain_edges.len(), 6, "expected 6 edges into gain");
@@ -578,7 +578,7 @@ mod parse_and_lower {
                 .unwrap();
             assert!(
                 gain_edges.iter().any(|e| e.source == mixer.id),
-                "{prefix}.mixer → gain edge missing"
+                "{prefix}.mixer -> gain edge missing"
             );
         }
         for i in 0..4 {
@@ -587,13 +587,13 @@ mod parse_and_lower {
                 .unwrap();
             assert!(
                 gain_edges.iter().any(|e| e.source == mixer.id),
-                "triad.{i}.mixer → gain edge missing"
+                "triad.{i}.mixer -> gain edge missing"
             );
         }
 
         // ── Total edge count ───────────────────────────────────────────────────
         // 18 interior (3 per triad × 6 triad instances)
-        //  6 cross    (each triad.mixer → gain)
+        //  6 cross    (each triad.mixer -> gain)
         //           = 24
         assert_eq!(graph.edge_count(), 24);
 
@@ -633,8 +633,8 @@ mod parse_and_lower {
         // lfo modulates only sine.2 through sine.5, not sine.0 or sine.1.
         lfo >> sine(2..6).freq
 
-        // Slice: range-selected sources → contiguous indexed mixer inputs.
-        // sine(2..6) gives 4 sources; mixer[0..4] gives 4 slots → zip.
+        // Slice: range-selected sources -> contiguous indexed mixer inputs.
+        // sine(2..6) gives 4 sources; mixer[0..4] gives 4 slots -> zip.
         sine(2..6) >> mixer[0..4]
 
         // Port::Index on outgoing macro edges:
@@ -668,13 +668,13 @@ mod parse_and_lower {
 
         // Named virtual port + index selector
         let edges = graph.find_edges_between("sine.0", "ch_a.amp");
-        assert_eq!(edges.len(), 1, "expected sine.0 → ch_a.amp");
+        assert_eq!(edges.len(), 1, "expected sine.0 -> ch_a.amp");
         assert_eq!(edges[0].source_port, Port::None);
         assert_eq!(edges[0].sink_port, Port::None);
 
-        // sine(1) >> ch_b.audio_in resolves to sine.1 → ch_b.amp
+        // sine(1) >> ch_b.audio_in resolves to sine.1 -> ch_b.amp
         let edges = graph.find_edges_between("sine.1", "ch_b.amp");
-        assert_eq!(edges.len(), 1, "expected sine.1 → ch_b.amp");
+        assert_eq!(edges.len(), 1, "expected sine.1 -> ch_b.amp");
 
         // sine.2..5 must NOT have been accidentally routed to either channel
         for i in 2..6 {
@@ -695,11 +695,11 @@ mod parse_and_lower {
         // Range broadcast: lfo >> sine(2..6).freq
         for i in 2..6 {
             let edges = graph.find_edges_between("lfo", &format!("sine.{i}"));
-            assert_eq!(edges.len(), 1, "expected lfo → sine.{i}");
+            assert_eq!(edges.len(), 1, "expected lfo -> sine.{i}");
             assert_eq!(
                 edges[0].sink_port,
                 Port::Named("freq".into()),
-                "lfo → sine.{i} should target port 'freq'"
+                "lfo -> sine.{i} should target port 'freq'"
             );
         }
         // sine.0 and sine.1 are outside the range — no lfo edges
@@ -720,18 +720,18 @@ mod parse_and_lower {
             let edge = mixer_edges
                 .iter()
                 .find(|e| e.source == src_id && e.sink_port == Port::Index(slot))
-                .unwrap_or_else(|| panic!("{src_alias} → mixer[{slot}] missing"));
+                .unwrap_or_else(|| panic!("{src_alias} -> mixer[{slot}] missing"));
             assert_eq!(edge.source_port, Port::None);
         }
 
         // ── Port::Index on outgoing macro edges ───────────────────────────────
-        // ch_a.amp → mixer[4], ch_b.amp → mixer[5]
+        // ch_a.amp -> mixer[4], ch_b.amp -> mixer[5]
         let ch_a_edges = graph.find_edges_between("ch_a.amp", "mixer");
-        assert_eq!(ch_a_edges.len(), 1, "expected ch_a.amp → mixer");
+        assert_eq!(ch_a_edges.len(), 1, "expected ch_a.amp -> mixer");
         assert_eq!(ch_a_edges[0].sink_port, Port::Index(4));
 
         let ch_b_edges = graph.find_edges_between("ch_b.amp", "mixer");
-        assert_eq!(ch_b_edges.len(), 1, "expected ch_b.amp → mixer");
+        assert_eq!(ch_b_edges.len(), 1, "expected ch_b.amp -> mixer");
         assert_eq!(ch_b_edges[0].sink_port, Port::Index(5));
 
         // ── Graph sink ────────────────────────────────────────────────────────
@@ -739,10 +739,10 @@ mod parse_and_lower {
         assert_eq!(graph.sink, Some(mixer_id), "graph sink should be mixer");
 
         // ── Total edge count ──────────────────────────────────────────────────
-        // 2  named virtual  (sine.0→ch_a.amp, sine.1→ch_b.amp)
-        // 4  lfo broadcast  (lfo→sine.2..5 via .freq)
-        // 4  slice          (sine.2..5→mixer[0..3])
-        // 2  macro outgoing (ch_a.amp→mixer[4], ch_b.amp→mixer[5])
+        // 2  named virtual  (sine.0->ch_a.amp, sine.1->ch_b.amp)
+        // 4  lfo broadcast  (lfo->sine.2..5 via .freq)
+        // 4  slice          (sine.2..5->mixer[0..3])
+        // 2  macro outgoing (ch_a.amp->mixer[4], ch_b.amp->mixer[5])
         //                  = 12
         assert_eq!(graph.edge_count(), 12);
     }
