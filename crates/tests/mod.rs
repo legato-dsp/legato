@@ -600,4 +600,150 @@ mod parse_and_lower {
         // ── Graph sink ────────────────────────────────────────────────────────
         assert_eq!(graph.sink, Some(gain_id), "graph sink should be gain");
     }
+
+    #[test]
+    fn test_e2e_complex_ports() {
+        let src = r#"
+        patch channel(gain = 1.0) {
+            in audio_in
+
+            audio {
+                amp { val: $gain }
+            }
+
+            audio_in >> amp
+
+            { amp }
+        }
+
+        audio {
+            sine * 6 { freq: 440.0 },
+            sine: lfo { freq: 0.5 },
+            channel: ch_a { gain: 0.8 },
+            channel: ch_b { gain: 0.6 },
+            track_mixer: mixer { tracks: 6, chans_per_track: 1 }
+        }
+
+        // Named virtual port + Index source selector:
+        // only sine instance 0 feeds ch_a, only instance 1 feeds ch_b.
+        sine(0) >> ch_a.audio_in
+        sine(1) >> ch_b.audio_in
+
+        // Single source broadcast to a Range of sinks via named port:
+        // lfo modulates only sine.2 through sine.5, not sine.0 or sine.1.
+        lfo >> sine(2..6).freq
+
+        // Slice: range-selected sources → contiguous indexed mixer inputs.
+        // sine(2..6) gives 4 sources; mixer[0..4] gives 4 slots → zip.
+        sine(2..6) >> mixer[0..4]
+
+        // Port::Index on outgoing macro edges:
+        // ch_a and ch_b sinks wire to specific mixer slots.
+        ch_a >> mixer[4]
+        ch_b >> mixer[5]
+
+        { mixer }
+    "#;
+
+        let graph = parse_and_lower(src);
+
+        assert_eq!(graph.node_count(), 10);
+
+        for i in 0..6 {
+            assert!(
+                graph.find_node_by_alias(&format!("sine.{i}")).is_some(),
+                "missing sine.{i}"
+            );
+        }
+        assert!(graph.find_node_by_alias("lfo").is_some(), "missing lfo");
+        assert!(
+            graph.find_node_by_alias("ch_a.amp").is_some(),
+            "missing ch_a.amp"
+        );
+        assert!(
+            graph.find_node_by_alias("ch_b.amp").is_some(),
+            "missing ch_b.amp"
+        );
+        assert!(graph.find_node_by_alias("mixer").is_some(), "missing mixer");
+
+        // Named virtual port + index selector
+        let edges = graph.find_edges_between("sine.0", "ch_a.amp");
+        assert_eq!(edges.len(), 1, "expected sine.0 → ch_a.amp");
+        assert_eq!(edges[0].source_port, Port::None);
+        assert_eq!(edges[0].sink_port, Port::None);
+
+        // sine(1) >> ch_b.audio_in resolves to sine.1 → ch_b.amp
+        let edges = graph.find_edges_between("sine.1", "ch_b.amp");
+        assert_eq!(edges.len(), 1, "expected sine.1 → ch_b.amp");
+
+        // sine.2..5 must NOT have been accidentally routed to either channel
+        for i in 2..6 {
+            assert!(
+                graph
+                    .find_edges_between(&format!("sine.{i}"), "ch_a.amp")
+                    .is_empty(),
+                "sine.{i} should not connect to ch_a.amp"
+            );
+            assert!(
+                graph
+                    .find_edges_between(&format!("sine.{i}"), "ch_b.amp")
+                    .is_empty(),
+                "sine.{i} should not connect to ch_b.amp"
+            );
+        }
+
+        // Range broadcast: lfo >> sine(2..6).freq
+        for i in 2..6 {
+            let edges = graph.find_edges_between("lfo", &format!("sine.{i}"));
+            assert_eq!(edges.len(), 1, "expected lfo → sine.{i}");
+            assert_eq!(
+                edges[0].sink_port,
+                Port::Named("freq".into()),
+                "lfo → sine.{i} should target port 'freq'"
+            );
+        }
+        // sine.0 and sine.1 are outside the range — no lfo edges
+        assert!(
+            graph.find_edges_between("lfo", "sine.0").is_empty(),
+            "lfo should not reach sine.0"
+        );
+        assert!(
+            graph.find_edges_between("lfo", "sine.1").is_empty(),
+            "lfo should not reach sine.1"
+        );
+
+        // Slice: sine(2..6) >> mixer[0..4]
+        let mixer_edges = graph.find_edges_to("mixer");
+        for (slot, src_i) in (2..6usize).enumerate() {
+            let src_alias = format!("sine.{src_i}");
+            let src_id = graph.find_node_by_alias(&src_alias).unwrap().id;
+            let edge = mixer_edges
+                .iter()
+                .find(|e| e.source == src_id && e.sink_port == Port::Index(slot))
+                .unwrap_or_else(|| panic!("{src_alias} → mixer[{slot}] missing"));
+            assert_eq!(edge.source_port, Port::None);
+        }
+
+        // ── Port::Index on outgoing macro edges ───────────────────────────────
+        // ch_a.amp → mixer[4], ch_b.amp → mixer[5]
+        let ch_a_edges = graph.find_edges_between("ch_a.amp", "mixer");
+        assert_eq!(ch_a_edges.len(), 1, "expected ch_a.amp → mixer");
+        assert_eq!(ch_a_edges[0].sink_port, Port::Index(4));
+
+        let ch_b_edges = graph.find_edges_between("ch_b.amp", "mixer");
+        assert_eq!(ch_b_edges.len(), 1, "expected ch_b.amp → mixer");
+        assert_eq!(ch_b_edges[0].sink_port, Port::Index(5));
+
+        // ── Graph sink ────────────────────────────────────────────────────────
+        let mixer_id = graph.find_node_by_alias("mixer").unwrap().id;
+        assert_eq!(graph.sink, Some(mixer_id), "graph sink should be mixer");
+
+        // ── Total edge count ──────────────────────────────────────────────────
+        // 2  named virtual  (sine.0→ch_a.amp, sine.1→ch_b.amp)
+        // 4  lfo broadcast  (lfo→sine.2..5 via .freq)
+        // 4  slice          (sine.2..5→mixer[0..3])
+        // 2  macro outgoing (ch_a.amp→mixer[4], ch_b.amp→mixer[5])
+        //                  = 12
+        assert_eq!(graph.edge_count(), 12);
+    }
 }
