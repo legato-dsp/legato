@@ -434,4 +434,170 @@ mod parse_and_lower {
         //                            = 22
         assert_eq!(graph.edge_count(), 21);
     }
+
+    #[test]
+    fn test_e2e_kitchen_sink() {
+        let src = r#"
+        // Level 1: leaf wrapper
+        patch osc(freq = 440.0) {
+            audio {
+                sine { freq: $freq }
+            }
+            { sine }
+        }
+
+        // Level 2: three osc macros panned into a mixer
+        patch triad(root = 220.0) {
+            audio {
+                osc: r { freq: $root },
+                osc: f { freq: $root },
+                osc: o { freq: $root },
+                mixer { tracks: 3 }
+            }
+
+            r >> mixer[0]
+            f >> mixer[1]
+            o >> mixer[2]
+
+            { mixer }
+        }
+
+        // Top level: two named triads + four spawned triads → master gain
+        patches {
+            triad: chord_lo { root: 110.0 },
+            triad: chord_hi { root: 880.0 },
+            triad * 4       { root: 440.0 }
+        }
+
+        audio {
+            gain { val: 0.5 }
+        }
+
+        chord_lo >> gain
+        chord_hi >> gain
+        triad(*) >> gain
+
+        { gain }
+    "#;
+
+        let graph = parse_and_lower(src);
+
+        // ── Node count ─────────────────────────────────────────────────────────
+        // chord_lo: r.sine + f.sine + o.sine + mixer       =  4
+        // chord_hi: r.sine + f.sine + o.sine + mixer       =  4
+        // triad × 4: (r.sine + f.sine + o.sine + mixer) × 4 = 16
+        // gain                                             =  1
+        //                                                  = 25
+        assert_eq!(graph.node_count(), 25);
+
+        // ── Named instance aliases ─────────────────────────────────────────────
+        for prefix in ["chord_lo", "chord_hi"] {
+            for leaf in ["r.sine", "f.sine", "o.sine", "mixer"] {
+                let alias = format!("{prefix}.{leaf}");
+                assert!(
+                    graph.find_node_by_alias(&alias).is_some(),
+                    "missing {alias}"
+                );
+            }
+        }
+
+        // ── Spawned instance aliases ───────────────────────────────────────────
+        for i in 0..4 {
+            for leaf in ["r.sine", "f.sine", "o.sine", "mixer"] {
+                let alias = format!("triad.{i}.{leaf}");
+                assert!(
+                    graph.find_node_by_alias(&alias).is_some(),
+                    "missing {alias}"
+                );
+            }
+        }
+
+        assert!(graph.find_node_by_alias("gain").is_some(), "missing gain");
+
+        // ── Param substitution through two macro levels ────────────────────────
+        assert_eq!(
+            get_param(&graph, "chord_lo.r.sine", "freq"),
+            Value::F32(110.0)
+        );
+        assert_eq!(
+            get_param(&graph, "chord_lo.f.sine", "freq"),
+            Value::F32(110.0)
+        );
+        assert_eq!(
+            get_param(&graph, "chord_hi.r.sine", "freq"),
+            Value::F32(880.0)
+        );
+        for i in 0..4 {
+            assert_eq!(
+                get_param(&graph, &format!("triad.{i}.r.sine"), "freq"),
+                Value::F32(440.0),
+                "triad.{i}.r.sine freq wrong"
+            );
+        }
+
+        // ── Interior edges (osc sinks → mixer ports) ───────────────────────────
+        // 6 named-instance interiors + 4 × 3 spawned interiors = 18
+        for prefix in ["chord_lo", "chord_hi"] {
+            for (osc, slot) in [("r", 0usize), ("f", 1), ("o", 2)] {
+                let edges = graph.find_edges_between(
+                    &format!("{prefix}.{osc}.sine"),
+                    &format!("{prefix}.mixer"),
+                );
+                assert_eq!(
+                    edges.len(),
+                    1,
+                    "expected {prefix}.{osc}.sine → {prefix}.mixer"
+                );
+                assert_eq!(edges[0].sink_port, Port::Index(slot));
+            }
+        }
+        for i in 0..4 {
+            for (osc, slot) in [("r", 0usize), ("f", 1), ("o", 2)] {
+                let edges = graph.find_edges_between(
+                    &format!("triad.{i}.{osc}.sine"),
+                    &format!("triad.{i}.mixer"),
+                );
+                assert_eq!(
+                    edges.len(),
+                    1,
+                    "expected triad.{i}.{osc}.sine → triad.{i}.mixer"
+                );
+                assert_eq!(edges[0].sink_port, Port::Index(slot));
+            }
+        }
+
+        // ── Cross edges (mixer → gain) ─────────────────────────────────────────
+        // chord_lo + chord_hi + triad.0..3 = 6
+        let gain_edges = graph.find_edges_to("gain");
+        assert_eq!(gain_edges.len(), 6, "expected 6 edges into gain");
+
+        let gain_id = graph.find_node_by_alias("gain").unwrap().id;
+        for prefix in ["chord_lo", "chord_hi"] {
+            let mixer = graph
+                .find_node_by_alias(&format!("{prefix}.mixer"))
+                .unwrap();
+            assert!(
+                gain_edges.iter().any(|e| e.source == mixer.id),
+                "{prefix}.mixer → gain edge missing"
+            );
+        }
+        for i in 0..4 {
+            let mixer = graph
+                .find_node_by_alias(&format!("triad.{i}.mixer"))
+                .unwrap();
+            assert!(
+                gain_edges.iter().any(|e| e.source == mixer.id),
+                "triad.{i}.mixer → gain edge missing"
+            );
+        }
+
+        // ── Total edge count ───────────────────────────────────────────────────
+        // 18 interior (3 per triad × 6 triad instances)
+        //  6 cross    (each triad.mixer → gain)
+        //           = 24
+        assert_eq!(graph.edge_count(), 24);
+
+        // ── Graph sink ────────────────────────────────────────────────────────
+        assert_eq!(graph.sink, Some(gain_id), "graph sink should be gain");
+    }
 }
