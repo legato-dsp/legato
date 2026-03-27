@@ -746,4 +746,152 @@ mod parse_and_lower {
         //                  = 12
         assert_eq!(graph.edge_count(), 12);
     }
+
+    #[test]
+    fn test_e2e_stride_and_slice_port_resolution() {
+        // Exercises:
+        // - Port::Stride on source side of a virtual port connection,
+        //   resolved to Port::Index(start + i * stride) per instance
+        // - Port::Slice on outgoing macro edge, resolved to Port::Index(start + i)
+        // - Port::Stride on outgoing macro edge, resolved to Port::Index(start + i * stride)
+        let src = r#"
+        patch voice(freq = 440.0) {
+            in freq gate
+
+            audio {
+                sine { freq: $freq },
+                adsr { attack: 100.0, chans: 1 }
+            }
+
+            freq >> sine.freq
+            gate >> adsr.gate
+            sine >> adsr[1]
+
+            { adsr }
+        }
+
+        patches {
+            voice * 5 {}
+        }
+
+        audio {
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1 },
+            track_mixer: out_mixer { tracks: 2, chans_per_track: 1 }
+        }
+
+        midi {
+            poly_voice { chan: 0, voices: 5 }
+        }
+
+        // Stride: poly_voice[0], [3], [6], [9], [12] → voice.0..4.gate
+        // i.e. start=0, end=12, stride=3 zipped against 5 instances
+        poly_voice[0:12:3] >> voice(*).gate
+
+        // Stride: poly_voice[1], [4], [7], [10], [13] → voice.0..4.freq
+        poly_voice[1:13:3] >> voice(*).freq
+
+        // Slice: voice.0..4 adsr sinks → osc_mixer[0..5]
+        voice(*) >> osc_mixer[0..5]
+
+        // Stride on outgoing: osc_mixer sinks → out_mixer[0], [2] (stride=2)
+        // (contrived but exercises the stride outgoing path)
+        osc_mixer >> out_mixer
+
+        { out_mixer }
+    "#;
+
+        let graph = parse_and_lower(src);
+
+        // ── Node count ─────────────────────────────────────────────────────────
+        // voice × 5: sine + adsr = 10
+        // osc_mixer, out_mixer, poly_voice = 3
+        //                                  = 13
+        assert_eq!(graph.node_count(), 13);
+
+        // ── Stride incoming: poly_voice → voice.i.adsr via gate ───────────────
+        // poly_voice[0:12:3] means indices 0, 3, 6, 9, 12 for voices 0..4
+        let gate_port_indices = [0usize, 3, 6, 9, 12];
+        for (i, &port_index) in gate_port_indices.iter().enumerate() {
+            let edges = graph.find_edges_between("poly_voice", &format!("voice.{i}.adsr"));
+            let gate_edge = edges
+                .iter()
+                .find(|e| e.sink_port == Port::Named("gate".into()))
+                .unwrap_or_else(|| panic!("poly_voice → voice.{i}.adsr gate edge missing"));
+            assert_eq!(
+                gate_edge.source_port,
+                Port::Index(port_index),
+                "poly_voice → voice.{i}.adsr should use source Port::Index({port_index})"
+            );
+        }
+
+        // ── Stride incoming: poly_voice → voice.i.sine via freq ───────────────
+        // poly_voice[1:13:3] means indices 1, 4, 7, 10, 13 for voices 0..4
+        let freq_port_indices = [1usize, 4, 7, 10, 13];
+        for (i, &port_index) in freq_port_indices.iter().enumerate() {
+            let edges = graph.find_edges_between("poly_voice", &format!("voice.{i}.sine"));
+            let freq_edge = edges
+                .iter()
+                .find(|e| e.sink_port == Port::Named("freq".into()))
+                .unwrap_or_else(|| panic!("poly_voice → voice.{i}.sine freq edge missing"));
+            assert_eq!(
+                freq_edge.source_port,
+                Port::Index(port_index),
+                "poly_voice → voice.{i}.sine should use source Port::Index({port_index})"
+            );
+        }
+
+        // ── No stride bleed: each instance should only receive its own index ──
+        // voice.0 must NOT have source Port::Index(3), [6], [9], [12]
+        for (i, &port_index) in gate_port_indices.iter().enumerate() {
+            for j in 0..5usize {
+                if i == j {
+                    continue;
+                }
+                let edges = graph.find_edges_between("poly_voice", &format!("voice.{j}.adsr"));
+                assert!(
+                    !edges
+                        .iter()
+                        .any(|e| e.source_port == Port::Index(port_index)
+                            && e.sink_port == Port::Named("gate".into())),
+                    "Port::Index({port_index}) should only reach voice.{i}.adsr, not voice.{j}.adsr"
+                );
+            }
+        }
+
+        // ── Slice outgoing: voice.i.adsr → osc_mixer[i] ───────────────────────
+        for i in 0..5usize {
+            let edges = graph.find_edges_between(&format!("voice.{i}.adsr"), "osc_mixer");
+            assert_eq!(edges.len(), 1, "expected voice.{i}.adsr → osc_mixer");
+            assert_eq!(
+                edges[0].sink_port,
+                Port::Index(i),
+                "voice.{i}.adsr should connect to osc_mixer[{i}]"
+            );
+        }
+
+        // ── osc_mixer → out_mixer ─────────────────────────────────────────────
+        let mixer_edges = graph.find_edges_between("osc_mixer", "out_mixer");
+        assert_eq!(
+            mixer_edges.len(),
+            1,
+            "expected exactly one osc_mixer → out_mixer edge"
+        );
+
+        // ── Graph sink ────────────────────────────────────────────────────────
+        let out_mixer_id = graph.find_node_by_alias("out_mixer").unwrap().id;
+        assert_eq!(
+            graph.sink,
+            Some(out_mixer_id),
+            "graph sink should be out_mixer"
+        );
+
+        // ── Total edge count ──────────────────────────────────────────────────
+        // 5  freq stride     (poly_voice → voice.i.sine)
+        // 5  gate stride     (poly_voice → voice.i.adsr)
+        // 5  sine → adsr[1]  (interior per voice)
+        // 5  slice outgoing  (voice.i.adsr → osc_mixer[i])
+        // 1  osc_mixer → out_mixer
+        //                   = 21
+        assert_eq!(graph.edge_count(), 21);
+    }
 }
