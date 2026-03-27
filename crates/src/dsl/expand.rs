@@ -75,6 +75,11 @@ impl MacroExpansionPass {
 
             // Rewire incoming edges into each instance.
             for edge in &incoming {
+                let resolved_source_port = match &edge.source_port {
+                    Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
+                    Port::Slice(start, _) => Port::Index(start + i),
+                    other => other.clone(),
+                };
                 let (target_id, target_selector, target_port) = match &edge.sink_port {
                     Port::Named(name) => remapped_virtual.get(name).map_or(
                         (new_sink, NodeSelector::Single, edge.sink_port.clone()),
@@ -96,7 +101,7 @@ impl MacroExpansionPass {
                 graph.connect_multi(
                     edge.source,
                     edge.source_selector.clone(),
-                    edge.source_port.clone(),
+                    resolved_source_port,
                     target_id,
                     target_selector,
                     target_port,
@@ -107,14 +112,19 @@ impl MacroExpansionPass {
         // Rewire outgoing edges from the last instance
         for edge in &outgoing {
             let srcs = edge.source_selector.select(&new_sinks).to_vec();
-            for &src in &srcs {
+            for (i, &src) in srcs.iter().enumerate() {
+                let resolved_sink_port = match &edge.sink_port {
+                    Port::Slice(start, _) => Port::Index(start + i),
+                    Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
+                    other => other.clone(),
+                };
                 graph.connect_multi(
                     src,
                     NodeSelector::Single,
                     edge.source_port.clone(),
                     edge.sink,
                     edge.sink_selector.clone(),
-                    edge.sink_port.clone(),
+                    resolved_sink_port,
                 );
             }
         }

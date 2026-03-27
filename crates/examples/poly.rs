@@ -33,11 +33,7 @@ fn main() {
         }
 
         patches {
-            voice: v1 { },
-            voice: v2 { },
-            voice: v3 { },
-            voice: v4 { },
-            voice: v5 { },
+            voice * 5 { }
         }
 
         audio {
@@ -57,25 +53,9 @@ fn main() {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        // gate
-        poly_voice[0] >> v1.gate
-        poly_voice[3] >> v2.gate
-        poly_voice[6] >> v3.gate
-        poly_voice[9] >> v4.gate
-        poly_voice[12] >> v5.gate
-
-        // freq
-        poly_voice[1] >> v1.freq
-        poly_voice[4] >> v2.freq
-        poly_voice[7] >> v3.freq
-        poly_voice[10] >> v4.freq
-        poly_voice[13] >> v5.freq
-
-        v1 >> osc_mixer[0]
-        v2 >> osc_mixer[1]
-        v3 >> osc_mixer[2]
-        v4 >> osc_mixer[3]
-        v5 >> osc_mixer[4]
+        poly_voice[0:13:3] >> voice(*).gate
+        poly_voice[1:13:3] >> voice(*).freq
+        voice(*) >> osc_mixer[0..5]
 
         osc_mixer >> mono_fan_out
 
