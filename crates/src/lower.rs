@@ -48,6 +48,7 @@ impl Default for Pipeline {
     }
 }
 
+/// Convert the ASTMacro to the IRMacro
 fn convert_macro(
     name: &str,
     ast_map: &mut HashMap<String, AstMacro>,
@@ -122,7 +123,10 @@ fn convert_macro(
         .filter(|c| ast_macro.virtual_ports_in.contains(&c.source.node))
         .map(|c| {
             let target_id = local_alias_to_id[&c.sink.node];
-            (c.source.node.clone(), (target_id, c.sink.port.clone()))
+            (
+                c.source.node.clone(),
+                (target_id, c.sink.node_selector.clone(), c.sink.port.clone()),
+            )
         })
         .collect();
 
@@ -237,7 +241,7 @@ impl GraphPass for MacroExpansionPass {
             );
             let macro_ids: Vec<NodeId> = graph.macro_nodes().map(|n| n.id).collect();
             for id in macro_ids {
-                self.expand_node(&mut graph, id);
+                self.expand_macro(&mut graph, id);
             }
             depth += 1;
         }
@@ -246,7 +250,7 @@ impl GraphPass for MacroExpansionPass {
 }
 
 impl MacroExpansionPass {
-    fn expand_node(&self, graph: &mut IRGraph, node_id: NodeId) {
+    fn expand_macro(&self, graph: &mut IRGraph, node_id: NodeId) {
         let node = graph.get_node(node_id).unwrap().clone();
 
         let ir_macro = graph
@@ -255,77 +259,88 @@ impl MacroExpansionPass {
             .cloned()
             .unwrap_or_else(|| panic!("Macro '{}' not found in registry", node.node_type));
 
-        // defaults first then override
         let mut resolved_params = ir_macro.default_params.clone().unwrap_or_default();
         for (k, v) in &node.params {
             resolved_params.insert(k.clone(), v.clone());
         }
 
-        // Hold onto edges before mutation
         let incoming: Vec<IREdge> = graph.incoming_edges(node_id).cloned().collect();
         let outgoing: Vec<IREdge> = graph.outgoing_edges(node_id).cloned().collect();
         graph.remove_node(node_id);
 
-        // Clone the body into the top-level graph.
-        let id_map = self.clone_body_into(graph, &ir_macro, &node.alias, &resolved_params);
+        // Expand n=count instances, each with a distinct alias prefix.
+        let mut new_sinks: Vec<NodeId> = Vec::with_capacity(node.count as usize);
 
-        // Remap the sink through the clone map — this is the macro's output
-        let new_sink = id_map[&ir_macro.sink];
-
-        // Remap virtual_input_map through the same clone map.
-        let remapped_virtual: IndexMap<String, (NodeId, Port)> = ir_macro
-            .virtual_input_map
-            .iter()
-            .map(|(name, (id, port))| (name.clone(), (id_map[id], port.clone())))
-            .collect();
-
-        // Rewire incoming edges through virtual ports
-        for edge in incoming {
-            let (target_id, target_port) = match &edge.sink_port {
-                Port::Named(name) => remapped_virtual
-                    .get(name)
-                    .map_or((new_sink, edge.sink_port.clone()), |(id, port)| {
-                        (*id, port.clone())
-                    }),
-                Port::Index(i) => remapped_virtual
-                    .get_index(*i)
-                    .map_or((new_sink, edge.sink_port.clone()), |(_, (id, port))| {
-                        (*id, port.clone())
-                    }),
-                Port::None => (new_sink, Port::None),
-                Port::Slice(..) | Port::Stride { .. } => panic!(
-                    "Slice/Stride not supported on virtual ports (macro '{}')",
-                    node.node_type
-                ),
+        for i in 0..node.count as usize {
+            let instance_alias = if node.count == 1 {
+                node.alias.clone()
+            } else {
+                format!("{}.{}", node.alias, i)
             };
-            graph.connect_multi(
-                edge.source,
-                edge.source_selector.clone(),
-                edge.source_port,
-                target_id,
-                NodeSelector::Single,
-                target_port,
-            );
+
+            let id_map = self.clone_body_into(graph, &ir_macro, &instance_alias, &resolved_params);
+            let new_sink = id_map[&ir_macro.sink];
+            new_sinks.push(new_sink);
+
+            let remapped_virtual: IndexMap<String, (NodeId, NodeSelector, Port)> = ir_macro
+                .virtual_input_map
+                .iter()
+                .map(|(name, (id, sel, port))| {
+                    (name.clone(), (id_map[id], sel.clone(), port.clone()))
+                })
+                .collect();
+
+            // Rewire incoming edges into each instance.
+            for edge in &incoming {
+                let (target_id, target_selector, target_port) = match &edge.sink_port {
+                    Port::Named(name) => remapped_virtual.get(name).map_or(
+                        (new_sink, NodeSelector::Single, edge.sink_port.clone()),
+                        |(id, sel, port)| (*id, sel.clone(), port.clone()),
+                    ),
+                    Port::Index(i) => remapped_virtual.get_index(*i).map_or(
+                        (new_sink, NodeSelector::Single, edge.sink_port.clone()),
+                        |(_, (id, sel, port))| (*id, sel.clone(), port.clone()),
+                    ),
+                    Port::None => remapped_virtual.get_index(0).map_or(
+                        (new_sink, NodeSelector::Single, Port::None),
+                        |(_, (id, sel, port))| (*id, sel.clone(), port.clone()),
+                    ),
+                    Port::Slice(..) | Port::Stride { .. } => panic!(
+                        "Slice/Stride not supported on virtual ports (macro '{}')",
+                        node.node_type
+                    ),
+                };
+                graph.connect_multi(
+                    edge.source,
+                    edge.source_selector.clone(),
+                    edge.source_port.clone(),
+                    target_id,
+                    target_selector,
+                    target_port,
+                );
+            }
         }
 
-        // Rewire outgoing edges
-        for edge in outgoing {
-            graph.connect_multi(
-                new_sink,
-                NodeSelector::Single,
-                edge.source_port,
-                edge.sink,
-                edge.sink_selector.clone(),
-                edge.sink_port,
-            );
+        // Rewire outgoing edges from the last instance
+        for edge in &outgoing {
+            let srcs = edge.source_selector.select(&new_sinks).to_vec();
+            for &src in &srcs {
+                graph.connect_multi(
+                    src,
+                    NodeSelector::Single,
+                    edge.source_port.clone(),
+                    edge.sink,
+                    edge.sink_selector.clone(),
+                    edge.sink_port.clone(),
+                );
+            }
         }
 
-        // Update sink and source
         if graph.sink == Some(node_id) {
-            graph.sink = Some(new_sink);
+            graph.sink = new_sinks.last().copied();
         }
         if graph.source == Some(node_id) {
-            graph.source = Some(new_sink);
+            graph.source = new_sinks.first().copied();
         }
     }
 

@@ -349,45 +349,89 @@ mod parse_and_lower {
         assert_eq!(get_param(&graph, "b.sine", "freq"), Value::F32(220.0));
     }
 
-    // #[test]
-    // fn test_e2e_multi_nodes_nested() {
-    //     let src = r#"
-    //         patch fm(freq = 220.0) {
-    //             audio {
-    //                 sine: carrier { freq: $freq },
-    //                 sine: mod { freq: $freq }
-    //             }
+    #[test]
+    fn test_e2e_multi_nodes() {
+        let src = r#"
+            patch fm(freq = 220.0) {
+                audio {
+                    sine: carrier { freq: $freq },
+                    sine: mod { freq: $freq }
+                }
 
-    //             carrier >> mod.freq
+                carrier >> mod.freq
 
-    //             { mod }
-    //         }
+                { mod }
+            }
 
-    //         patch reverb {
-    //             in audio_in
+            // Fake shitty reverb patch
+            patch reverb(
+                chans = 2,
+                gain = 1.0
+            ) {
+                in audio_in 
 
-    //             audio {
-    //                 allpass * 4 { delay_length: 20, feedback: 0.5, chans: 1 },
-    //             }
+                audio {
+                    allpass * 4 { delay_length: 20, feedback: 0.5, chans: $chans },
+                    gain { val: $gain, chans: $chans }
+                }
 
-    //             audio_in >> allpass(0)
-    //             allpass(0) >> allpass(1)
-    //             allpass(1) >> allpass(2)
-    //             allpass(2) >> allpass(3)
+                audio_in >> allpass(0)
+                allpass(0) >> allpass(1)
+                allpass(1) >> allpass(2)
+                allpass(2) >> allpass(3)
+                
+                // TODO: Return sink by node selector index
+                allpass(3) >> gain
 
-    //             { allpass(3) }
-    //         }
+                { gain }
+            }
 
-    //         audio {
-    //             fm * 8 { freq: 880.0 },
-    //             track_mixer { tracks: 8, chans_per_track: 1 }
-    //         }
+            audio {
+                fm * 8 { freq: 880.0 },
+                track_mixer { tracks: 8, chans_per_track: 1 },
+                reverb { gain: 1.0, chans: 2 }
+            }
 
-    //         fm(*) >> track_mixer
+            fm(*) >> track_mixer >> reverb
 
-    //         { track_mixer }
-    //     "#;
+            { reverb }
+        "#;
 
-    //     let graph = parse_and_lower(src);
-    // }
+        let graph = parse_and_lower(src);
+
+        let nodes: Vec<_> = graph.topological_sort();
+
+        dbg!(&nodes);
+
+        assert_eq!(nodes.iter().len(), 22);
+
+        let mixer_edges = graph.find_edges_from("track_mixer");
+        assert_eq!(
+            mixer_edges.len(),
+            1,
+            "expected exactly one edge out of track_mixer"
+        );
+        let allpass_0 = graph
+            .find_node_by_alias("reverb.allpass.0")
+            .expect("reverb.allpass.0 missing");
+        assert_eq!(
+            mixer_edges[0].sink, allpass_0.id,
+            "track_mixer should connect to reverb.allpass.0 via the audio_in virtual port"
+        );
+
+        let reverb_gain = graph.find_node_by_alias("reverb.gain").unwrap();
+        assert_eq!(
+            graph.sink,
+            Some(reverb_gain.id),
+            "graph sink should be reverb.gain"
+        );
+
+        // 8 fm interior  (carrier -> mod.freq)  =  8
+        // 3 reverb allpass chain                =  3
+        // 1 reverb terminal (allpass.3 -> gain) =  1
+        // 8 fm.*.mod -> track_mixer             =  8
+        // 1 track_mixer -> reverb.allpass.0     =  1
+        //                            = 22
+        assert_eq!(graph.edge_count(), 21);
+    }
 }
