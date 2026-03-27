@@ -81,8 +81,6 @@ It may be wise to simply use laptop speakers at low volume when developing, and 
 Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
 
 - Single tap delay node for delay compensation
-- Resampler (currently contains a halfband oversampler, but I want a polyphase resampler for arbitrary ratios as well)
-- Bitflags or something similar for user defined params rather than static string comparison?
 - Unify node creation spec and node logic
 - Flat multi-chan buffer for delay lines
-- Oversampling logic likely may break delay lines and samplers. This will need a better solution, likely small executors with polyphase or halfband resamplers at the boundaries. Not sure how to approach this at the moment.
+- I want to move over/resampling to be graph logic and DSL. So, rather than wrapping a number of nodes, the executor implicitly adds polyphase FIR filters on the boundaries.

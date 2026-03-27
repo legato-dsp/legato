@@ -46,7 +46,7 @@ impl Node for Voice {
                     continue;
                 }
 
-                let offset_duration = block_start - item.instant;
+                let offset_duration = item.instant - block_start;
 
                 let idx = (offset_duration.as_secs_f32() * fs) as usize;
 
@@ -104,38 +104,72 @@ struct VoiceState {
     kind: VoiceStateKind,
     note: u8,
     velocity: u8,
-    // TODO: Pitch Shift
+    last_used: u64,
 }
 
 #[derive(Default, Clone, PartialEq)]
 struct VoiceAllocator {
     voices: Box<[VoiceState]>,
+    counter: u64,
 }
 
 impl VoiceAllocator {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             voices: vec![VoiceState::default(); capacity].into(),
+            counter: 0,
         }
     }
 
-    fn steal_voice(&mut self) -> Option<(usize, &mut VoiceState)> {
-        // Find the first available free voice
-        if let Some((i, _)) = self
+    fn steal_voice(&mut self) -> (usize, &mut VoiceState) {
+        self.counter += 1;
+
+        // 1. Try to find an Idle voice first
+        let available_idx = self
             .voices
             .iter()
             .enumerate()
             .find(|(_, x)| x.kind == VoiceStateKind::Idle)
-        {
-            let inner = &mut self.voices[i];
-            return Some((i, inner));
-        }
+            .map(|(i, _)| i);
 
-        // Otherwise, find the lowest velocity
-        self.voices
+        let target_idx = match available_idx {
+            Some(idx) => idx,
+            None => {
+                // 2. All voices active: find the one with the smallest counter (Oldest)
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, x)| x.last_used)
+                    .map(|(i, _)| i)
+                    .unwrap() // Safe because voices is non-empty
+            }
+        };
+
+        let state = &mut self.voices[target_idx];
+        state.last_used = self.counter;
+        (target_idx, state)
+    }
+
+    pub fn on_note_on(&mut self, note: u8, velocity: u8) -> Option<usize> {
+        // If the note is already playing, re-use that voice and update "last_used"
+        if let Some((i, voice)) = self
+            .voices
             .iter_mut()
             .enumerate()
-            .min_by_key(|(_, x)| x.velocity)
+            .find(|(_, x)| x.note == note && x.kind == VoiceStateKind::Active)
+        {
+            self.counter += 1;
+            voice.velocity = velocity;
+            voice.last_used = self.counter;
+            return Some(i);
+        }
+
+        // Otherwise, steal
+        let (i, state) = self.steal_voice();
+        state.note = note;
+        state.velocity = velocity;
+        state.kind = VoiceStateKind::Active;
+        Some(i)
     }
 
     fn on_note_off(&mut self, note: u8, velocity: u8) -> Option<usize> {
@@ -148,31 +182,6 @@ impl VoiceAllocator {
             inner.kind = VoiceStateKind::Idle;
             inner.note = note;
             inner.velocity = velocity;
-
-            return Some(i);
-        }
-
-        None
-    }
-
-    fn on_note_on(&mut self, note: u8, velocity: u8) -> Option<usize> {
-        // If the note is already playing, update that velocity
-        if let Some((i, voice)) = self
-            .voices
-            .iter_mut()
-            .enumerate()
-            .find(|(_, x)| x.note == note)
-        {
-            voice.velocity = velocity;
-            return Some(i);
-        }
-
-        // Otherwise, steal the next available voice. Fow now, we just use the lowest velocity note.
-        let voice = self.steal_voice();
-        if let Some((i, inner)) = voice {
-            inner.note = note;
-            inner.velocity = velocity;
-            inner.kind = VoiceStateKind::Active;
 
             return Some(i);
         }
@@ -248,7 +257,7 @@ impl Node for PolyVoice {
                 };
 
                 if let Some(chan_idx) = chan_option {
-                    let offset_duration = block_start - item.instant;
+                    let offset_duration = item.instant - block_start;
 
                     let idx =
                         (offset_duration.as_secs_f32() * fs).clamp(0.0, block_size as f32) as usize;

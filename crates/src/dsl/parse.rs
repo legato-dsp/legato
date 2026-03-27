@@ -1,4 +1,4 @@
-use crate::{builder::ValidationError, ir::*};
+use crate::{builder::ValidationError, dsl::ir::*};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
 use std::collections::BTreeMap;
@@ -128,6 +128,12 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
     let alias = just(':').padded().ignore_then(ident).or_not();
 
+    let digits = text::digits(10);
+
+    let u32 = digits.to_slice().map(|s: &str| s.parse().unwrap());
+
+    let count = just("*").padded().ignore_then(u32).or_not();
+
     let obj_parser = ident
         .then_ignore(just(':').padded())
         .then(value_parser())
@@ -156,17 +162,21 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
 
     ident
         .then(alias)
+        .then(count)
         .then(params)
         .then(pipe.repeated().collect())
-        .map(|(((node_type, alias), params), pipes)| NodeDeclaration {
-            node_type,
-            alias,
-            params,
-            pipes,
-        })
+        .map(
+            |((((node_type, alias), count), params), pipes)| NodeDeclaration {
+                node_type,
+                alias,
+                params,
+                pipes,
+                count: count.unwrap_or(1),
+            },
+        )
 }
 
-fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
+fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>> {
     let ident = text::ascii::ident().map(ToString::to_string);
 
     // Default params use = for intitial values
@@ -210,14 +220,16 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, Macro, Err<Rich<'a, char>>> {
         .ignore_then(ident)
         .then(extra_padded(default_params))
         .then(patch_body)
-        .map(|((name, params), (((vports, decls), conns), sink))| Macro {
-            name,
-            default_params: params,
-            virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
-            declarations: decls,
-            connections: conns.unwrap_or_default(),
-            sink,
-        })
+        .map(
+            |((name, params), (((vports, decls), conns), sink))| AstMacro {
+                name,
+                default_params: params,
+                virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
+                declarations: decls,
+                connections: conns.unwrap_or_default(),
+                sink,
+            },
+        )
 }
 
 fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
@@ -226,9 +238,38 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
         .to_slice()
         .map(|s: &str| s.parse::<u32>().unwrap());
 
+    let selector = choice((
+        // Single node selection
+        uint.delimited_by(just('('), just(')'))
+            .map(|x| NodeSelector::Index(x as usize)),
+        // Range node selection
+        uint.then_ignore(just(".."))
+            .then(uint)
+            .delimited_by(just('('), just(')'))
+            .map(|(s, e)| NodeSelector::Range(s as usize, e as usize)),
+        // Wildcard
+        just("*")
+            .delimited_by(just('('), just(')'))
+            .map(|_| NodeSelector::All),
+    ))
+    .or_not()
+    .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
+
     let port = choice((
         // node.mono
         just('.').ignore_then(ident).map(Port::Named),
+        // port stride e.g [0:10:2]: this maps to [start:end:step].
+        // NOTE: Unlike python we don't take implicit values, this is not good [::-1]!
+        uint.then_ignore(just(":"))
+            .then(uint)
+            .then_ignore(just(":"))
+            .then(uint)
+            .delimited_by(just("["), just("]"))
+            .map(|((start, end), stride)| Port::Stride {
+                start: start as usize,
+                end: end as usize,
+                stride: stride as usize,
+            }),
         // node[0..2]
         uint.then_ignore(just(".."))
             .then(uint)
@@ -241,7 +282,14 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
     .or_not()
     .map(|p| p.unwrap_or(Port::None));
 
-    ident.then(port).map(|(node, port)| Endpoint { node, port })
+    ident
+        .then(selector)
+        .then(port)
+        .map(|((node, node_selector), port)| Endpoint {
+            node,
+            port,
+            node_selector,
+        })
 }
 
 fn connection_parser<'a>() -> impl Parser<'a, &'a str, Vec<Connection>, Err<Rich<'a, char>>> {
@@ -292,7 +340,7 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
 
     let patches = extra_padded(patch_parser())
         .repeated()
-        .collect::<Vec<Macro>>();
+        .collect::<Vec<AstMacro>>();
 
     let declarations = extra_padded(scope_parser()).repeated().collect();
 
@@ -405,7 +453,7 @@ mod test {
     fn test_node_pipes_and_aliases() {
         let src = r#"
             audio {
-                osc: sine { freq: 440 } | lowpass(100.5) | gain(null)
+                osc: sine * 4 { freq: 440 } | lowpass(100.5) | gain(null)
             }
 
             { sine }
@@ -428,6 +476,7 @@ mod test {
                             params: Some(Value::Null),
                         },
                     ],
+                    count: 4,
                 }],
             }],
             macros: Vec::new(),
@@ -437,6 +486,25 @@ mod test {
         };
 
         assert_parse_equals_ast(src, expected);
+    }
+
+    #[test]
+    fn test_port_stride() {
+        let src = r#"test_node[0:10:2]"#;
+        let res = endpoint_parser().parse(src).unwrap();
+
+        assert_eq!(
+            res,
+            Endpoint {
+                node: "test_node".into(),
+                node_selector: NodeSelector::Single,
+                port: Port::Stride {
+                    start: 0,
+                    end: 10,
+                    stride: 2
+                }
+            }
+        )
     }
 
     #[test]

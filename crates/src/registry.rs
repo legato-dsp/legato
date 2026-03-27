@@ -4,7 +4,7 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
-    ir::DSLParams,
+    dsl::ir::DSLParams,
     node::DynNode,
     node_spec,
     nodes::{
@@ -54,7 +54,10 @@ impl NodeRegistry {
         params: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
-            Some(spec) => (spec.build)(resource_builder, params),
+            Some(spec) => {
+                spec.check_for_bad_params(&params);
+                (spec.build)(resource_builder, params)
+            }
             None => Err(ValidationError::NodeNotFound(format!(
                 "Could not find node {}",
                 node_name
@@ -118,7 +121,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                     .expect("Could not find required parameter delay_name");
 
                 let len = p
-                    .get_duration("delay_length")
+                    .get_duration_ms("delay_length")
                     .unwrap_or(Duration::from_secs(1));
 
                 let chans = p.get_usize("chans").unwrap_or(2);
@@ -128,7 +131,15 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let delay_line = DelayLine::new(capacity as usize, chans);
 
-                let key = rb.add_delay_line(&name, delay_line);
+                // Replace this with the correct line if it was already made with default args.
+                let key = match rb.get_delay_line_key(&name) {
+                    Some(key) => {
+                        rb.replace_delay_line(key, delay_line);
+                        key
+                    }
+                    // Otherwise instantiate a new delay line
+                    None => rb.add_delay_line(&name, delay_line),
+                };
 
                 let node = DelayWrite::new(key, chans);
 
@@ -143,6 +154,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let name = p
                     .get_str("delay_name")
                     .expect("Could not find required parameter sampler_name");
+
                 let len = p
                     .get_array_duration_ms("delay_length")
                     .unwrap_or(vec![Duration::from_secs(1); 2]);
@@ -151,7 +163,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let key = rb
                     .get_delay_line_key(&name)
-                    .unwrap_or_else(|_| panic!("Could not find delay line key {}", name));
+                    .unwrap_or_else(|| rb.add_delay_line(&name, DelayLine::default()));
 
                 let node = DelayRead::new(chans, key, len);
 
@@ -303,7 +315,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
             build = |_, p| {
                 let chans = p.get_usize("chans").unwrap_or(2);
                 let duration = p
-                    .get_duration("duration")
+                    .get_duration_ms("duration")
                     .unwrap_or(Duration::from_secs_f32(5.0));
                 let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
 
@@ -336,7 +348,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let chans = p.get_usize("chans").unwrap_or(2);
 
                 let delay_length = p
-                    .get_duration("delay_length")
+                    .get_duration_ms("delay_length")
                     .unwrap_or(Duration::from_millis(200));
 
                 let delay_length_samples = sr as f32 * (delay_length.as_secs_f32());

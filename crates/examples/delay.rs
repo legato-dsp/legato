@@ -14,7 +14,7 @@ use legato::{
 struct Logger;
 
 impl Pipe for Logger {
-    fn pipe(&self, view: &mut legato::builder::SelectionView, _: Option<legato::ir::Value>) {
+    fn pipe(&self, view: &mut legato::builder::SelectionView, _: Option<legato::dsl::ir::Value>) {
         println!("In a pipe!!");
         dbg!(view);
     }

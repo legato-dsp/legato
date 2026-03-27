@@ -171,7 +171,10 @@ impl Executor {
                     let scratch_start = conn.sink.port_index * block_size;
                     let scratch_end = scratch_start + block_size;
 
-                    self.scratch[scratch_start..scratch_end].copy_from_slice(buffer);
+                    self.scratch[scratch_start..scratch_end]
+                        .iter_mut()
+                        .zip(buffer.iter())
+                        .for_each(|(dst, src)| *dst += src);
                 }
             }
 

@@ -259,17 +259,42 @@ impl AudioGraph {
 
 impl Debug for AudioGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_map()
-            .entry(&"capacity", &self.nodes.len())
-            .entry(
-                &"topo_sorted",
-                &self
-                    .topo_sorted
-                    .iter()
-                    .map(|x| self.nodes.get(*x).unwrap().name.clone())
-                    .collect::<Vec<String>>(),
+        let node_name = |key: NodeKey| {
+            self.nodes
+                .get(key)
+                .map(|n| n.name.as_str())
+                .unwrap_or("<missing>")
+        };
+
+        let fmt_edge = |con: &Connection| {
+            format!(
+                "{}:{} -> {}:{}",
+                node_name(con.source.node_key),
+                con.source.port_index,
+                node_name(con.sink.node_key),
+                con.sink.port_index,
             )
-            .entry(&"nodes", &self.nodes.iter().collect::<Vec<_>>())
+        };
+
+        let edges: Vec<String> = self
+            .topo_sorted
+            .iter()
+            .flat_map(|&k| {
+                self.outgoing_edges
+                    .get(k)
+                    .into_iter()
+                    .flat_map(|set| set.iter().map(fmt_edge))
+            })
+            .collect();
+
+        let topo_names: Vec<&str> = self.topo_sorted.iter().map(|&k| node_name(k)).collect();
+
+        let node_names: Vec<&str> = self.nodes.values().map(|n| n.name.as_str()).collect();
+
+        f.debug_struct("AudioGraph")
+            .field("nodes", &node_names)
+            .field("edges", &edges)
+            .field("topo_order", &topo_names)
             .finish()
     }
 }

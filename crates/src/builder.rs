@@ -1,8 +1,12 @@
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     config::Config,
+    dsl::{
+        ir::{DSLParams, NodeId, Port, Value},
+        parse::legato_parser,
+        pipeline::Pipeline,
+    },
     graph::{Connection, ConnectionEntry},
-    ir::{DSLParams, Port, Value},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::{
@@ -10,7 +14,6 @@ use crate::{
         mixer::{MonoFanOut, TrackMixer},
     },
     params::{ParamKey, ParamMeta},
-    parse::legato_parser,
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{
@@ -23,7 +26,7 @@ use crate::{
 };
 use arc_swap::ArcSwapOption;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     marker::PhantomData,
     sync::{Arc, atomic::AtomicU64},
 };
@@ -299,6 +302,13 @@ where
 
                 (start..end).collect::<Vec<_>>()
             }
+            Port::Stride { start, end, stride } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).step_by(stride).collect()
+            }
         };
 
         let sink_indicies: Vec<usize> = match connection.sink_kind {
@@ -324,6 +334,13 @@ where
                 }
 
                 (start..end).collect::<Vec<_>>()
+            }
+            Port::Stride { start, end, stride } => {
+                if end < start {
+                    panic!("End slice cannot be less than start!");
+                }
+
+                (start..end).step_by(stride).collect()
             }
         };
 
@@ -449,71 +466,65 @@ where
 
 impl LegatoBuilder<DslBuilding> {
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
-        // TODO: Use file and error handling later
         let ast = legato_parser(content).unwrap();
 
-        for scope in ast.declarations.iter() {
-            for node in scope.declarations.iter() {
-                self._add_node_ref_self(
-                    &scope.namespace,
-                    &node.node_type,
-                    &node.alias.clone().unwrap_or(node.node_type.clone()),
-                    &DSLParams(&node.params.clone().unwrap_or_else(BTreeMap::new)),
-                );
+        let ir = Pipeline::default().run_from_ast(ast);
 
-                for pipe in node.pipes.iter() {
-                    self.pipe(&pipe.name, pipe.params.clone());
-                }
+        println!("{}", &ir);
+
+        // Sanity check: every node must be a leaf before the builder runs.
+        debug_assert!(
+            !ir.has_unresolved_macros(),
+            "_build_dsl: unresolved MacroRef nodes remain after pipeline"
+        );
+
+        // Map each IRNode (by NodeId) to a runtime NodeKey as we add nodes.
+        let mut ir_to_runtime: HashMap<NodeId, NodeKey> = HashMap::new();
+
+        for node_id in ir.topological_sort() {
+            let node = ir.get_node(node_id).unwrap();
+            let dsl_params = DSLParams::new(&node.params);
+
+            // _add_node_ref_self populates working_name_lookup (needed by
+            // pipes) and sets last_selection.
+            self._add_node_ref_self(&node.namespace, &node.node_type, &node.alias, &dsl_params);
+
+            let runtime_key = *self
+                .working_name_lookup
+                .get(&node.alias)
+                .expect("alias must be in lookup immediately after _add_node_ref_self");
+
+            ir_to_runtime.insert(node_id, runtime_key);
+
+            // Pipes are applied right after the node they belong to, matching
+            // the original builder contract.
+            for pipe in &node.pipes {
+                self.pipe(&pipe.name, pipe.params.clone());
             }
         }
 
-        for connection in ast.connections.iter() {
-            let source_key = self
-                .working_name_lookup
-                .get(&connection.source.node)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Could not find source key in connection {}",
-                        &connection.source.node
-                    )
-                });
-
-            let sink_key = self
-                .working_name_lookup
-                .get(&connection.sink.node)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Could not find sink key in connection {}",
-                        &connection.sink.node
-                    )
-                });
-
+        // Wire edges using the NodeId -> NodeKey map (no string lookups).
+        for edge in ir.edges() {
             self._connect_ref_self(AddConnectionProps {
-                source: *source_key,
-                sink: *sink_key,
-                source_kind: connection.source.port.clone(),
-                sink_kind: connection.sink.port.clone(),
+                source: ir_to_runtime[&edge.source],
+                source_kind: edge.source_port.clone(),
+                sink: ir_to_runtime[&edge.sink],
+                sink_kind: edge.sink_port.clone(),
             });
         }
 
-        let sink_key = self
-            .working_name_lookup
-            .get(&ast.sink)
-            .expect("Could not find sink!");
-
+        // Resolve sink / source.
+        let sink_id = ir
+            .sink
+            .expect("IRGraph has no sink — check the DSL for a `sink:` declaration");
         self.runtime
-            .set_sink_key(*sink_key)
-            .expect("Could not set sink!");
+            .set_sink_key(ir_to_runtime[&sink_id])
+            .expect("Could not set sink");
 
-        if let Some(source) = ast.source {
-            let source_key = self
-                .working_name_lookup
-                .get(&source)
-                .expect("Explicit source passed but node not found!!");
-
+        if let Some(source_id) = ir.source {
             self.runtime
-                .set_source_key(*source_key)
-                .expect("Could not set runtime source!");
+                .set_source_key(ir_to_runtime[&source_id])
+                .expect("Could not set runtime source");
         }
 
         self.build()
@@ -644,10 +655,12 @@ impl<'a> ResourceBuilderView<'a> {
         key
     }
 
-    pub fn get_delay_line_key(&self, name: &String) -> Result<DelayLineKey, ValidationError> {
-        self.delay_keys.get(name).cloned().ok_or_else(|| {
-            ValidationError::ResourceNotFound(format!("Could not find delay key {}", name))
-        })
+    pub fn replace_delay_line(&mut self, key: DelayLineKey, delay_line: DelayLine) {
+        self.resource_builder.replace_delay_line(key, delay_line);
+    }
+
+    pub fn get_delay_line_key(&self, name: &String) -> Option<DelayLineKey> {
+        self.delay_keys.get(name).cloned()
     }
 
     pub fn add_sampler(&mut self, name: &String) -> SampleKey {
