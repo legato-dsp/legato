@@ -1,9 +1,10 @@
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     config::Config,
+    dsl::ir::{DSLParams, NodeId, Port, Value},
+    dsl::lower::{MacroExpansionPass, Pipeline},
+    dsl::parse::legato_parser,
     graph::{Connection, ConnectionEntry},
-    ir::{DSLParams, NodeId, Port, Value},
-    lower::{MacroExpansionPass, Pipeline},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::{
@@ -11,7 +12,6 @@ use crate::{
         mixer::{MonoFanOut, TrackMixer},
     },
     params::{ParamKey, ParamMeta},
-    parse::legato_parser,
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{

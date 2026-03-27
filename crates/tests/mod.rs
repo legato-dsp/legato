@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod parse_and_lower {
     use legato::{
-        ir::{IRGraph, Port, Value},
-        lower::Pipeline,
-        parse::legato_parser,
+        dsl::ir::{IRGraph, Port, Value},
+        dsl::lower::Pipeline,
+        dsl::parse::legato_parser,
     };
 
     fn parse_and_lower(src: &str) -> IRGraph {

@@ -4,7 +4,7 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
-    ir::DSLParams,
+    dsl::ir::DSLParams,
     node::DynNode,
     node_spec,
     nodes::{

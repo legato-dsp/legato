@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ValidationError,
     builder::{SelectionKind, SelectionView},
-    ir::Value,
+    dsl::ir::Value,
     node::LegatoNode,
     nodes::audio::oversample::Oversampler2X,
 };

@@ -1,7 +1,6 @@
-use crate::{builder::ValidationError, ir::*};
+use crate::{builder::ValidationError, dsl::ir::*};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
-use heapless::sorted_linked_list::Node;
 use std::collections::BTreeMap;
 
 fn comment<'a>() -> impl Parser<'a, &'a str, (), Err<Rich<'a, char>>> {

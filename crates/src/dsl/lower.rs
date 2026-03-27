@@ -1,4 +1,4 @@
-use crate::ir::*;
+use crate::dsl::ir::*;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -552,7 +552,7 @@ macro_rules! object {
     }};
     ( $($key:expr => $value:expr),* $(,)? ) => {{
         let mut _map = ::std::collections::BTreeMap::new();
-        $( _map.insert($key.to_string(), $crate::ir::Value::from($value)); )*
+        $( _map.insert($key.to_string(), $crate::dsl::ir::Value::from($value)); )*
         _map
     }};
 }
