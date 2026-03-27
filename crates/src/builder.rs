@@ -1,9 +1,11 @@
 use crate::{
     LegatoApp, LegatoFrontend, LegatoMsg,
     config::Config,
-    dsl::ir::{DSLParams, NodeId, Port, Value},
-    dsl::lower::{MacroExpansionPass, Pipeline},
-    dsl::parse::legato_parser,
+    dsl::{
+        ir::{DSLParams, NodeId, Port, Value},
+        parse::legato_parser,
+        pipeline::Pipeline,
+    },
     graph::{Connection, ConnectionEntry},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
@@ -466,12 +468,7 @@ impl LegatoBuilder<DslBuilding> {
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
         let ast = legato_parser(content).unwrap();
 
-        // Passes transform the graph one step at a time.
-        let ir = Pipeline::new()
-            .add_pass(MacroExpansionPass::default())
-            // .add_pass(SampleRateBoundaryPass::new(self.runtime.get_config()))
-            // .add_pass(PortExpansionPass::default())
-            .run_from_ast(ast);
+        let ir = Pipeline::default().run_from_ast(ast);
 
         println!("{}", &ir);
 
