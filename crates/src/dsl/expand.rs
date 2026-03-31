@@ -65,47 +65,73 @@ impl MacroExpansionPass {
             let new_sink = id_map[&ir_macro.sink];
             new_sinks.push(new_sink);
 
-            let remapped_virtual: IndexMap<String, (NodeId, NodeSelector, Port)> = ir_macro
+            let remapped_virtual: IndexMap<String, Vec<(NodeId, NodeSelector, Port)>> = ir_macro
                 .virtual_input_map
                 .iter()
-                .map(|(name, (id, sel, port))| {
-                    (name.clone(), (id_map[id], sel.clone(), port.clone()))
+                .map(|(name, targets)| {
+                    let remapped = targets
+                        .iter()
+                        .map(|(id, sel, port)| (id_map[id], sel.clone(), port.clone()))
+                        .collect();
+                    (name.clone(), remapped)
                 })
                 .collect();
 
             // Rewire incoming edges into each instance.
             for edge in &incoming {
+                // Resolve to a specific source port depending on the type
                 let resolved_source_port = match &edge.source_port {
                     Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
                     Port::Slice(start, _) => Port::Index(start + i),
                     other => other.clone(),
                 };
-                let (target_id, target_selector, target_port) = match &edge.sink_port {
-                    Port::Named(name) => remapped_virtual.get(name).map_or(
-                        (new_sink, NodeSelector::Single, edge.sink_port.clone()),
-                        |(id, sel, port)| (*id, sel.clone(), port.clone()),
-                    ),
-                    Port::Index(i) => remapped_virtual.get_index(*i).map_or(
-                        (new_sink, NodeSelector::Single, edge.sink_port.clone()),
-                        |(_, (id, sel, port))| (*id, sel.clone(), port.clone()),
-                    ),
-                    Port::None => remapped_virtual.get_index(0).map_or(
-                        (new_sink, NodeSelector::Single, Port::None),
-                        |(_, (id, sel, port))| (*id, sel.clone(), port.clone()),
-                    ),
+
+                // We also want to change behavior depending on the src_count.
+                // We want the following invariants:
+                // n:n arity -> zip
+                // n:1 arity -> fan in
+                // 1:n arity -> fan out
+                // n:m -> panic
+                let resolved_source_selector = {
+                    let src_count = graph.get_node(edge.source).map(|n| n.count).unwrap_or(1);
+                    match (src_count, node.count) {
+                        (n, m) if n == m && n > 1 => NodeSelector::Index(i), // zip, just use node count i
+                        (n, m) if n != m && n > 1 && m > 1 => {
+                            panic!("Cannot match node selection arity {}:{}", n, m)
+                        }
+                        _ => edge.source_selector.clone(), // 1:1, 1:N broadcast, N:1, fan-in,  preserve original
+                    }
+                };
+
+                let targets: Vec<(NodeId, NodeSelector, Port)> = match &edge.sink_port {
+                    Port::Named(name) => remapped_virtual.get(name).cloned().unwrap_or_else(|| {
+                        vec![(new_sink, NodeSelector::Single, edge.sink_port.clone())]
+                    }),
+                    Port::Index(i) => remapped_virtual
+                        .get_index(*i)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| {
+                            vec![(new_sink, NodeSelector::Single, edge.sink_port.clone())]
+                        }),
+                    Port::None => remapped_virtual
+                        .get_index(0)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| vec![(new_sink, NodeSelector::Single, Port::None)]),
                     Port::Slice(..) | Port::Stride { .. } => panic!(
                         "Slice/Stride not supported on virtual ports (macro '{}')",
                         node.node_type
                     ),
                 };
-                graph.connect_multi(
-                    edge.source,
-                    edge.source_selector.clone(),
-                    resolved_source_port,
-                    target_id,
-                    target_selector,
-                    target_port,
-                );
+                for (target_id, target_selector, target_port) in targets {
+                    graph.connect_multi(
+                        edge.source,
+                        resolved_source_selector.clone(),
+                        resolved_source_port.clone(),
+                        target_id,
+                        target_selector,
+                        target_port,
+                    );
+                }
             }
         }
 

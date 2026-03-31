@@ -11,18 +11,24 @@ pub struct ApplyOp {
     val: f32,
     apply_op: fn(Vf32, Vf32) -> Vf32,
     ports: Ports,
+    chans: usize,
 }
 
 impl ApplyOp {
-    /// Here, chans represent the incoming number of channels. We always append one more value stream to allow for modulation
+    /// Here, we typically pass in chans = 1 for binary two channel operations.
+    /// For instance, multiply two streams by each other.
+    ///
+    /// However, we can also pass in multiple channels that are operated against
+    /// the current val, which is convenient for say mc gain
     pub fn new(val: f32, chans: usize, apply_op: fn(Vf32, Vf32) -> Vf32) -> Self {
         Self {
             val,
             apply_op,
+            chans,
             ports: PortBuilder::default()
-                .audio_in(chans)
+                .audio_in(1)
                 .audio_in_named(&["val"])
-                .audio_out(chans)
+                .audio_out(1)
                 .build(),
         }
     }
@@ -43,9 +49,7 @@ impl ApplyOp {
         }
     }
     fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut [&mut [f32]]) {
-        let chans = self.ports.audio_in.len() - 1; // Remove value channel to see input channels
-
-        let audio_inputs = &ai[..chans];
+        let audio_inputs = &ai[0..self.chans];
 
         for (in_chan, out_chan) in audio_inputs.iter().zip(ao) {
             for ((in_chunk, out_chunk), val_chunk) in in_chan
@@ -90,6 +94,7 @@ fn mult(a: Vf32, b: Vf32) -> Vf32 {
 }
 
 fn gain(a: Vf32, b: Vf32) -> Vf32 {
+    // Fast soft clip
     fast_tanh_vf32(a * b)
 }
 

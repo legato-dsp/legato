@@ -894,4 +894,180 @@ mod parse_and_lower {
         //                   = 21
         assert_eq!(graph.edge_count(), 21);
     }
+
+    #[test]
+    fn test_e2e_virtual_port_fans_out_to_multiple_internal_nodes() {
+        // `freq` is declared as a virtual input but wired to two internal nodes:
+        // freq_mult[0] and fm_add[0]. The old HashMap would silently drop one.
+        let src = r#"
+            patch fm_voice(freq = 440.0) {
+                in freq
+
+                audio {
+                    mult: freq_mult,
+                    add:  fm_add,
+                    sine: carrier { freq: $freq }
+                }
+
+                freq      >> freq_mult[0]
+                freq      >> fm_add[0]
+                freq_mult >> carrier.freq
+                fm_add    >> carrier[0]
+
+                { carrier }
+            }
+
+            patches {
+                fm_voice: v { freq: 880.0 }
+            }
+
+            audio {
+                sine: lfo { freq: 2.0 }
+            }
+
+            lfo >> v.freq
+
+            { v }
+        "#;
+
+        let graph = parse_and_lower(src);
+
+        // lfo must reach both internal targets via the same virtual port.
+        let to_freq_mult = graph.find_edges_between("lfo", "v.freq_mult");
+        assert_eq!(to_freq_mult.len(), 1, "lfo -> v.freq_mult missing");
+        assert_eq!(to_freq_mult[0].sink_port, Port::Index(0));
+
+        let to_fm_add = graph.find_edges_between("lfo", "v.fm_add");
+        assert_eq!(to_fm_add.len(), 1, "lfo -> v.fm_add missing");
+        assert_eq!(to_fm_add[0].sink_port, Port::Index(0));
+
+        // Interior edges are still present and correct.
+        let freq_mult_to_carrier = graph.find_edges_between("v.freq_mult", "v.carrier");
+        assert_eq!(freq_mult_to_carrier.len(), 1);
+        assert_eq!(
+            freq_mult_to_carrier[0].sink_port,
+            Port::Named("freq".into())
+        );
+
+        let fm_add_to_carrier = graph.find_edges_between("v.fm_add", "v.carrier");
+        assert_eq!(fm_add_to_carrier.len(), 1);
+        assert_eq!(fm_add_to_carrier[0].sink_port, Port::Index(0));
+
+        // 2 virtual fan-out + 2 interior = 4
+        assert_eq!(graph.edge_count(), 4);
+    }
+
+    #[test]
+    fn test_e2e_two_virtual_ports_each_fan_out_without_cross_contamination() {
+        // Checking and making sure that multiple virtual inputs are mapped correctly
+        let src = r#"
+            patch dual(freq = 440.0, attack = 100.0) {
+                in freq gate
+
+                audio {
+                    mult: freq_mult,
+                    add:  fm_add,
+                    adsr: env       { attack: $attack },
+                    mult: env_scale
+                }
+
+                freq >> freq_mult[0]
+                freq >> fm_add[0]
+                gate >> env.gate
+                gate >> env_scale[0]
+
+                freq_mult >> env[1]
+
+                { env }
+            }
+
+            patches {
+                dual * 3 { freq: 220.0, attack: 50.0 }
+            }
+
+            midi {
+                poly_voice { chan: 0, voices: 3 }
+            }
+
+            poly_voice[0:6:2] >> dual(*).gate
+            poly_voice[1:7:2] >> dual(*).freq
+
+            { dual }
+        "#;
+
+        let graph = parse_and_lower(src);
+
+        // 3 instances × 4 leaf nodes = 12, plus poly_voice = 13
+        assert_eq!(graph.node_count(), 13);
+
+        for i in 0..3usize {
+            let prefix = format!("dual.{i}");
+
+            // freq fan-out: poly_voice -> freq_mult and fm_add
+            let to_freq_mult =
+                graph.find_edges_between("poly_voice", &format!("{prefix}.freq_mult"));
+            assert_eq!(
+                to_freq_mult.len(),
+                1,
+                "poly_voice -> {prefix}.freq_mult missing"
+            );
+            assert_eq!(to_freq_mult[0].sink_port, Port::Index(0));
+
+            let to_fm_add = graph.find_edges_between("poly_voice", &format!("{prefix}.fm_add"));
+            assert_eq!(to_fm_add.len(), 1, "poly_voice -> {prefix}.fm_add missing");
+            assert_eq!(to_fm_add[0].sink_port, Port::Index(0));
+
+            // gate fan-out: poly_voice -> env.gate and env_scale[0]
+            let to_env = graph.find_edges_between("poly_voice", &format!("{prefix}.env"));
+            let gate_edge = to_env
+                .iter()
+                .find(|e| e.sink_port == Port::Named("gate".into()))
+                .unwrap_or_else(|| panic!("poly_voice -> {prefix}.env gate edge missing"));
+            assert_eq!(gate_edge.source_port, Port::Index(i * 2)); // stride=2
+
+            let to_env_scale =
+                graph.find_edges_between("poly_voice", &format!("{prefix}.env_scale"));
+            assert_eq!(
+                to_env_scale.len(),
+                1,
+                "poly_voice -> {prefix}.env_scale missing"
+            );
+            assert_eq!(to_env_scale[0].sink_port, Port::Index(0));
+
+            // Cross-contamination: freq must not reach env or env_scale
+            assert!(
+                graph
+                    .find_edges_between("poly_voice", &format!("{prefix}.env"))
+                    .iter()
+                    .all(|e| e.sink_port == Port::Named("gate".into())),
+                "freq port bled into {prefix}.env via wrong sink_port"
+            );
+            assert!(
+                graph
+                    .find_edges_between("poly_voice", &format!("{prefix}.freq_mult"))
+                    .iter()
+                    .all(|e| e.sink_port == Port::Index(0)),
+                "gate port bled into {prefix}.freq_mult"
+            );
+
+            // Interior: freq_mult -> env[1]
+            let interior =
+                graph.find_edges_between(&format!("{prefix}.freq_mult"), &format!("{prefix}.env"));
+            assert_eq!(
+                interior.len(),
+                1,
+                "{prefix}.freq_mult -> {prefix}.env missing"
+            );
+            assert_eq!(interior[0].sink_port, Port::Index(1));
+
+            // Param substitution
+            assert_eq!(
+                get_param(&graph, &format!("{prefix}.env"), "attack"),
+                Value::F32(50.0)
+            );
+        }
+
+        // 3 instances × (2 freq fan-out + 2 gate fan-out + 1 interior) = 15
+        assert_eq!(graph.edge_count(), 15);
+    }
 }
