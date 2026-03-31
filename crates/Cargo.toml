@@ -1,7 +1,10 @@
 [package]
 name = "legato"
-version = "0.0.6"
+description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
+version = "0.0.9"
 edition = "2024"
+repository="https://github.com/legato-dsp/legato"
+license = "AGPL-3.0"
 
 [dependencies]
 cpal = { version = "0.16.0", features = ["jack"] }
