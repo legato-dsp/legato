@@ -11,7 +11,6 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            freq = 440.0,
             attack = 200.0,
             decay = 200.0,
             sustain = 0.3,
@@ -20,14 +19,35 @@ fn main() {
             in freq gate
 
             audio {
-                sine { freq: $freq },
+                sine: mod,
+                sine: carrier,
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+                mult: freq_mult,
+                mult: fm_gain { val: 1000.0 },
+                add: fm_add
             }
+
+            control {
+                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 }
+            }
+
+            freq >> freq_mult[0]
+
+            ratio >> freq_mult[1]
+
+            freq_mult >> mod.freq
+
+            mod >> fm_gain[0]
+
+
+            freq >> fm_add[0]
+            fm_gain >> fm_add[1]
+
+            fm_add >> carrier.freq
 
             gate >> adsr.gate
 
-            freq >> sine.freq
-            sine >> adsr[1]
+            carrier >> adsr[1]
 
             { adsr }
         }

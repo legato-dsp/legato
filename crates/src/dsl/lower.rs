@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use crate::dsl::ir::*;
 use std::collections::HashMap;
 
@@ -70,18 +72,19 @@ fn convert_macro(
         );
     }
 
-    let virtual_input_map = ast_macro
+    let mut virtual_input_map: IndexMap<String, Vec<(NodeId, NodeSelector, Port)>> =
+        IndexMap::new();
+    for c in ast_macro
         .connections
         .iter()
         .filter(|c| ast_macro.virtual_ports_in.contains(&c.source.node))
-        .map(|c| {
-            let target_id = local_alias_to_id[&c.sink.node];
-            (
-                c.source.node.clone(),
-                (target_id, c.sink.node_selector.clone(), c.sink.port.clone()),
-            )
-        })
-        .collect();
+    {
+        let target_id = local_alias_to_id[&c.sink.node];
+        virtual_input_map
+            .entry(c.source.node.clone())
+            .or_default()
+            .push((target_id, c.sink.node_selector.clone(), c.sink.port.clone()));
+    }
 
     let sink_id = local_alias_to_id[&ast_macro.sink];
     body.sink = Some(sink_id);

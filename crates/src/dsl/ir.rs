@@ -192,7 +192,7 @@ pub struct IRNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IRMacro {
     pub name: String,
-    pub virtual_input_map: IndexMap<String, (NodeId, NodeSelector, Port)>,
+    pub virtual_input_map: IndexMap<String, Vec<(NodeId, NodeSelector, Port)>>,
     pub default_params: Option<Object>,
     pub body: IRGraph,
     pub sink: NodeId,

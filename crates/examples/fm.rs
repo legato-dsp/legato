@@ -18,7 +18,7 @@ fn main() {
             mult: fm_freq { val: 1.5 },
 
             // The FM gain
-            mult: fm_gain { val: 1000.0, chans: 1 },
+            mult: fm_gain { val: 1000.0 },
 
             // One output chan, another control chan
             add: fm_add,
