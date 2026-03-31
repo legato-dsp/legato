@@ -95,33 +95,6 @@
         };
       });
 
-      checks = forEachSystem ({ pkgs, nightly, naersk', commonArgs, ... }: {
-        build = self.packages.${pkgs.system}.default;
-
-        formatting = pkgs.runCommand "check-fmt" {
-          nativeBuildInputs = [ nightly ];
-        } ''
-          mkdir -p $out
-          cargo fmt --manifest-path ${./crates/Cargo.toml} --check
-        '';
-
-        clippy = naersk'.buildPackage {
-          src = ./crates;
-          mode = "clippy";
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
-          buildInputs = commonArgs.buildInputs;
-          doCheck = true;
-        };
-
-        tests = naersk'.buildPackage {
-          src = ./crates;
-          release = false;
-          doCheck = true;
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
-          buildInputs = commonArgs.buildInputs;
-        };
-      });
-
       apps = forEachSystem ({ pkgs, ... }: 
         let
           mkApp = name: scriptPath: {
