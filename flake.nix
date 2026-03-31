@@ -96,10 +96,8 @@
       });
 
       checks = forEachSystem ({ pkgs, nightly, naersk', commonArgs, ... }: {
-        # 1. The main package build itself is a check
         build = self.packages.${pkgs.system}.default;
 
-        # 2. Formatting check
         formatting = pkgs.runCommand "check-fmt" {
           nativeBuildInputs = [ nightly ];
         } ''
