@@ -75,11 +75,30 @@ impl MacroExpansionPass {
 
             // Rewire incoming edges into each instance.
             for edge in &incoming {
+                // Resolve to a specific source port depending on the type
                 let resolved_source_port = match &edge.source_port {
                     Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
                     Port::Slice(start, _) => Port::Index(start + i),
                     other => other.clone(),
                 };
+
+                // We also want to change behavior depending on the src_count.
+                // We want the following invariants:
+                // n:n arity -> zip
+                // n:1 arity -> fan in
+                // 1:n arity -> fan out
+                // n:m -> panic
+                let resolved_source_selector = {
+                    let src_count = graph.get_node(edge.source).map(|n| n.count).unwrap_or(1);
+                    match (src_count, node.count) {
+                        (n, m) if n == m && n > 1 => NodeSelector::Index(i), // zip, just use node count i
+                        (n, m) if n != m && n > 1 && m > 1 => {
+                            panic!("Cannot match node selection arity {}:{}", n, m)
+                        }
+                        _ => edge.source_selector.clone(), // 1:1, 1:N broadcast, N:1, fan-in,  preserve original
+                    }
+                };
+
                 let (target_id, target_selector, target_port) = match &edge.sink_port {
                     Port::Named(name) => remapped_virtual.get(name).map_or(
                         (new_sink, NodeSelector::Single, edge.sink_port.clone()),
@@ -100,7 +119,7 @@ impl MacroExpansionPass {
                 };
                 graph.connect_multi(
                     edge.source,
-                    edge.source_selector.clone(),
+                    resolved_source_selector,
                     resolved_source_port,
                     target_id,
                     target_selector,
