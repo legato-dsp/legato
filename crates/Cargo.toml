@@ -3,6 +3,7 @@ name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
 version = "0.0.8"
 edition = "2024"
+repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [dependencies]
