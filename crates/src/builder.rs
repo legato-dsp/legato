@@ -470,8 +470,6 @@ impl LegatoBuilder<DslBuilding> {
 
         let ir = Pipeline::default().run_from_ast(ast);
 
-        println!("{}", &ir);
-
         // Sanity check: every node must be a leaf before the builder runs.
         debug_assert!(
             !ir.has_unresolved_macros(),
