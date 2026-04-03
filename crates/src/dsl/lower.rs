@@ -483,8 +483,6 @@ mod spawn_tests {
             ..Default::default()
         };
 
-        dbg!(&ast);
-
         let graph = expand(ast);
         assert_eq!(graph.node_count(), 4);
 

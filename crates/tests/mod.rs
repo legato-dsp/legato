@@ -401,8 +401,6 @@ mod parse_and_lower {
 
         let nodes: Vec<_> = graph.topological_sort();
 
-        dbg!(&nodes);
-
         assert_eq!(nodes.iter().len(), 22);
 
         let mixer_edges = graph.find_edges_from("track_mixer");

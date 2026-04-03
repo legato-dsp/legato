@@ -38,6 +38,7 @@ pub mod runtime;
 pub mod sample;
 pub mod simd;
 pub mod spec;
+pub mod window;
 
 pub mod nodes;
 
