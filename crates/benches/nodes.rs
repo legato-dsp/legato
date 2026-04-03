@@ -166,7 +166,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
 fn bench_oversampler(c: &mut Criterion) {
     let config = Config {
-        block_size: 256,
+        block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
         initial_graph_capacity: 4,
@@ -288,7 +288,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
     "#,
     ));
 
-    c.bench_function("Basic oversampler", |b| {
+    c.bench_function("Kitchen Sink", |b| {
         let ai: &[Box<[f32]>] = &[
             vec![0.0; config.block_size].into(),
             vec![0.0; config.block_size].into(),
