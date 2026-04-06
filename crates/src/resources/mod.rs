@@ -45,7 +45,7 @@ pub struct Resources {
     arena: RuntimeArena,
     param_store: ParamStore,
     internal_buffers: SlotMap<InternalBufferKey, Window>,
-    external_buffers: SlotMap<ExternalBufferKey, ExternalBuffer>,
+    external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
     delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
     receiver: ringbuf::HeapCons<ExternalBufferUpdate>,
     garbage_sender: ringbuf::HeapProd<ExternalBuffer>,
@@ -57,13 +57,16 @@ impl Resources {
         param_store: ParamStore,
         receiver: HeapCons<ExternalBufferUpdate>,
         garbage_sender: HeapProd<ExternalBuffer>,
+        internal_buffers: SlotMap<InternalBufferKey, Window>,
+        external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
+        delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
     ) -> Self {
         Self {
             arena,
             param_store,
-            internal_buffers: SlotMap::default(),
-            external_buffers: SlotMap::default(),
-            delay_lines: SlotMap::default(),
+            internal_buffers,
+            external_buffers,
+            delay_lines,
             receiver,
             garbage_sender,
         }
@@ -104,14 +107,14 @@ impl Resources {
     }
 
     pub fn get_external_buffer(&self, key: ExternalBufferKey) -> Option<&ExternalBuffer> {
-        self.external_buffers.get(key)
+        self.external_buffers.get(key).unwrap().as_ref()
     }
 
     pub fn get_external_buffer_mut(
         &mut self,
         key: ExternalBufferKey,
     ) -> Option<&mut ExternalBuffer> {
-        self.external_buffers.get_mut(key)
+        self.external_buffers.get_mut(key).unwrap().as_mut()
     }
 
     #[inline(always)]
@@ -123,9 +126,11 @@ impl Resources {
         while let Some(incoming) = self.receiver.try_pop() {
             if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
                 // This returns the old value, and we can then clean it up in another thread
-                let old_buffer = std::mem::replace(buffer_ref, incoming.buffer);
-                if self.garbage_sender.try_push(old_buffer).is_err() {
-                    panic!("Returned buffer was not sent to another thread to be dropped!")
+                let old_buffer = std::mem::replace(buffer_ref, Some(incoming.buffer));
+                if let Some(inner) = old_buffer {
+                    if self.garbage_sender.try_push(inner).is_err() {
+                        panic!("Returned buffer was not sent to another thread to be dropped!")
+                    }
                 }
             }
         }
@@ -160,8 +165,15 @@ impl ResourceBuilder {
     }
 
     /// Register an external buffer, and add the window to the resource manager.
-    pub fn add_external_buffer(&mut self, buffer: Option<ExternalBuffer>) -> ExternalBufferKey {
-        self.external_buffers.insert(buffer)
+    pub fn add_external_buffer(
+        &mut self,
+        name: &str,
+        buffer: Option<ExternalBuffer>,
+    ) -> ExternalBufferKey {
+        let key = self.external_buffers.insert(buffer);
+        self.external_buffer_key_lookup.insert(name.into(), key);
+
+        key
     }
 
     /// Register an internal buffer of a certain size, and add the window to the resource manager.
@@ -188,7 +200,15 @@ impl ResourceBuilder {
 
         let (extern_buffer_update_prod, extern_buffer_update_cons) = HeapRb::new(512).split();
 
-        let resources = Resources::new(arena, store, extern_buffer_update_cons, garbage_prod);
+        let resources = Resources::new(
+            arena,
+            store,
+            extern_buffer_update_cons,
+            garbage_prod,
+            self.internal_buffers,
+            self.external_buffers,
+            self.delay_lines,
+        );
 
         let frontend = ResourceFrontend::new(
             param_frontend,
@@ -238,6 +258,7 @@ impl ResourceFrontend {
         name: &str,
         buffer: ExternalBuffer,
     ) -> Result<(), ExternalBufferUpdate> {
+        dbg!(&self.external_buffer_key_lookup);
         let key = self
             .external_buffer_key_lookup
             .get(name)

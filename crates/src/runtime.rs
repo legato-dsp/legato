@@ -107,6 +107,11 @@ impl Runtime {
         self.executor.graph.get_node_mut(*key)
     }
 
+    pub fn drain_external_sample_msg(&mut self) {
+        let resources = self.context.get_resources_mut();
+        resources.drain();
+    }
+
     // Execute the audio plan and return the next block
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
         self.executor.process(&mut self.context, external_inputs)

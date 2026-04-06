@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ringbuf::traits::Split;
+use slotmap::SlotMap;
 
 use crate::{
     config::Config,
@@ -22,6 +23,9 @@ pub fn build_placeholder_context(config: Config) -> AudioContext {
             ParamStore::new(Arc::new([])),
             dummy_sample_cons,
             dummy_garbage_prod,
+            SlotMap::default(),
+            SlotMap::default(),
+            SlotMap::default(),
         ),
     )
 }

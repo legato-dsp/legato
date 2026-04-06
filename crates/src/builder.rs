@@ -1,4 +1,5 @@
 use ringbuf::{HeapRb, traits::Split};
+use slotmap::SlotMap;
 
 use crate::{
     LegatoApp, LegatoFrontend,
@@ -160,6 +161,9 @@ impl LegatoBuilder<Unconfigured> {
                 ParamStore::new(Arc::new([])),
                 dummy_sample_cons,
                 dummy_garbage_prod,
+                SlotMap::default(),
+                SlotMap::default(),
+                SlotMap::default(),
             ),
         );
 
@@ -686,7 +690,9 @@ impl<'a> ResourceBuilderView<'a> {
         if let Some(&key) = self.external_buffer_keys.get(name) {
             key
         } else {
-            self.resource_builder.add_external_buffer(None)
+            let key = self.resource_builder.add_external_buffer(name, None);
+            self.external_buffer_keys.insert(name.clone(), key);
+            key
         }
     }
 

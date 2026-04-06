@@ -85,10 +85,14 @@ impl LegatoApp {
                 }
             }
         }
+        // Drain messages for sample update
+        self.runtime.drain_external_sample_msg();
+
         // Handle messages from the LegatoFrontend
         while let Some(msg) = self.consumer.try_pop() {
             self.runtime.handle_msg(msg);
         }
+
         self.runtime.next_block(external_inputs)
     }
 
