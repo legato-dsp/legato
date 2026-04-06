@@ -14,8 +14,7 @@ pub type NodeFactory =
 
 /// This struct defines the node display/debug name, required and optional params,
 /// as well as a node factory for a node definition.
-///
-/// In order to let the legato DSL interact and spawn your node,
+#[derive(Debug)]
 pub struct NodeSpec {
     pub name: String,
     pub required_params: BTreeSet<String>,

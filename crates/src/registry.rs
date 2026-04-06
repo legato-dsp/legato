@@ -11,7 +11,7 @@ use crate::{
         audio::{
             adsr::Adsr,
             allpass::Allpass,
-            delay::{DelayLine, DelayRead, DelayWrite},
+            delay::{DelayRead, DelayWrite},
             mixer::{MonoFanOut, TrackMixer},
             onepole::OnePole,
             ops::{ApplyOpKind, mult_node_factory},
@@ -23,7 +23,7 @@ use crate::{
         control::{map::Map, signal::Signal},
         midi::voice::{PolyVoice, Voice},
     },
-    params::ParamMeta,
+    resources::params::ParamMeta,
     spec::{NodeFactory, NodeSpec},
 };
 
@@ -55,7 +55,7 @@ impl NodeRegistry {
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
             Some(spec) => {
-                spec.check_for_bad_params(&params);
+                spec.check_for_bad_params(params);
                 (spec.build)(resource_builder, params)
             }
             None => Err(ValidationError::NodeNotFound(format!(
@@ -104,7 +104,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                     .expect("Could not find required parameter sampler_name");
                 let chans = p.get_usize("chans").unwrap_or(2);
 
-                let key = rb.add_sampler(&name);
+                let key = rb.add_external_buffer_key(&name);
 
                 let node = Sampler::new(key, chans);
 
@@ -129,19 +129,19 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let sr = rb.get_config().sample_rate as f32;
                 let capacity = sr * len.as_secs_f32();
 
-                let delay_line = DelayLine::new(capacity as usize, chans);
-
-                // Replace this with the correct line if it was already made with default args.
-                let key = match rb.get_delay_line_key(&name) {
-                    Some(key) => {
-                        rb.replace_delay_line(key, delay_line);
-                        key
-                    }
-                    // Otherwise instantiate a new delay line
-                    None => rb.add_delay_line(&name, delay_line),
+                // If we made default delays already, we replace them
+                let keys: Vec<_> = if let Some(existing_keys) = rb.get_delay_line_key(&name) {
+                    existing_keys.iter().for_each(|key| {
+                        rb.replace_delay_line(*key, (capacity as usize).next_power_of_two());
+                    });
+                    existing_keys
+                } else {
+                    (0..chans)
+                        .map(|_| rb.add_delay_line(&name, (capacity as usize).next_power_of_two()))
+                        .collect()
                 };
 
-                let node = DelayWrite::new(key, chans);
+                let node = DelayWrite::new(keys, chans);
 
                 Ok(Box::new(node))
             }
@@ -161,9 +161,10 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 let chans = p.get_usize("chans").unwrap_or(2);
 
-                let key = rb
-                    .get_delay_line_key(&name)
-                    .unwrap_or_else(|| rb.add_delay_line(&name, DelayLine::default()));
+                // Make defaults if they do not exist yet
+                let key = rb.get_delay_line_key(&name).unwrap_or_else(|| {
+                    (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect()
+                });
 
                 let node = DelayRead::new(chans, key, len);
 
@@ -402,12 +403,13 @@ pub fn control_registry_factory() -> NodeRegistry {
         ),
         node_spec!(
             "map".into(),
-            required = ["range", "new_range "],
+            required = ["range", "new_range"],
             optional = [],
             build = |_, p| {
                 let range = p
                     .get_array_f32("range")
                     .expect("Must pass original range to map");
+
                 let new_range = p
                     .get_array_f32("new_range")
                     .expect("Must pass new_range to map");

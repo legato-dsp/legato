@@ -11,49 +11,43 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
+            freq_m = 440.0,
+            freq_c = 660.0,
             attack = 200.0,
             decay = 200.0,
             sustain = 0.3,
             release = 200.0
         ) {
-            in freq gate
-
             audio {
-                sine: mod,
-                sine: carrier,
-                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+                sine: mod { freq: $freq_m },
+                sine: carrier { freq: $freq_c },
                 mult: freq_mult,
                 mult: fm_gain { val: 1000.0 },
-                add: fm_add
+                add: fm_add,
             }
 
             control {
-                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 }
+                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 },
+                signal: freq { name: "freq", min: 10.0, max: 10000.0, default: $freq_c }
             }
 
             freq >> freq_mult[0]
-
             ratio >> freq_mult[1]
 
             freq_mult >> mod.freq
 
             mod >> fm_gain[0]
 
-
             freq >> fm_add[0]
             fm_gain >> fm_add[1]
 
             fm_add >> carrier.freq
 
-            gate >> adsr.gate
-
-            carrier >> adsr[1]
-
-            { adsr }
+            { carrier }
         }
 
         patches {
-            voice * 5 { }
+            voice * 5 {}
         }
 
         audio {
@@ -69,12 +63,6 @@ fn main() {
             track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
         }
 
-        midi { 
-            poly_voice { chan: 0, voices: 5 }
-        }
-
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
         osc_mixer >> mono_fan_out

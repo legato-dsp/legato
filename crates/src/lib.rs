@@ -2,7 +2,10 @@
 
 use std::{fmt::Debug, path::Path};
 
-use heapless::spsc::{Consumer, Producer};
+use ringbuf::{
+    HeapCons, HeapProd,
+    traits::{Consumer, Producer},
+};
 
 use crate::{
     builder::ValidationError,
@@ -11,7 +14,10 @@ use crate::{
     midi::MidiRuntimeFrontend,
     msg::LegatoMsg,
     node::Inputs,
-    params::{ParamError, ParamKey, ParamStoreFrontend},
+    resources::{
+        buffer::AudioSampleError,
+        params::{ParamError, ParamKey},
+    },
     runtime::{Runtime, RuntimeFrontend},
 };
 
@@ -28,16 +34,15 @@ pub mod midi;
 pub mod msg;
 pub mod node;
 pub mod out;
-pub mod params;
 pub mod pipes;
 pub mod ports;
 pub mod registry;
 pub mod resources;
 pub mod ring;
 pub mod runtime;
-pub mod sample;
 pub mod simd;
 pub mod spec;
+pub mod window;
 
 pub mod nodes;
 
@@ -50,11 +55,11 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
-    consumer: Consumer<'static, LegatoMsg>,
+    consumer: HeapCons<LegatoMsg>,
 }
 
 impl LegatoApp {
-    pub fn new(runtime: Runtime, receiver: Consumer<'static, LegatoMsg>) -> Self {
+    pub fn new(runtime: Runtime, receiver: HeapCons<LegatoMsg>) -> Self {
         Self {
             runtime,
             midi_runtime_frontend: None,
@@ -80,10 +85,14 @@ impl LegatoApp {
                 }
             }
         }
+        // Drain messages for sample update
+        self.runtime.drain_external_sample_msg();
+
         // Handle messages from the LegatoFrontend
-        while let Some(msg) = self.consumer.dequeue() {
+        while let Some(msg) = self.consumer.try_pop() {
             self.runtime.handle_msg(msg);
         }
+
         self.runtime.next_block(external_inputs)
     }
 
@@ -106,32 +115,26 @@ impl Debug for LegatoApp {
 
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
-    param_store_frontend: ParamStoreFrontend,
-    producer: Producer<'static, LegatoMsg>,
+    producer: HeapProd<LegatoMsg>,
 }
 
 impl LegatoFrontend {
-    pub fn new(
-        runtime_frontend: RuntimeFrontend,
-        param_store_frontend: ParamStoreFrontend,
-        producer: Producer<'static, LegatoMsg>,
-    ) -> Self {
+    pub fn new(runtime_frontend: RuntimeFrontend, producer: HeapProd<LegatoMsg>) -> Self {
         Self {
             runtime_frontend,
-            param_store_frontend,
             producer,
         }
     }
 
     pub fn load_sample(
         &mut self,
-        sampler: &String,
+        buffer_name: &str,
         path: &Path,
         chans: usize,
         sr: u32,
-    ) -> Result<(), sample::AudioSampleError> {
-        self.runtime_frontend.load_sample(
-            sampler,
+    ) -> Result<(), AudioSampleError> {
+        self.runtime_frontend.load_file(
+            buffer_name,
             path.to_str().expect("Path not found!"),
             chans,
             sr,
@@ -139,17 +142,17 @@ impl LegatoFrontend {
     }
 
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
-        if let Ok(key) = self.param_store_frontend.get_key(name) {
-            return self.param_store_frontend.set_param(key, val);
-        }
-        Err(ParamError::ParamNotFound)
+        self.runtime_frontend.set_param(name, val)
     }
 
     pub fn get_param_key(&self, param_name: &'static str) -> Result<ParamKey, ParamError> {
-        self.param_store_frontend.get_key(param_name)
+        self.runtime_frontend.get_param_key(param_name)
     }
 
+    /// Send a message to the LegatoRuntime
+    ///
+    /// TODO: Error handling!
     pub fn send_msg(&mut self, msg: LegatoMsg) {
-        let _ = self.producer.enqueue(msg);
+        let _ = self.producer.try_push(msg);
     }
 }

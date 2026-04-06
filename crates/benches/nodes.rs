@@ -127,7 +127,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
         block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
@@ -169,7 +169,7 @@ fn bench_oversampler(c: &mut Criterion) {
         block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
@@ -177,7 +177,7 @@ fn bench_oversampler(c: &mut Criterion) {
     let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
         r#"
             audio {
-                sweep { freq: [40.0, 48000.0], duration: 5000.0, chans: 2 } | oversample2X()
+                sweep { range: [40.0, 48000.0], duration: 5000.0, chans: 2 } | oversample2X()
             }
         
             { sweep }
@@ -185,6 +185,110 @@ fn bench_oversampler(c: &mut Criterion) {
     ));
 
     c.bench_function("Basic oversampler", |b| {
+        let ai: &[Box<[f32]>] = &[
+            vec![0.0; config.block_size].into(),
+            vec![0.0; config.block_size].into(),
+        ];
+
+        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+
+        for (i, x) in ai.iter().enumerate() {
+            inputs[i] = Some(&x)
+        }
+
+        b.iter(|| {
+            let out = app.next_block(black_box(Some(&inputs)));
+            black_box(out);
+        });
+    });
+}
+
+fn bench_kitchen_sink(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 44_100,
+        rt_capacity: 0,
+    };
+
+    let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
+
+    let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
+       r#"
+        patch voice(
+            freq_m = 440.0,
+            freq_c = 660.0,
+            attack = 200.0,
+            decay = 200.0,
+            sustain = 0.3,
+            release = 200.0
+        ) {
+            audio {
+                sine: mod { freq: $freq_m },
+                sine: carrier { freq: $freq_c },
+                mult: freq_mult,
+                mult: fm_gain { val: 1000.0 },
+                add: fm_add,
+            }
+
+            control {
+                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 },
+                signal: freq { name: "freq", min: 10.0, max: 10000.0, default: $freq_c }
+            }
+
+            freq >> freq_mult[0]
+            ratio >> freq_mult[1]
+
+            freq_mult >> mod.freq
+
+            mod >> fm_gain[0]
+
+            freq >> fm_add[0]
+            fm_gain >> fm_add[1]
+
+            fm_add >> carrier.freq
+
+            { carrier }
+        }
+
+        patches {
+            voice * 5 {}
+        }
+
+        audio {
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            mono_fan_out { chans: 2 },
+
+            delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
+
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
+            
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
+        }
+
+        voice(*) >> osc_mixer[0..5]
+
+        osc_mixer >> mono_fan_out
+
+        mono_fan_out >> master[0..2]
+        mono_fan_out >> dw1[0..2]
+
+        dr1[0..2] >> master[2..4]
+        dr2[0..2] >> master[4..6]
+
+        // feedback    
+        dr1 >> feedback[0..2]
+        dr2 >> feedback[2..4]
+
+        feedback >> dw1
+
+        { master }
+    "#,
+    ));
+
+    c.bench_function("Kitchen Sink", |b| {
         let ai: &[Box<[f32]>] = &[
             vec![0.0; config.block_size].into(),
             vec![0.0; config.block_size].into(),
@@ -235,6 +339,7 @@ criterion_group!(
     bench_fir,
     bench_stereo_delay,
     bench_svf,
-    bench_oversampler
+    bench_oversampler,
+    bench_kitchen_sink
 );
 criterion_main!(benches);

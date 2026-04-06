@@ -1,8 +1,8 @@
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
-    params::ParamKey,
     ports::{PortBuilder, Ports},
+    resources::params::ParamKey,
 };
 
 #[derive(Clone)]
