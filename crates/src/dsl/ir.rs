@@ -537,6 +537,7 @@ impl fmt::Display for IRGraph {
     }
 }
 
+#[derive(Debug)]
 pub struct DSLParams<'a>(pub &'a Object);
 
 impl<'a> DSLParams<'a> {

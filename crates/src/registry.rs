@@ -403,12 +403,13 @@ pub fn control_registry_factory() -> NodeRegistry {
         ),
         node_spec!(
             "map".into(),
-            required = ["range", "new_range "],
+            required = ["range", "new_range"],
             optional = [],
             build = |_, p| {
                 let range = p
                     .get_array_f32("range")
                     .expect("Must pass original range to map");
+
                 let new_range = p
                     .get_array_f32("new_range")
                     .expect("Must pass new_range to map");
