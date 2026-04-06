@@ -3,8 +3,10 @@ use std::time::Instant;
 use crate::{
     config::Config,
     midi::{MidiError, MidiMessage, MidiStore},
-    params::{ParamError, ParamKey},
-    resources::Resources,
+    resources::{
+        Resources,
+        params::{ParamError, ParamKey},
+    },
 };
 
 /// The AudioContext struct contains information about the current audio graph, as well as
@@ -12,7 +14,6 @@ use crate::{
 ///
 /// This prevents complex state sharing or unsafe ptr logic when using things like shared buffers
 /// for delay lines or samples.
-#[derive(Clone)]
 pub struct AudioContext {
     config: Config,
     midi_store: Option<MidiStore>,
@@ -21,11 +22,11 @@ pub struct AudioContext {
 }
 
 impl AudioContext {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, resources: Resources) -> Self {
         Self {
             config,
             midi_store: None,
-            resources: Resources::default(),
+            resources,
             block_start: Instant::now(),
         }
     }

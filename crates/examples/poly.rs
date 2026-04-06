@@ -99,7 +99,7 @@ fn main() {
         sample_rate: 48_000,
         block_size: 4096,
         channels: 2,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();

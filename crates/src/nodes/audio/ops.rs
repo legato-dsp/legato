@@ -125,7 +125,7 @@ pub fn mult_node_factory(val: f32, chans: usize, op_kind: ApplyOpKind) -> ApplyO
 mod test {
     use crate::{
         config::{BlockSize, Config},
-        context::AudioContext,
+        harness::build_placeholder_context,
         node::Node,
         nodes::audio::ops::{ApplyOpKind, mult_node_factory},
     };
@@ -139,9 +139,9 @@ mod test {
 
         let mut node = mult_node_factory(1.0, 1, ApplyOpKind::Add);
 
-        let config = Config::new(48_000, BlockSize::Block64, 2, 4);
+        let config = Config::new(48_000, BlockSize::Block64, 2, 0);
 
-        let mut ctx = AudioContext::new(config);
+        let mut ctx = build_placeholder_context(config);
 
         let inputs = [Some(buf_one.as_slice()), Some(buf_two_val.as_slice())];
 

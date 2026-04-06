@@ -1,6 +1,10 @@
+use indexmap::IndexSet;
+use ringbuf::{HeapRb, traits::Split};
+
 use crate::{
-    LegatoApp, LegatoFrontend, LegatoMsg,
+    LegatoApp, LegatoFrontend,
     config::Config,
+    context::AudioContext,
     dsl::{
         ir::{DSLParams, NodeId, Port, Value},
         parse::legato_parser,
@@ -9,27 +13,22 @@ use crate::{
     graph::{Connection, ConnectionEntry},
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
-    nodes::audio::{
-        delay::DelayLine,
-        mixer::{MonoFanOut, TrackMixer},
-    },
-    params::{ParamKey, ParamMeta},
+    nodes::audio::mixer::{MonoFanOut, TrackMixer},
     pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
     },
-    resources::{DelayLineKey, ResourceBuilder, SampleKey},
-    runtime::{NodeKey, Runtime, RuntimeFrontend, build_runtime},
-    sample::{AudioSampleFrontend, AudioSampleHandle},
+    resources::{
+        DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
+        arena::RuntimeArena,
+        delay::ResourceDelay,
+        params::{ParamKey, ParamMeta, ParamStore},
+    },
+    runtime::{NodeKey, Runtime, RuntimeFrontend},
     spec::NodeSpec,
 };
-use arc_swap::ArcSwapOption;
-use std::{
-    collections::HashMap,
-    marker::PhantomData,
-    sync::{Arc, atomic::AtomicU64},
-};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 /// ValidationError covers logical issues
 /// when lowering from the AST to the IR.
@@ -108,8 +107,7 @@ impl<S> LegatoBuilder<S> {
             working_name_lookup: self.working_name_lookup,
             delay_name_to_key: self.delay_name_to_key,
             resource_builder: self.resource_builder,
-            sample_frontends: self.sample_frontends,
-            sample_name_to_key: self.sample_name_to_key,
+            external_buffer_to_key: self.external_buffer_to_key,
             pipe_lookup: self.pipe_lookup,
             last_selection: self.last_selection,
             midi_runtime_frontend: self.midi_runtime_frontend,
@@ -129,9 +127,8 @@ pub struct LegatoBuilder<State> {
     // Resources being built. These can be pased to node factories
     resource_builder: ResourceBuilder,
     // Name to key maps
-    sample_name_to_key: HashMap<String, SampleKey>,
-    delay_name_to_key: HashMap<String, DelayLineKey>,
-    sample_frontends: HashMap<String, AudioSampleFrontend>,
+    external_buffer_to_key: HashMap<String, ExternalBufferKey>,
+    delay_name_to_key: HashMap<String, Vec<DelayLineKey>>,
     // When adding a node or piping, this tracks and sets the node key for pipes
     last_selection: Option<SelectionKind>,
     // The midi runtime that can be added to the runtime
@@ -152,14 +149,29 @@ impl LegatoBuilder<Unconfigured> {
 
         namespaces.insert("user".into(), NodeRegistry::new());
 
-        let runtime = build_runtime(config, ports);
+        // TODO: refactor this this is stupid, this is a placeholder prod/consumer pair to just match the function signature for now
+
+        let (_, dummy_sample_cons) = ringbuf::HeapRb::new(64).split();
+        let (dummy_garbage_prod, _) = ringbuf::HeapRb::new(64).split();
+
+        // We replace this later, with the correct resources
+        let temporary_context = AudioContext::new(
+            config,
+            Resources::new(
+                RuntimeArena::default(),
+                ParamStore::new(Arc::new([])),
+                dummy_sample_cons,
+                dummy_garbage_prod,
+            ),
+        );
+
+        let placeholder_runtime = Runtime::new(temporary_context, ports);
 
         LegatoBuilder::<Configured> {
-            runtime,
+            runtime: placeholder_runtime,
             resource_builder: ResourceBuilder::default(),
-            sample_name_to_key: HashMap::new(),
+            external_buffer_to_key: HashMap::new(),
             delay_name_to_key: HashMap::new(),
-            sample_frontends: HashMap::new(),
             namespaces,
             working_name_lookup: HashMap::new(),
             pipe_lookup: PipeRegistry::default(),
@@ -231,9 +243,8 @@ where
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
             resource_builder: &mut self.resource_builder,
-            sample_keys: &mut self.sample_name_to_key,
+            external_buffer_keys: &mut self.external_buffer_to_key,
             delay_keys: &mut self.delay_name_to_key,
-            sample_frontends: &mut self.sample_frontends,
         };
 
         let node = ns
@@ -433,7 +444,12 @@ where
     pub fn build(self) -> (LegatoApp, LegatoFrontend) {
         let mut runtime = self.runtime;
 
-        let (resources, param_store_frontend) = self.resource_builder.build();
+        let cfg = runtime.get_config();
+
+        // IMPORTANT: Swap out the dummy resources for the actual ones
+        let (resources_frontend, resources) = self
+            .resource_builder
+            .build(cfg.rt_capacity, self.external_buffer_to_key.clone());
 
         runtime.set_resources(resources);
 
@@ -446,9 +462,7 @@ where
         }
 
         // TODO: Perhaps a different crate here instead of leaking
-        let queue = Box::leak(Box::new(heapless::spsc::Queue::<LegatoMsg, 512>::new()));
-
-        let (producer, consumer) = queue.split();
+        let (producer, consumer) = HeapRb::new(512).split();
 
         let mut app = LegatoApp::new(runtime, consumer);
 
@@ -456,9 +470,9 @@ where
             app.set_midi_runtime(midi_rt);
         }
 
-        let rt_frontend = RuntimeFrontend::new(self.sample_frontends);
+        let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
-        let frontend = LegatoFrontend::new(rt_frontend, param_store_frontend, producer);
+        let frontend = LegatoFrontend::new(rt_frontend, producer);
 
         (app, frontend)
     }
@@ -640,43 +654,41 @@ impl<'a> SelectionView<'a> {
 pub struct ResourceBuilderView<'a> {
     pub config: &'a Config,
     pub resource_builder: &'a mut ResourceBuilder,
-    pub sample_keys: &'a mut HashMap<String, SampleKey>,
-    pub delay_keys: &'a mut HashMap<String, DelayLineKey>,
-    pub sample_frontends: &'a mut HashMap<String, AudioSampleFrontend>,
+    pub external_buffer_keys: &'a mut HashMap<String, ExternalBufferKey>,
+    pub delay_keys: &'a mut HashMap<String, Vec<DelayLineKey>>,
 }
 
 impl<'a> ResourceBuilderView<'a> {
-    pub fn add_delay_line(&mut self, name: &str, delay_line: DelayLine) -> DelayLineKey {
-        let key = self.resource_builder.add_delay_line(delay_line);
-        self.delay_keys.insert(name.to_string(), key);
+    pub fn add_delay_line(&mut self, name: &str, capacity: usize) -> DelayLineKey {
+        // Check and see if this key already has an entry
+        let new_key = self.resource_builder.add_delay_line(capacity);
 
-        key
+        if let Some(values) = self.delay_keys.get_mut(name) {
+            values.push(new_key);
+        } else {
+            let new_key = self.resource_builder.add_delay_line(capacity);
+            self.delay_keys.insert(name.into(), vec![new_key]);
+        }
+
+        new_key
     }
 
-    pub fn replace_delay_line(&mut self, key: DelayLineKey, delay_line: DelayLine) {
-        self.resource_builder.replace_delay_line(key, delay_line);
+    pub fn replace_delay_line(&mut self, key: DelayLineKey, capacity: usize) {
+        self.resource_builder.replace_delay_line(key, capacity);
     }
 
-    pub fn get_delay_line_key(&self, name: &String) -> Option<DelayLineKey> {
+    pub fn get_delay_line_key(&self, name: &String) -> Option<Vec<DelayLineKey>> {
         self.delay_keys.get(name).cloned()
     }
 
-    pub fn add_sampler(&mut self, name: &String) -> SampleKey {
-        if let Some(&key) = self.sample_keys.get(name) {
+    /// Here, we register a new buffer slot in the slotmap, and return the key.
+    ///
+    /// This key can then be used in the frontend, to load samples.
+    pub fn add_external_buffer_key(&mut self, name: &String) -> ExternalBufferKey {
+        if let Some(&key) = self.external_buffer_keys.get(name) {
             key
         } else {
-            let data = ArcSwapOption::new(None);
-
-            let handle = Arc::new(AudioSampleHandle {
-                sample: data,
-                sample_version: AtomicU64::new(0),
-            });
-
-            let frontend = AudioSampleFrontend::new(handle.clone());
-
-            self.sample_frontends.insert(name.clone(), frontend);
-
-            self.resource_builder.add_sample_resource(handle)
+            self.resource_builder.add_external_buffer(None)
         }
     }
 
@@ -684,8 +696,11 @@ impl<'a> ResourceBuilderView<'a> {
         self.resource_builder.add_param(unique_name, meta)
     }
 
-    pub fn get_sampler_key(&self, name: &String) -> Result<SampleKey, ValidationError> {
-        self.sample_keys.get(name).cloned().ok_or_else(|| {
+    pub fn get_external_buffer_key(
+        &self,
+        name: &String,
+    ) -> Result<ExternalBufferKey, ValidationError> {
+        self.external_buffer_keys.get(name).cloned().ok_or_else(|| {
             ValidationError::ResourceNotFound(format!("Could not find sample key {}", name))
         })
     }

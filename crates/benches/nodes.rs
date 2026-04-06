@@ -127,7 +127,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
         block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
@@ -169,7 +169,7 @@ fn bench_oversampler(c: &mut Criterion) {
         block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
@@ -208,7 +208,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
         block_size: 4096,
         channels: 2,
         sample_rate: 44_100,
-        initial_graph_capacity: 4,
+        rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();

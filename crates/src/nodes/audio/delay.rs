@@ -76,13 +76,13 @@ impl DelayLine {
 
 #[derive(Clone)]
 pub struct DelayWrite {
-    delay_line_key: DelayLineKey,
+    delay_line_keys: Vec<DelayLineKey>,
     ports: Ports,
 }
 impl DelayWrite {
-    pub fn new(delay_line_key: DelayLineKey, chans: usize) -> Self {
+    pub fn new(delay_line_keys: Vec<DelayLineKey>, chans: usize) -> Self {
         Self {
-            delay_line_key,
+            delay_line_keys,
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_out(chans) // Just for graph semantics
@@ -92,14 +92,16 @@ impl DelayWrite {
 }
 
 impl Node for DelayWrite {
-    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        // Single threaded, no aliasing read/writes in the graph. Reference counted so no leaks. Hopefully safe.
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, _: &mut [&mut [f32]]) {
         let resources = ctx.get_resources_mut();
-        resources.delay_write_block(self.delay_line_key, ai);
 
-        // For graph semantics when adding connections between delays
-        for chan in ao.iter_mut() {
-            chan.fill(0.0);
+        for (c, chan_opt) in ai.iter().enumerate() {
+            if let Some(chan) = chan_opt {
+                let mut view = resources.delay_line_view_mut(self.delay_line_keys[c]);
+                for &sample in chan.iter() {
+                    view.push(sample);
+                }
+            }
         }
     }
     fn ports(&self) -> &Ports {
@@ -109,14 +111,18 @@ impl Node for DelayWrite {
 
 #[derive(Clone)]
 pub struct DelayRead {
-    delay_line_key: DelayLineKey,
+    delay_line_keys: Vec<DelayLineKey>,
     delay_times: Vec<Duration>, // Different times for each channel if desired
     ports: Ports,
 }
 impl DelayRead {
-    pub fn new(chans: usize, delay_line_key: DelayLineKey, delay_times: Vec<Duration>) -> Self {
+    pub fn new(
+        chans: usize,
+        delay_line_keys: Vec<DelayLineKey>,
+        delay_times: Vec<Duration>,
+    ) -> Self {
         Self {
-            delay_line_key,
+            delay_line_keys,
             delay_times,
             ports: PortBuilder::default().audio_out(chans).build(),
         }
@@ -126,36 +132,26 @@ impl DelayRead {
 impl Node for DelayRead {
     fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
-
         let block_size = config.block_size;
+        let sr = config.sample_rate as f32;
 
         let resources = ctx.get_resources();
 
-        let sr = config.sample_rate as f32;
-
         for (c, chan) in ao.iter_mut().enumerate() {
             let delay_time = self.delay_times[c].as_secs_f32();
+            let view = resources.delay_line_view(self.delay_line_keys[c]);
 
             for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
                 let chunk_start = LANES * cidx;
 
-                let mut offset = [0.0; LANES];
+                let offsets = Vf32::from_array(std::array::from_fn(|lane| {
+                    delay_time * sr + (block_size - (chunk_start + lane)) as f32
+                }));
 
-                // Apply additional offset for each step, maybe this could also be a rotation or so.
-                // This is needed, because otherwise we would just grab offsets from chunk_start for each item
-
-                for (lane, sample) in offset.iter_mut().enumerate().take(LANES) {
-                    *sample = delay_time * sr + (block_size - (chunk_start + lane)) as f32;
+                // TODO: Future experimentations here
+                for (lane, out) in chunk.iter_mut().enumerate() {
+                    *out = view.read_cubic(offsets.as_array()[lane]);
                 }
-
-                // Note, about 75% slower than the linear interpolation alg.
-                let interpolated = resources.get_delay_cubic_interp_simd(
-                    self.delay_line_key,
-                    c,
-                    Vf32::from_array(offset),
-                );
-
-                chunk[..].copy_from_slice(&interpolated.to_array());
             }
         }
     }

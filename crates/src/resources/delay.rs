@@ -1,6 +1,6 @@
 use crate::{
     math::{cubic_hermite, lerp},
-    resources_two::window::Window,
+    resources::window::Window,
 };
 
 #[derive(Clone)]
@@ -118,7 +118,7 @@ impl<'a> DelayLineViewMut<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resources_two::window::Window;
+    use crate::resources::window::Window;
 
     #[test]
     fn test_push_and_wrap() {

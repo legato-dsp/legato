@@ -2,14 +2,14 @@ use crate::config::Config;
 use crate::context::AudioContext;
 use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
-use crate::msg::{self, LegatoMsg};
-use crate::node::{Inputs, LegatoNode, Node};
+use crate::msg::LegatoMsg;
+use crate::node::{Inputs, LegatoNode};
 use crate::ports::Ports;
-use crate::resources::Resources;
-use crate::sample::{AudioSampleError, AudioSampleFrontend};
-use std::fmt::Debug;
-
+use crate::resources::buffer::{AudioSampleError, decode_with_ffmpeg};
+use crate::resources::params::{ParamError, ParamKey};
+use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
+use std::fmt::Debug;
 
 // Arbitrary max init. inputs
 pub const MAX_INPUTS: usize = 32;
@@ -19,9 +19,7 @@ new_key_type! {
     pub struct NodeKey;
 }
 
-#[derive(Clone)]
 pub struct Runtime {
-    // Audio context containing sample rate, control rate, etc.
     context: AudioContext,
     executor: Executor,
     ports: Ports,
@@ -79,8 +77,6 @@ impl Runtime {
         self.executor.prepare(block_size);
     }
     /// Handle the message from the LegatoFrontend
-    ///
-    /// TODO: How do we handle nested runtimes?
     pub fn handle_msg(&mut self, msg: LegatoMsg) {
         match msg {
             LegatoMsg::NodeMessage(key, param_msg) => {
@@ -117,68 +113,6 @@ impl Runtime {
     }
 }
 
-impl Node for Runtime {
-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        let output_view = self.next_block(Some(ai));
-
-        let outputs = &output_view.channels[0..output_view.chans];
-
-        debug_assert_eq!(ai.len(), ao.len());
-        debug_assert_eq!(outputs.len(), ao.len());
-
-        for (c, out_channel) in outputs.iter().enumerate() {
-            ao[c].copy_from_slice(out_channel);
-        }
-    }
-    fn ports(&self) -> &Ports {
-        &self.ports
-    }
-    fn handle_msg(&mut self, msg: msg::NodeMessage) {
-        if let msg::NodeMessage::SetParam(_) = msg {
-            unimplemented!("Runtime subgraph messaging not yet setup")
-        }
-    }
-}
-
-/// The frontend that exposes a number of ways to communicate with the realtime audio thread.
-///
-/// At the moment, you can pass messages via a channel that will be forwarded to a node.
-///
-/// There is also a dedicated signal node that can be controlled as well.
-///
-/// TODO: Tidy this up a bit, needs better error handling
-/// TODO: Do we need this and the legato frontend
-/// TODO: How does this work with subgraphs? Do we just merge all of the params with the parent graph?
-pub struct RuntimeFrontend {
-    audio_sample_frontend: std::collections::HashMap<String, AudioSampleFrontend>,
-}
-impl RuntimeFrontend {
-    pub fn new(sample_frontends: std::collections::HashMap<String, AudioSampleFrontend>) -> Self {
-        Self {
-            audio_sample_frontend: sample_frontends,
-        }
-    }
-
-    pub fn load_sample(
-        &mut self,
-        sampler: &String,
-        path: &str,
-        chans: usize,
-        sr: u32,
-    ) -> Result<(), AudioSampleError> {
-        if let Some(frontend) = self.audio_sample_frontend.get(sampler) {
-            return frontend.load_file(path, chans, sr);
-        }
-        Err(AudioSampleError::FrontendNotFound)
-    }
-}
-
-pub fn build_runtime(config: Config, ports: Ports) -> Runtime {
-    let context = AudioContext::new(config);
-
-    Runtime::new(context, ports)
-}
-
 impl Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
@@ -188,5 +122,51 @@ impl Debug for Runtime {
             .entry(&"graph_ports", &self.ports)
             .entry(&"sink_key", self.executor.sink())
             .finish()
+    }
+}
+
+/// The main frontend that you can use to send commands to the realtime
+/// audio thread.
+///
+/// This includes features like:
+///
+/// - Setting shared Params (Signal nodes with smoothing)
+/// - Loading shared buffers
+/// - Passing messages to nodes
+/// - Garbage collecting external buffers off of the realtime thread
+pub struct RuntimeFrontend {
+    resource_frontend: ResourceFrontend,
+}
+
+impl RuntimeFrontend {
+    pub fn new(resource_frontend: ResourceFrontend) -> Self {
+        Self { resource_frontend }
+    }
+
+    pub fn load_file(
+        &mut self,
+        name: &str,
+        path: &str,
+        chans: usize,
+        sr: u32,
+    ) -> Result<(), AudioSampleError> {
+        match decode_with_ffmpeg(path, chans, sr) {
+            Ok(decoded) => self
+                .resource_frontend
+                .send_external_buffer(name, decoded)
+                .map_err(|_| AudioSampleError::FailedToSendToRuntime),
+            Err(_) => Err(AudioSampleError::FailedDecoding),
+        }
+    }
+
+    pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
+        if let Ok(key) = self.resource_frontend.get_param_key(name) {
+            return self.resource_frontend.set_param(key, val);
+        }
+        Err(ParamError::ParamNotFound)
+    }
+
+    pub fn get_param_key(&self, param_name: &'static str) -> Result<ParamKey, ParamError> {
+        self.resource_frontend.get_param_key(param_name)
     }
 }

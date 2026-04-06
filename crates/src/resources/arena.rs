@@ -1,4 +1,4 @@
-use crate::resources_two::window::Window;
+use crate::resources::window::Window;
 
 // TODO: See if padding with 64 bytes helps cache performance.
 
@@ -38,13 +38,13 @@ impl Arena {
         }
     }
 
-    pub fn alloc(&mut self, len: usize) -> Window {
-        if self.cursor + len > self.data.len() {
-            self.data.resize(self.cursor + len, 0.0);
+    pub fn alloc(&mut self, size: usize) -> Window {
+        if self.cursor + size > self.data.len() {
+            self.data.resize(self.cursor + size, 0.0);
         }
         let start = self.cursor;
-        self.cursor += len;
-        Window { start, len }
+        self.cursor += size;
+        Window { start, len: size }
     }
 
     pub fn seal(mut self, rt_capacity: usize) -> RuntimeArena {

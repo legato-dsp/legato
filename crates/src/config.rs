@@ -38,22 +38,18 @@ pub struct Config {
     pub sample_rate: usize,
     pub block_size: usize,
     pub channels: usize,
-    pub initial_graph_capacity: usize,
+    /// Additional scratch allocation for shared resources
+    pub rt_capacity: usize,
 }
 
 impl Config {
-    pub fn new(
-        sr: usize,
-        block_size: BlockSize,
-        channels: usize,
-        initial_graph_capacity: usize,
-    ) -> Self {
+    pub fn new(sr: usize, block_size: BlockSize, channels: usize, rt_capacity: usize) -> Self {
         let block_size = block_size.to_usize();
         Self {
             sample_rate: sr,
             block_size,
             channels,
-            initial_graph_capacity,
+            rt_capacity,
         }
     }
     pub fn validate(&self) {
