@@ -128,7 +128,7 @@ impl LegatoFrontend {
 
     pub fn load_sample(
         &mut self,
-        buffer_name: &String,
+        buffer_name: &str,
         path: &Path,
         chans: usize,
         sr: u32,

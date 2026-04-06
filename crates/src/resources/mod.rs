@@ -37,8 +37,7 @@ pub struct ExternalBufferUpdate {
 /// There are effectively two types of runtime resources.
 ///
 /// - internal resources: These are preallocated, or can be allocated at runtime on a
-/// slice of the [`RuntimeArena`], provided we have already allocated this and still have room
-/// on the RuntimeArena
+///   slice of the [`RuntimeArena`], provided we have already allocated this and still have room.
 ///
 /// - external resources: Loaded on another thread, and send with producer
 pub struct Resources {
@@ -126,11 +125,11 @@ impl Resources {
         while let Some(incoming) = self.receiver.try_pop() {
             if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
                 // This returns the old value, and we can then clean it up in another thread
-                let old_buffer = std::mem::replace(buffer_ref, Some(incoming.buffer));
-                if let Some(inner) = old_buffer {
-                    if self.garbage_sender.try_push(inner).is_err() {
-                        panic!("Returned buffer was not sent to another thread to be dropped!")
-                    }
+                let old_buffer = Option::replace(buffer_ref, incoming.buffer);
+                if let Some(inner) = old_buffer
+                    && self.garbage_sender.try_push(inner).is_err()
+                {
+                    panic!("Returned buffer was not sent to another thread to be dropped!")
                 }
             }
         }
