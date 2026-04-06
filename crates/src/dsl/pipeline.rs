@@ -39,7 +39,7 @@ impl Default for Pipeline {
     /// The default pipeline. This will eventually handle sample rates, spawning nodes N times, etc.
     fn default() -> Self {
         Self::new()
-            .add_pass(MacroExpansionPass::default())
-            .add_pass(SpawnKNodesPass::default())
+            .add_pass(MacroExpansionPass)
+            .add_pass(SpawnKNodesPass)
     }
 }

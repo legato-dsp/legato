@@ -91,7 +91,7 @@ impl Resources {
 
     pub fn get_internal_buffer(&self, key: InternalBufferKey) -> Option<&[f32]> {
         match self.internal_buffers.get(key) {
-            Some(w) => Some(&self.arena.slice(*w)),
+            Some(w) => Some(self.arena.slice(*w)),
             None => None,
         }
     }
@@ -124,7 +124,7 @@ impl Resources {
             if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
                 // This returns the old value, and we can then clean it up in another thread
                 let old_buffer = std::mem::replace(buffer_ref, incoming.buffer);
-                if let Err(_) = self.garbage_sender.try_push(old_buffer) {
+                if self.garbage_sender.try_push(old_buffer).is_err() {
                     panic!("Returned buffer was not sent to another thread to be dropped!")
                 }
             }
