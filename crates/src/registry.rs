@@ -131,8 +131,8 @@ pub fn audio_registry_factory() -> NodeRegistry {
 
                 // If we made default delays already, we replace them
                 let keys: Vec<_> = if let Some(existing_keys) = rb.get_delay_line_key(&name) {
-                    existing_keys.iter().map(|key| {
-                        rb.replace_delay_line(*key, (capacity as usize).next_power_of_two())
+                    existing_keys.iter().for_each(|key| {
+                        rb.replace_delay_line(*key, (capacity as usize).next_power_of_two());
                     });
                     existing_keys
                 } else {
