@@ -89,6 +89,7 @@ impl ParamStoreFrontend {
     }
 
     /// Set a parameter's value. Note: This will be clamped by the meta info for the param.
+    #[inline(always)]
     pub fn set_param(&self, key: ParamKey, val: f32) -> Result<(), ParamError> {
         let meta = self.meta.get(key.0).ok_or(ParamError::ParamMetaNotFound)?;
 
@@ -101,6 +102,7 @@ impl ParamStoreFrontend {
         Err(ParamError::ParamNotFound)
     }
 
+    #[inline(always)]
     pub fn get_param(&self, key: ParamKey) -> Result<f32, ParamError> {
         match self.store.get(key.0) {
             Some(inner) => Ok(inner.load(Ordering::Relaxed)),
@@ -108,6 +110,7 @@ impl ParamStoreFrontend {
         }
     }
 
+    #[inline(always)]
     pub fn get_key(&self, name: &'static str) -> Result<ParamKey, ParamError> {
         match self.param_lookup.get(name) {
             Some(inner) => Ok(inner.clone()),
@@ -115,6 +118,7 @@ impl ParamStoreFrontend {
         }
     }
 
+    #[inline(always)]
     pub fn get_all(&self) -> Vec<f32> {
         self.store
             .iter()

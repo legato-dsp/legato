@@ -33,6 +33,7 @@ pub mod pipes;
 pub mod ports;
 pub mod registry;
 pub mod resources;
+pub mod resources_two;
 pub mod ring;
 pub mod runtime;
 pub mod sample;
