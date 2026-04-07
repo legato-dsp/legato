@@ -29,23 +29,91 @@ At the moment, Legato is somewhat tightly coupled to Nix, and I would suggest th
 
 If you use the DSL (WIP), you can construct a graph easily (more in /examples).
 
-This example (examples/delay.rs) show custom pipes, node renaming, slice mapping, and setting a sink. 
+This example (examples/poly.rs), shows a custom patch, polyphonic midi setup, feedback delay network, connections, and more:
 
-```
-audio {
-    sampler { sampler_name: "amen" } | logger(),
-    delay_write: dw1 { delay_name: "d_one", chans: 2 },
-    delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
-    delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 310, 330 ] },
-    track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.2, 0.2] }
-}
+```rust
+patch voice(
+            attack = 200.0,
+            decay = 200.0,
+            sustain = 0.3,
+            release = 200.0
+        ) {
+            in freq gate
 
-sampler[0..2] >> track_mixer[0..2]
-sampler[0..2] >> dw1[0..2]
-dr1[0..2] >> track_mixer[2..4]
-dr2[0] >> track_mixer[4..6]
+            audio {
+                sine: mod,
+                sine: carrier,
+                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+                mult: freq_mult,
+                mult: fm_gain { val: 1000.0 },
+                add: fm_add
+            }
 
-{ track_mixer }
+            control {
+                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 }
+            }
+
+            freq >> freq_mult[0]
+
+            ratio >> freq_mult[1]
+
+            freq_mult >> mod.freq
+
+            mod >> fm_gain[0]
+
+
+            freq >> fm_add[0]
+            fm_gain >> fm_add[1]
+
+            fm_add >> carrier.freq
+
+            gate >> adsr.gate
+
+            carrier >> adsr[1]
+
+            { adsr }
+        }
+
+        patches {
+            voice * 5 { }
+        }
+
+        audio {
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            mono_fan_out { chans: 2 },
+
+            delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
+            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
+
+            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
+            
+            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
+        }
+
+        midi { 
+            poly_voice { chan: 0, voices: 5 }
+        }
+
+        poly_voice[0:13:3] >> voice(*).gate
+        poly_voice[1:13:3] >> voice(*).freq
+        voice(*) >> osc_mixer[0..5]
+
+        osc_mixer >> mono_fan_out
+
+        mono_fan_out >> master[0..2]
+        mono_fan_out >> dw1[0..2]
+
+        dr1[0..2] >> master[2..4]
+        dr2[0..2] >> master[4..6]
+
+        // feedback    
+        dr1 >> feedback[0..2]
+        dr2 >> feedback[2..4]
+
+        feedback >> dw1
+
+        { master }
 ```
 
 There are also some developer utilities like a spectrogram or example FIR filter generation scripts.
@@ -73,7 +141,6 @@ It may be wise to simply use laptop speakers at low volume when developing, and 
 - FIR filter creation, windows, etc. 
 - Fancy docs (Nuxt)
 - A number of examples (FM, reverb, some midi stuff)
-- Rewrite parsing logic in Chumsky, which I believe will give much better error messages
 - VST, CLAP, etc. support? Likely will look for contributions here, or just use the NIH-Plug repo.
 
 ### Immediate Cleanup
@@ -82,5 +149,5 @@ Here are a number of issues to keep an eye on, that need to be cleaned up rather
 
 - Single tap delay node for delay compensation
 - Unify node creation spec and node logic
-- Flat multi-chan buffer for delay lines
 - I want to move over/resampling to be graph logic and DSL. So, rather than wrapping a number of nodes, the executor implicitly adds polyphase FIR filters on the boundaries.
+- Transparent build pipeline with `cargo publish`
