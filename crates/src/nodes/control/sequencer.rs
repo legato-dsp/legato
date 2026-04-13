@@ -22,11 +22,12 @@ impl Default for SequencerStep {
             freq: 440.0,
             vel: 0.8,
             gate: 1.0,
-            length: 0.5,
+            length: 0.1,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct StepSequencer {
     steps: Vec<SequencerStep>,
     ports: Ports,
@@ -36,7 +37,7 @@ impl StepSequencer {
     pub fn new(step_count: usize) -> Self {
         let ports = PortBuilder::default()
             .audio_in_named(&["phasor"])
-            .audio_out(3)
+            .audio_out_named(&["freq", "vel", "gate"])
             .build();
 
         Self {

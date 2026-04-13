@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use cpal::{SampleRate, StreamConfig, traits::HostTrait};
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
@@ -12,37 +10,39 @@ fn main() {
     let graph = String::from(
         r#"
         audio {
-            sine: lfo { freq: 6.0, chans: 1 },
-            sine { freq: 440.0, chans: 2 }
+            sine { freq: 440.0, chans: 1},
+            adsr { attack: 30.0, decay: 40.0, sustain: 0.0, release: 30.0, chans: 1 },
+            mono_fan_out { chans: 2 }
         }
 
         control {
-            map { range: [-1.0, 1.0], new_range: [432.0, 448.0] }
+            clock { bpm: 120, division: 4, steps: 64 },
+            sequencer { num_steps: 64 }
         }
 
-        lfo >> map >> sine[0]
+        clock >> sequencer
 
-        { sine }
+        sequencer.gate >> adsr.gate
+        sine >> adsr[1]
+
+        sequencer.freq >> sine
+
+        adsr >> mono_fan_out
+
+        { mono_fan_out }
     "#,
     );
 
     let config = Config {
         sample_rate: 48_000,
-        block_size: 4096,
+        block_size: 256,
         channels: 2,
         rt_capacity: 0,
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
-
-    let _ = frontend.load_sample(
-        &String::from("amen"),
-        Path::new("../samples/amen.wav"),
-        2,
-        config.sample_rate as u32,
-    );
+    let (app, _) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");

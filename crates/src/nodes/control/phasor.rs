@@ -20,6 +20,7 @@ impl Phasor {
             ports: PortBuilder::default().audio_out(1).build(),
         }
     }
+
     #[inline(always)]
     fn tick(&mut self, inc: f32) -> f32 {
         self.phase += inc;
