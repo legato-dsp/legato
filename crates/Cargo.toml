@@ -7,7 +7,6 @@ repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [dependencies]
-cpal = { version = "0.16.0", features = ["jack"] }
 assert_no_alloc = "1.1.2"
 portable-atomic = { version = "1.11.1", features = ["float"] }
 arc-swap = "1.7.1"
@@ -24,6 +23,13 @@ crossbeam = "0.8.4"
 halfband = "0.2.0"
 ariadne = "0.6.0"
 chumsky = "0.12.0"
+cpal = { version = "0.16.0", optional = true, features = [] }
+
+[features]
+cpal-backend = ["dep:cpal"]
+jack = ["cpal-backend", "cpal/jack"]
+asio = ["cpal-backend", "cpal/asio"]
+default = ["cpal-backend"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
