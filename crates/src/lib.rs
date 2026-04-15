@@ -51,7 +51,7 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
-    consumer: rtrb::Consumer<LegatoMsg>,
+    msg_consumer: rtrb::Consumer<LegatoMsg>,
 }
 
 impl LegatoApp {
@@ -59,7 +59,7 @@ impl LegatoApp {
         Self {
             runtime,
             midi_runtime_frontend: None,
-            consumer: receiver,
+            msg_consumer: receiver,
         }
     }
     /// Pull the next block from the runtime, if you choose to manage the
@@ -85,7 +85,7 @@ impl LegatoApp {
         self.runtime.drain_external_sample_msg();
 
         // Handle messages from the LegatoFrontend
-        while let Ok(msg) = self.consumer.pop() {
+        while let Ok(msg) = self.msg_consumer.pop() {
             self.runtime.handle_msg(msg);
         }
 

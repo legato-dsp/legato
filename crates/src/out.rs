@@ -1,14 +1,14 @@
 use std::{path::Path, time::Duration};
 
 use cpal::{
-    BuildStreamError, Device, FromSample, SizedSample, StreamConfig,
+    BuildStreamError, FromSample, SizedSample, StreamConfig,
     traits::{DeviceTrait, StreamTrait},
 };
 use hound::{WavSpec, WavWriter};
 
+use crate::LegatoApp;
 #[cfg(feature = "cpal-backend")]
 use crate::interface::AudioInterface;
-use crate::{LegatoApp, runtime::Runtime};
 
 use assert_no_alloc::*;
 
@@ -78,6 +78,71 @@ pub fn start_application_audio_thread(
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             assert_no_alloc(|| {
                 write_runtime_data_cpal_app(data, &interface.stream_config, &mut app)
+            })
+        },
+        |err| eprintln!("An output stream error occurred: {}", err),
+        None,
+    )?;
+
+    stream.play().unwrap();
+
+    std::thread::park();
+
+    Ok(())
+}
+
+// ----------------------------------------------
+// Version with external output for visualization
+// ----------------------------------------------
+
+#[cfg(feature = "cpal-backend")]
+#[inline(always)]
+fn write_runtime_data_cpal_external_out<T>(
+    output: &mut [T],
+    config: &StreamConfig,
+    app: &mut LegatoApp,
+    producer: &mut rtrb::Producer<f32>,
+) where
+    T: SizedSample + FromSample<f64>,
+{
+    let block_size = app.get_config().block_size;
+
+    let next_block_view = app.next_block(None);
+    let next_block = &next_block_view.channels[0..next_block_view.chans];
+
+    let chans = config.channels as usize;
+
+    // Write out to visualization thread. Write chunk lets us minimize atomic ops
+    if let Ok(mut chunk) = producer.write_chunk(block_size) {
+        let (s1, s2) = chunk.as_mut_slices();
+
+        let chunk_iter = s1.iter_mut().chain(s2.iter_mut());
+
+        for (i, slot) in chunk_iter.enumerate() {
+            *slot = (next_block[0][i] + next_block[1][i]) * 0.5;
+        }
+    }
+
+    for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
+        for (channel, sample) in frame.iter_mut().enumerate() {
+            let pipeline_next_frame = &next_block[channel];
+            *sample = T::from_sample(pipeline_next_frame[frame_index] as f64);
+        }
+    }
+}
+
+#[cfg(feature = "cpal-backend")]
+pub fn start_application_audio_thread_external_output(
+    interface: AudioInterface,
+    mut output_producer: rtrb::Producer<f32>,
+    mut app: LegatoApp,
+) -> Result<(), BuildStreamError> {
+    let cfg = interface.stream_config.clone();
+    let stream = interface.device.build_output_stream(
+        &interface.stream_config,
+        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            assert_no_alloc(|| {
+                write_runtime_data_cpal_external_out(data, &cfg, &mut app, &mut output_producer)
             })
         },
         |err| eprintln!("An output stream error occurred: {}", err),
