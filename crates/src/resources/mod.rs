@@ -1,10 +1,6 @@
-use std::collections::HashMap;
-
-use ringbuf::{
-    HeapCons, HeapProd, HeapRb,
-    traits::{Consumer, Producer, Split},
-};
+use rtrb::{PushError, RingBuffer};
 use slotmap::{SlotMap, new_key_type};
+use std::collections::HashMap;
 
 use crate::resources::{
     arena::{Arena, RuntimeArena},
@@ -46,16 +42,16 @@ pub struct Resources {
     internal_buffers: SlotMap<InternalBufferKey, Window>,
     external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
     delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
-    receiver: ringbuf::HeapCons<ExternalBufferUpdate>,
-    garbage_sender: ringbuf::HeapProd<ExternalBuffer>,
+    receiver: rtrb::Consumer<ExternalBufferUpdate>,
+    garbage_sender: rtrb::Producer<ExternalBuffer>,
 }
 
 impl Resources {
     pub fn new(
         arena: RuntimeArena,
         param_store: ParamStore,
-        receiver: HeapCons<ExternalBufferUpdate>,
-        garbage_sender: HeapProd<ExternalBuffer>,
+        receiver: rtrb::Consumer<ExternalBufferUpdate>,
+        garbage_sender: rtrb::Producer<ExternalBuffer>,
         internal_buffers: SlotMap<InternalBufferKey, Window>,
         external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
         delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
@@ -122,12 +118,12 @@ impl Resources {
     }
 
     pub fn drain(&mut self) {
-        while let Some(incoming) = self.receiver.try_pop() {
+        while let Ok(incoming) = self.receiver.pop() {
             if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
                 // This returns the old value, and we can then clean it up in another thread
                 let old_buffer = Option::replace(buffer_ref, incoming.buffer);
                 if let Some(inner) = old_buffer
-                    && self.garbage_sender.try_push(inner).is_err()
+                    && self.garbage_sender.push(inner).is_err()
                 {
                     panic!("Returned buffer was not sent to another thread to be dropped!")
                 }
@@ -195,9 +191,9 @@ impl ResourceBuilder {
         let arena = self.arena.seal(rt_capacity);
 
         // TODO: Config, is this a sensible default?
-        let (garbage_prod, garbage_cons) = HeapRb::new(512).split();
+        let (garbage_prod, garbage_cons) = RingBuffer::new(512);
 
-        let (extern_buffer_update_prod, extern_buffer_update_cons) = HeapRb::new(512).split();
+        let (extern_buffer_update_prod, extern_buffer_update_cons) = RingBuffer::new(512);
 
         let resources = Resources::new(
             arena,
@@ -226,17 +222,17 @@ pub struct ResourceFrontend {
     /// Change params on the runtime
     param_front_end: ParamStoreFrontend,
     /// Send ['ExternalBufferUpdate'] to the runtime to update the buffer in the slot.
-    external_sample_producer: HeapProd<ExternalBufferUpdate>,
+    external_sample_producer: rtrb::Producer<ExternalBufferUpdate>,
     /// Receive all of the [`ExternalBuffer`]'s that are then dropped on a non-realtime thread.
-    external_sample_garbage_receiver: HeapCons<ExternalBuffer>,
+    external_sample_garbage_receiver: rtrb::Consumer<ExternalBuffer>,
     external_buffer_key_lookup: HashMap<String, ExternalBufferKey>,
 }
 
 impl ResourceFrontend {
     pub fn new(
         param_front_end: ParamStoreFrontend,
-        external_sample_producer: HeapProd<ExternalBufferUpdate>,
-        external_sample_garbage_receiver: HeapCons<ExternalBuffer>,
+        external_sample_producer: rtrb::Producer<ExternalBufferUpdate>,
+        external_sample_garbage_receiver: rtrb::Consumer<ExternalBuffer>,
         external_buffer_key_lookup: HashMap<String, ExternalBufferKey>,
     ) -> Self {
         Self {
@@ -256,7 +252,7 @@ impl ResourceFrontend {
         &mut self,
         name: &str,
         buffer: ExternalBuffer,
-    ) -> Result<(), ExternalBufferUpdate> {
+    ) -> Result<(), PushError<ExternalBufferUpdate>> {
         dbg!(&self.external_buffer_key_lookup);
         let key = self
             .external_buffer_key_lookup
@@ -264,14 +260,14 @@ impl ResourceFrontend {
             .unwrap_or_else(|| panic!("External buffer name {} not found!", name));
 
         let update = ExternalBufferUpdate { key: *key, buffer };
-        self.external_sample_producer.try_push(update)
+        self.external_sample_producer.push(update)
     }
 
     /// Garbage collect any external buffers that are no longer in use
     ///
     /// We are doing this here, and not on the audio thread to avoid any non-realtime ops
     pub fn drain_garbage(&mut self) {
-        while let Some(garbage) = self.external_sample_garbage_receiver.try_pop() {
+        while let Ok(garbage) = self.external_sample_garbage_receiver.pop() {
             drop(garbage);
         }
     }

@@ -2,11 +2,6 @@
 
 use std::{fmt::Debug, path::Path};
 
-use ringbuf::{
-    HeapCons, HeapProd,
-    traits::{Consumer, Producer},
-};
-
 use crate::{
     builder::ValidationError,
     config::Config,
@@ -56,11 +51,11 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
-    consumer: HeapCons<LegatoMsg>,
+    consumer: rtrb::Consumer<LegatoMsg>,
 }
 
 impl LegatoApp {
-    pub fn new(runtime: Runtime, receiver: HeapCons<LegatoMsg>) -> Self {
+    pub fn new(runtime: Runtime, receiver: rtrb::Consumer<LegatoMsg>) -> Self {
         Self {
             runtime,
             midi_runtime_frontend: None,
@@ -90,7 +85,7 @@ impl LegatoApp {
         self.runtime.drain_external_sample_msg();
 
         // Handle messages from the LegatoFrontend
-        while let Some(msg) = self.consumer.try_pop() {
+        while let Ok(msg) = self.consumer.pop() {
             self.runtime.handle_msg(msg);
         }
 
@@ -116,11 +111,11 @@ impl Debug for LegatoApp {
 
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
-    producer: HeapProd<LegatoMsg>,
+    producer: rtrb::Producer<LegatoMsg>,
 }
 
 impl LegatoFrontend {
-    pub fn new(runtime_frontend: RuntimeFrontend, producer: HeapProd<LegatoMsg>) -> Self {
+    pub fn new(runtime_frontend: RuntimeFrontend, producer: rtrb::Producer<LegatoMsg>) -> Self {
         Self {
             runtime_frontend,
             producer,
@@ -154,6 +149,6 @@ impl LegatoFrontend {
     ///
     /// TODO: Error handling!
     pub fn send_msg(&mut self, msg: LegatoMsg) {
-        let _ = self.producer.try_push(msg);
+        let _ = self.producer.push(msg);
     }
 }
