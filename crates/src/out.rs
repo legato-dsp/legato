@@ -112,15 +112,11 @@ fn write_runtime_data_cpal_external_out<T>(
 
     let chans = config.channels as usize;
 
-    // Write out to visualization thread. Write chunk lets us minimize atomic ops
-    if let Ok(mut chunk) = producer.write_chunk(block_size) {
-        let (s1, s2) = chunk.as_mut_slices();
-
-        let chunk_iter = s1.iter_mut().chain(s2.iter_mut());
-
-        for (i, slot) in chunk_iter.enumerate() {
-            *slot = (next_block[0][i] + next_block[1][i]) * 0.5;
-        }
+    // Write out to visualization thread.
+    // TODO: Chunk utilities can speed this up
+    for i in 0..block_size {
+        let sample = (next_block[0][i] + next_block[1][i]) * 0.5;
+        let _ = producer.push(sample);
     }
 
     for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
