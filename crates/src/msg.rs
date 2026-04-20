@@ -21,8 +21,19 @@ pub enum LegatoMsg {
     NodeMessage(NodeKey, NodeMessage),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepPayload {
+    pub index: usize,
+    pub freq: Option<f32>,
+    pub vel: Option<f32>,
+    /// 0.0 = muted, 1.0 = active
+    pub gate: Option<f32>,
+    pub length: Option<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeMessage {
     SetParam(ParamPayload),
+    SetStep(StepPayload),
     Dummy(),
 }

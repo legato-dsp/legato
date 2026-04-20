@@ -125,10 +125,14 @@ impl Node for Adsr {
         for n in 0..block_size {
             let gate_sample = gate_chan[n];
             // If we are released or idle, gate on
-            if gate_sample == 1.0
-                && (self.state == AdsrState::Idle || self.state == AdsrState::Release)
-            {
-                self.on_gate();
+            if gate_sample == 1.0 {
+                match self.state {
+                    AdsrState::Idle
+                    | AdsrState::Release
+                    | AdsrState::Attack
+                    | AdsrState::Decay
+                    | AdsrState::Sustain => self.on_gate(),
+                }
             }
             // If we are active and get a release
             if gate_sample == 0.0 && self.state != AdsrState::Idle {

@@ -20,7 +20,7 @@ use crate::{
             svf::{FilterType, Svf},
             sweep::Sweep,
         },
-        control::{map::Map, signal::Signal},
+        control::{map::Map, phasor::Phasor, sequencer::StepSequencer, signal::Signal},
         midi::voice::{PolyVoice, Voice},
     },
     resources::params::ParamMeta,
@@ -426,6 +426,46 @@ pub fn control_registry_factory() -> NodeRegistry {
                 r_1.copy_from_slice(&new_range[..2]);
 
                 Ok(Box::new(Map::new(r_0, r_1)))
+            }
+        ),
+        node_spec!(
+            "phasor".into(),
+            required = ["freq"],
+            optional = [],
+            build = |_, p| {
+                let freq = p.get_f32("freq").expect("Must pass frequency to phasor");
+
+                Ok(Box::new(Phasor::new(freq)))
+            }
+        ),
+        node_spec!(
+            "clock".into(),
+            required = ["bpm", "division", "steps"],
+            optional = [],
+            build = |_, p| {
+                dbg!(&p);
+
+                let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
+                let divison = p
+                    .get_usize("division")
+                    .expect("Must pass division to clock");
+                let steps = p.get_usize("steps").expect("Must pass steps to clock");
+
+                let freq = (bpm * divison) as f32 / (60.0 * steps as f32);
+
+                Ok(Box::new(Phasor::new(freq)))
+            }
+        ),
+        node_spec!(
+            "sequencer".into(),
+            required = ["num_steps"],
+            optional = [],
+            build = |_, p| {
+                let num_steps = p
+                    .get_usize("num_steps")
+                    .expect("Must pass num_steps to sequencer");
+
+                Ok(Box::new(StepSequencer::new(num_steps)))
             }
         ),
     ]);
