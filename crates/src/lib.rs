@@ -1,19 +1,19 @@
 #![feature(portable_simd)]
 
-use std::{fmt::Debug, path::Path};
+use std::{collections::HashMap, fmt::Debug, path::Path};
 
 use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
     midi::MidiRuntimeFrontend,
-    msg::LegatoMsg,
+    msg::{LegatoMsg, NodeMessage},
     node::Inputs,
     resources::{
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
     },
-    runtime::{Runtime, RuntimeFrontend},
+    runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
 pub mod builder;
@@ -109,16 +109,26 @@ impl Debug for LegatoApp {
     }
 }
 
+pub enum FrontendError {
+    NodeNotFound(),
+}
+
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
     producer: rtrb::Producer<LegatoMsg>,
+    node_registry: HashMap<String, NodeKey>,
 }
 
 impl LegatoFrontend {
-    pub fn new(runtime_frontend: RuntimeFrontend, producer: rtrb::Producer<LegatoMsg>) -> Self {
+    pub fn new(
+        runtime_frontend: RuntimeFrontend,
+        producer: rtrb::Producer<LegatoMsg>,
+        node_registry: HashMap<String, NodeKey>,
+    ) -> Self {
         Self {
             runtime_frontend,
             producer,
+            node_registry,
         }
     }
 
@@ -137,6 +147,10 @@ impl LegatoFrontend {
         )
     }
 
+    pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
+        self.node_registry.clone()
+    }
+
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
         self.runtime_frontend.set_param(name, val)
     }
@@ -145,9 +159,21 @@ impl LegatoFrontend {
         self.runtime_frontend.get_param_key(param_name)
     }
 
+    // TODO: Error handling for both of these?
+
+    pub fn send_node_msg(
+        &mut self,
+        node_name: &str,
+        msg: NodeMessage,
+    ) -> Result<(), FrontendError> {
+        if let Some(key) = self.node_registry.get(node_name) {
+            let _ = self.producer.push(LegatoMsg::NodeMessage(*key, msg));
+            return Ok(());
+        }
+        Err(FrontendError::NodeNotFound())
+    }
+
     /// Send a message to the LegatoRuntime
-    ///
-    /// TODO: Error handling!
     pub fn send_msg(&mut self, msg: LegatoMsg) {
         let _ = self.producer.push(msg);
     }

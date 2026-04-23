@@ -472,7 +472,7 @@ where
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
-        let frontend = LegatoFrontend::new(rt_frontend, producer);
+        let frontend = LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup);
 
         (app, frontend)
     }
