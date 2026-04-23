@@ -20,9 +20,9 @@ impl Default for SequencerStep {
     fn default() -> Self {
         Self {
             freq: 440.0,
-            vel: 0.8,
-            gate: 1.0,
-            length: 0.1,
+            vel: 0.0,
+            gate: 0.0,
+            length: 0.0,
         }
     }
 }
