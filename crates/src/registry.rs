@@ -443,8 +443,6 @@ pub fn control_registry_factory() -> NodeRegistry {
             required = ["bpm", "division", "steps"],
             optional = [],
             build = |_, p| {
-                dbg!(&p);
-
                 let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
                 let divison = p
                     .get_usize("division")

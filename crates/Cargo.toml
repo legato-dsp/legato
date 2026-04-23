@@ -1,13 +1,12 @@
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.0.11"
+version = "0.0.13"
 edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [dependencies]
-cpal = { version = "0.16.0", features = ["jack"] }
 assert_no_alloc = "1.1.2"
 portable-atomic = { version = "1.11.1", features = ["float"] }
 arc-swap = "1.7.1"
@@ -16,14 +15,20 @@ approx = "0.5.1"
 hound = "3.5.1"
 rand = "0.9.2"
 indexmap = "2.12.0"
-heapless = "0.9.2"
 atomic_float = "1.1.0"
 midir = "0.10.3"
-ringbuf = "0.4.8"
 crossbeam = "0.8.4"
 halfband = "0.2.0"
 ariadne = "0.6.0"
 chumsky = "0.12.0"
+cpal = { version = "0.16.0", optional = true, features = [] }
+rtrb = "0.3.3"
+
+[features]
+cpal-backend = ["dep:cpal"]
+jack = ["cpal-backend", "cpal/jack"]
+asio = ["cpal-backend", "cpal/asio"]
+default = ["cpal-backend"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

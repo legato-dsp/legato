@@ -1,4 +1,3 @@
-use ringbuf::{HeapRb, traits::Split};
 use slotmap::SlotMap;
 
 use crate::{
@@ -150,8 +149,8 @@ impl LegatoBuilder<Unconfigured> {
 
         // TODO: refactor this this is stupid, this is a placeholder prod/consumer pair to just match the function signature for now
 
-        let (_, dummy_sample_cons) = ringbuf::HeapRb::new(64).split();
-        let (dummy_garbage_prod, _) = ringbuf::HeapRb::new(64).split();
+        let (_, dummy_sample_cons) = rtrb::RingBuffer::new(64);
+        let (dummy_garbage_prod, _) = rtrb::RingBuffer::new(64);
 
         // We replace this later, with the correct resources
         let temporary_context = AudioContext::new(
@@ -463,8 +462,7 @@ where
             ctx.set_midi_store(MidiStore::new(256));
         }
 
-        // TODO: Perhaps a different crate here instead of leaking
-        let (producer, consumer) = HeapRb::new(512).split();
+        let (producer, consumer) = rtrb::RingBuffer::new(512);
 
         let mut app = LegatoApp::new(runtime, consumer);
 
@@ -474,7 +472,7 @@ where
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
-        let frontend = LegatoFrontend::new(rt_frontend, producer);
+        let frontend = LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup);
 
         (app, frontend)
     }

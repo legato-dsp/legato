@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use ringbuf::traits::Split;
 use slotmap::SlotMap;
 
 use crate::{
@@ -13,8 +12,8 @@ use crate::{
 };
 
 pub fn build_placeholder_context(config: Config) -> AudioContext {
-    let (_, dummy_sample_cons) = ringbuf::HeapRb::new(64).split();
-    let (dummy_garbage_prod, _) = ringbuf::HeapRb::new(64).split();
+    let (_, dummy_sample_cons) = rtrb::RingBuffer::new(64);
+    let (dummy_garbage_prod, _) = rtrb::RingBuffer::new(64);
 
     AudioContext::new(
         config,

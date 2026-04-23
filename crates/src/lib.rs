@@ -1,24 +1,19 @@
 #![feature(portable_simd)]
 
-use std::{fmt::Debug, path::Path};
-
-use ringbuf::{
-    HeapCons, HeapProd,
-    traits::{Consumer, Producer},
-};
+use std::{collections::HashMap, fmt::Debug, path::Path};
 
 use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
     midi::MidiRuntimeFrontend,
-    msg::LegatoMsg,
+    msg::{LegatoMsg, NodeMessage},
     node::Inputs,
     resources::{
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
     },
-    runtime::{Runtime, RuntimeFrontend},
+    runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
 pub mod builder;
@@ -29,6 +24,7 @@ pub mod dsl;
 pub mod executor;
 pub mod graph;
 pub mod harness;
+pub mod interface;
 pub mod math;
 pub mod midi;
 pub mod msg;
@@ -55,15 +51,15 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
-    consumer: HeapCons<LegatoMsg>,
+    msg_consumer: rtrb::Consumer<LegatoMsg>,
 }
 
 impl LegatoApp {
-    pub fn new(runtime: Runtime, receiver: HeapCons<LegatoMsg>) -> Self {
+    pub fn new(runtime: Runtime, receiver: rtrb::Consumer<LegatoMsg>) -> Self {
         Self {
             runtime,
             midi_runtime_frontend: None,
-            consumer: receiver,
+            msg_consumer: receiver,
         }
     }
     /// Pull the next block from the runtime, if you choose to manage the
@@ -89,7 +85,7 @@ impl LegatoApp {
         self.runtime.drain_external_sample_msg();
 
         // Handle messages from the LegatoFrontend
-        while let Some(msg) = self.consumer.try_pop() {
+        while let Ok(msg) = self.msg_consumer.pop() {
             self.runtime.handle_msg(msg);
         }
 
@@ -113,16 +109,26 @@ impl Debug for LegatoApp {
     }
 }
 
+pub enum FrontendError {
+    NodeNotFound(),
+}
+
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
-    producer: HeapProd<LegatoMsg>,
+    producer: rtrb::Producer<LegatoMsg>,
+    node_registry: HashMap<String, NodeKey>,
 }
 
 impl LegatoFrontend {
-    pub fn new(runtime_frontend: RuntimeFrontend, producer: HeapProd<LegatoMsg>) -> Self {
+    pub fn new(
+        runtime_frontend: RuntimeFrontend,
+        producer: rtrb::Producer<LegatoMsg>,
+        node_registry: HashMap<String, NodeKey>,
+    ) -> Self {
         Self {
             runtime_frontend,
             producer,
+            node_registry,
         }
     }
 
@@ -141,6 +147,10 @@ impl LegatoFrontend {
         )
     }
 
+    pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
+        self.node_registry.clone()
+    }
+
     pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
         self.runtime_frontend.set_param(name, val)
     }
@@ -149,10 +159,22 @@ impl LegatoFrontend {
         self.runtime_frontend.get_param_key(param_name)
     }
 
+    // TODO: Error handling for both of these?
+
+    pub fn send_node_msg(
+        &mut self,
+        node_name: &str,
+        msg: NodeMessage,
+    ) -> Result<(), FrontendError> {
+        if let Some(key) = self.node_registry.get(node_name) {
+            let _ = self.producer.push(LegatoMsg::NodeMessage(*key, msg));
+            return Ok(());
+        }
+        Err(FrontendError::NodeNotFound())
+    }
+
     /// Send a message to the LegatoRuntime
-    ///
-    /// TODO: Error handling!
     pub fn send_msg(&mut self, msg: LegatoMsg) {
-        let _ = self.producer.try_push(msg);
+        let _ = self.producer.push(msg);
     }
 }
