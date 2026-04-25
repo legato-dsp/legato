@@ -384,7 +384,18 @@ where
                 &source_indicies,
                 &sink_indicies,
             ),
-            (n, m) => unimplemented!("Cannot match request arity {}:{}", n, m),
+            (n, m) => {
+                let src = self.runtime.get_node(&connection.source);
+                let sink = self.runtime.get_node(&connection.sink);
+
+                unimplemented!(
+                    "Cannot match request arity {}:{} for nodes {:?}:{:?}",
+                    n,
+                    m,
+                    src,
+                    sink
+                )
+            }
         }
     }
     pub fn connect(mut self, connection: AddConnectionProps) -> LegatoBuilder<Connected> {
