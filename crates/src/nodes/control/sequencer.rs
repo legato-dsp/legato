@@ -27,6 +27,8 @@ impl Default for SequencerStep {
     }
 }
 
+const MAXIMUM_SIZE: usize = 256;
+
 #[derive(Clone)]
 pub struct StepSequencer {
     steps: Box<[SequencerStep]>,
@@ -35,14 +37,14 @@ pub struct StepSequencer {
 }
 
 impl StepSequencer {
-    pub fn new(step_count: usize, num_steps: usize) -> Self {
+    pub fn new(num_steps: usize) -> Self {
         let ports = PortBuilder::default()
             .audio_in_named(&["phasor"])
             .audio_out_named(&["freq", "vel", "gate"])
             .build();
 
         Self {
-            steps: vec![SequencerStep::default(); step_count].into(),
+            steps: vec![SequencerStep::default(); MAXIMUM_SIZE].into(),
             num_steps,
             ports,
         }
