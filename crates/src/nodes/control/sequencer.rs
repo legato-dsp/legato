@@ -52,7 +52,7 @@ impl StepSequencer {
 
     #[inline(always)]
     fn step_index(&self, phase: f32) -> usize {
-        let num_steps = self.steps.len();
+        let num_steps = self.num_steps;
         // map range of phasor (0,1) to (0,num_steps)
         let idx = (phase.min(0.999_999) * num_steps as f32).floor() as usize;
         // Clamp index to last elemenet
@@ -61,7 +61,7 @@ impl StepSequencer {
 
     #[inline(always)]
     fn phase_within_step(&self, phase: f32) -> f32 {
-        (phase * self.steps.len().min(self.num_steps - 1) as f32).fract()
+        (phase * self.num_steps as f32).fract()
     }
 }
 
@@ -98,9 +98,7 @@ impl Node for StepSequencer {
     fn handle_msg(&mut self, msg: NodeMessage) {
         match msg {
             NodeMessage::SetParam(inner) => match (inner.param_name, inner.value) {
-                ("num_steps", RtValue::U32(n)) => {
-                    self.num_steps = (n as usize).max(self.steps.len())
-                }
+                ("num_steps", RtValue::U32(n)) => self.num_steps = (n as usize).min(MAXIMUM_SIZE),
                 _ => (),
             },
             NodeMessage::SetStep(payload) => {
