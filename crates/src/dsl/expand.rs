@@ -97,7 +97,12 @@ impl MacroExpansionPass {
                     match (src_count, node.count) {
                         (n, m) if n == m && n > 1 => NodeSelector::Index(i), // zip, just use node count i
                         (n, m) if n != m && n > 1 && m > 1 => {
-                            panic!("Cannot match node selection arity {}:{}", n, m)
+                            let source = graph.get_node(edge.source);
+                            let sink = graph.get_node(edge.sink);
+                            panic!(
+                                "Cannot match node selection arity {}:{} for nodes {:?}:{:?}",
+                                n, m, source, sink
+                            )
                         }
                         _ => edge.source_selector.clone(), // 1:1, 1:N broadcast, N:1, fan-in,  preserve original
                     }

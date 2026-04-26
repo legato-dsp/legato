@@ -20,35 +20,39 @@ impl Default for SequencerStep {
     fn default() -> Self {
         Self {
             freq: 440.0,
-            vel: 0.8,
-            gate: 1.0,
-            length: 0.1,
+            vel: 0.0,
+            gate: 0.0,
+            length: 0.0,
         }
     }
 }
 
+const MAXIMUM_SIZE: usize = 256;
+
 #[derive(Clone)]
 pub struct StepSequencer {
-    steps: Vec<SequencerStep>,
+    steps: Box<[SequencerStep]>,
+    num_steps: usize, // Essentially, we take the first 0..num_steps, so we can preallocate the max step size
     ports: Ports,
 }
 
 impl StepSequencer {
-    pub fn new(step_count: usize) -> Self {
+    pub fn new(num_steps: usize) -> Self {
         let ports = PortBuilder::default()
             .audio_in_named(&["phasor"])
             .audio_out_named(&["freq", "vel", "gate"])
             .build();
 
         Self {
-            steps: vec![SequencerStep::default(); step_count],
+            steps: vec![SequencerStep::default(); MAXIMUM_SIZE].into(),
+            num_steps,
             ports,
         }
     }
 
     #[inline(always)]
     fn step_index(&self, phase: f32) -> usize {
-        let num_steps = self.steps.len();
+        let num_steps = self.num_steps;
         // map range of phasor (0,1) to (0,num_steps)
         let idx = (phase.min(0.999_999) * num_steps as f32).floor() as usize;
         // Clamp index to last elemenet
@@ -57,7 +61,7 @@ impl StepSequencer {
 
     #[inline(always)]
     fn phase_within_step(&self, phase: f32) -> f32 {
-        (phase * self.steps.len() as f32).fract()
+        (phase * self.num_steps as f32).fract()
     }
 }
 
@@ -76,8 +80,9 @@ impl Node for StepSequencer {
 
         for n in 0..block_size {
             let phase = phasor_in[n];
-            let idx = self.step_index(phase);
+            let idx = self.step_index(phase).min(self.num_steps - 1);
             let step = &self.steps[idx];
+            // local_phase is the interpolation between steps, so 0.5 is half the gap between the two steps
             let local_phase = self.phase_within_step(phase);
 
             freq_out[n] = step.freq;
@@ -92,24 +97,10 @@ impl Node for StepSequencer {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         match msg {
-            NodeMessage::SetParam(inner) => {
-                // delimitted with `_`, e.g "step_3_freq"
-                let parts: Vec<&str> = inner.param_name.splitn(3, '_').collect();
-                if parts.len() == 3 && parts[0] == "step" {
-                    if let Ok(idx) = parts[1].parse::<usize>() {
-                        if let Some(step) = self.steps.get_mut(idx) {
-                            // parts[2] is the last string part
-                            match (parts[2], inner.value) {
-                                ("freq", RtValue::F32(x)) => step.freq = x,
-                                ("vel", RtValue::F32(x)) => step.vel = x,
-                                ("gate", RtValue::F32(x)) => step.gate = x,
-                                ("length", RtValue::F32(x)) => step.length = x.clamp(0.0, 1.0),
-                                _ => (),
-                            }
-                        }
-                    }
-                }
-            }
+            NodeMessage::SetParam(inner) => match (inner.param_name, inner.value) {
+                ("num_steps", RtValue::U32(n)) => self.num_steps = (n as usize).min(MAXIMUM_SIZE),
+                _ => (),
+            },
             NodeMessage::SetStep(payload) => {
                 if let Some(step) = self.steps.get_mut(payload.index) {
                     if let Some(v) = payload.freq {
