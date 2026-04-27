@@ -24,6 +24,7 @@ pub mod dsl;
 pub mod executor;
 pub mod graph;
 pub mod harness;
+pub mod input;
 pub mod interface;
 pub mod math;
 pub mod midi;

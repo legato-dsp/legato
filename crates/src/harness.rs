@@ -25,6 +25,7 @@ pub fn build_placeholder_context(config: Config) -> AudioContext {
             SlotMap::default(),
             SlotMap::default(),
             SlotMap::default(),
+            SlotMap::default(),
         ),
     )
 }

@@ -19,7 +19,7 @@ use crate::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
     },
     resources::{
-        DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
+        AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
         arena::RuntimeArena,
         params::{ParamKey, ParamMeta, ParamStore},
     },
@@ -163,6 +163,7 @@ impl LegatoBuilder<Unconfigured> {
                 SlotMap::default(),
                 SlotMap::default(),
                 SlotMap::default(),
+                SlotMap::default(),
             ),
         );
 
@@ -210,6 +211,18 @@ where
     /// Register a custom pipe for transforming nodes
     pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) -> Self {
         self.pipe_lookup.insert(name.into(), pipe);
+        self
+    }
+    /// Register an AudioInput
+    pub fn register_audio_input(
+        mut self,
+        name: &'static str,
+        consumer: rtrb::Consumer<f32>,
+        chans: usize,
+        block_size: usize,
+    ) -> Self {
+        self.resource_builder
+            .register_audio_input(name, consumer, chans, block_size);
         self
     }
 }
@@ -716,6 +729,14 @@ impl<'a> ResourceBuilderView<'a> {
         self.external_buffer_keys.get(name).cloned().ok_or_else(|| {
             ValidationError::ResourceNotFound(format!("Could not find sample key {}", name))
         })
+    }
+
+    pub fn get_audio_input_key(&self, name: &String) -> Result<AudioInputKey, ValidationError> {
+        self.resource_builder
+            .get_audio_input_key(name)
+            .ok_or_else(|| {
+                ValidationError::ResourceNotFound(format!("Could not find AudioInputKey {}", name))
+            })
     }
 
     pub fn get_config(&self) -> &Config {

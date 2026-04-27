@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use slotmap::new_key_type;
+
 use crate::{
     config::Config,
     midi::{MidiError, MidiMessage, MidiStore},
@@ -8,6 +10,8 @@ use crate::{
         params::{ParamError, ParamKey},
     },
 };
+
+new_key_type! { struct ExternalAudioKey; }
 
 /// The AudioContext struct contains information about the current audio graph, as well as
 /// some resources that are hosted up for nodes to access within a specific runtime.

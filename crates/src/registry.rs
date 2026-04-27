@@ -12,6 +12,7 @@ use crate::{
             adsr::Adsr,
             allpass::Allpass,
             delay::{DelayRead, DelayWrite},
+            external::ExternalInput,
             mixer::{MonoFanOut, TrackMixer},
             onepole::OnePole,
             ops::{ApplyOpKind, mult_node_factory},
@@ -366,6 +367,29 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let node = Allpass::new(chans, feedback, delay_length_samples, capacity);
 
                 Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "external".into(),
+            required = ["interface_name", "chans"],
+            optional = [],
+            build = |rb, p| {
+                let interface_name = p.get_str("interface_name").expect(
+                    "Must pass in the name the interface was defined with to the audio_input node!",
+                );
+
+                let chans = p
+                    .get_usize("chans")
+                    .expect("Must provide chans to audio_input");
+
+                let key = rb.get_audio_input_key(&interface_name).unwrap_or_else(|_| {
+                    panic!(
+                        "Could not find AudioInputKey for interface {}",
+                        interface_name,
+                    )
+                });
+
+                Ok(Box::new(ExternalInput::new(chans, key)))
             }
         ),
     ]);
