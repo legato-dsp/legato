@@ -14,14 +14,17 @@ fn main() {
             in audio_in
             audio {
                 // Allpass structure
-                allpass: allpass_one { delay_length: 111.0, feedback: 0.2, chans: 2},
-                allpass: allpass_two { delay_length: 189.0, feedback: 0.2, chans: 2},
-                allpass: allpass_three { delay_length: 213.0, feedback: 0.2, chans: 2},
+                allpass: allpass_one { delay_length: 111.0, feedback: 0.3, chans: 2},
+                allpass: allpass_two { delay_length: 317.0, feedback: 0.3, chans: 2},
+                allpass: allpass_three { delay_length: 511.0, feedback: 0.3, chans: 2},
                 // Feedback structure
                 delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
                 delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
                 delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 473 ] },
-                onepole { cutoff: 2400.0, chans: 2 },
+                // Dampen
+                svf { cutoff: 2400.0, q: 0.7, type: lowpass, chans: 2 },
+                // More density
+                hadamard { chans: 4 },
                 // Feedback
                 track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.4, 0.4] },
                 // Dry wet mixer
@@ -38,13 +41,16 @@ fn main() {
             dr1[0..2] >> wet_dry[2..4]
             dr2[0..2] >> wet_dry[4..6]
 
-            // feedback    
-            dr1 >> feedback[0..2]
-            dr2 >> feedback[2..4]
+            dr1 >> hadamard[0..2]
+            dr2 >> hadamard[2..4]
 
-            feedback >> onepole[0..2]
+            // feedback    
+            hadamard[0..2] >> feedback[0..2]
+            hadamard[2..4] >> feedback[2..4]
+
+            feedback >> svf[0..2]
             
-            onepole >> dw1
+            svf >> dw1
 
             { wet_dry}
         }

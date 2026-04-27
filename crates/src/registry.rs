@@ -13,6 +13,7 @@ use crate::{
             allpass::Allpass,
             delay::{DelayRead, DelayWrite},
             external::ExternalInput,
+            hadamard::HadamardMixer,
             mixer::{MonoFanOut, TrackMixer},
             onepole::OnePole,
             ops::{ApplyOpKind, mult_node_factory},
@@ -367,6 +368,18 @@ pub fn audio_registry_factory() -> NodeRegistry {
                 let node = Allpass::new(chans, feedback, delay_length_samples, capacity);
 
                 Ok(Box::new(node))
+            }
+        ),
+        node_spec!(
+            "hadamard".into(),
+            required = ["chans"],
+            optional = [],
+            build = |_, p| {
+                let chans = p
+                    .get_usize("chans")
+                    .expect("Must provide chans to audio_input");
+
+                Ok(Box::new(HadamardMixer::new(chans)))
             }
         ),
         node_spec!(

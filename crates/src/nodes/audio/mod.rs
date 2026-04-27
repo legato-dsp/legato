@@ -3,6 +3,7 @@ pub mod allpass;
 pub mod delay;
 pub mod external;
 pub mod fir;
+pub mod hadamard;
 pub mod mixer;
 pub mod onepole;
 pub mod ops;
