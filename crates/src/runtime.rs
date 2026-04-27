@@ -51,6 +51,10 @@ impl Runtime {
     pub fn remove_edge(&mut self, connection: Connection) -> Result<(), GraphError> {
         self.executor.graph.remove_edge(connection)
     }
+    pub fn get_sink(&self) -> Option<&LegatoNode> {
+        let key = self.executor.sink().unwrap();
+        self.get_node(&key)
+    }
     pub fn set_sink_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
         self.executor.set_sink(key)
     }

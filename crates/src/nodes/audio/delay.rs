@@ -112,9 +112,11 @@ impl Node for DelayWrite {
 #[derive(Clone)]
 pub struct DelayRead {
     delay_line_keys: Vec<DelayLineKey>,
-    delay_times: Vec<Duration>, // Different times for each channel if desired
+    delay_times: Vec<Duration>, // Fallback static times per channel
+    chans: usize,
     ports: Ports,
 }
+
 impl DelayRead {
     pub fn new(
         chans: usize,
@@ -124,37 +126,54 @@ impl DelayRead {
         Self {
             delay_line_keys,
             delay_times,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            chans,
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .audio_in_named(&["delay_time"])
+                .build(),
         }
     }
 }
 
 impl Node for DelayRead {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+    fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let block_size = config.block_size;
         let sr = config.sample_rate as f32;
 
         let resources = ctx.get_resources();
 
+        let delay_mod_port = ai[0];
+
         for (c, chan) in ao.iter_mut().enumerate() {
-            let delay_time = self.delay_times[c].as_secs_f32();
+            let static_delay_samples = self.delay_times[c].as_secs_f32() * sr;
             let view = resources.delay_line_view(self.delay_line_keys[c]);
 
-            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
-                let chunk_start = LANES * cidx;
+            if let Some(mod_buf) = delay_mod_port {
+                // Modulation path
+                for (i, out) in chan.iter_mut().enumerate() {
+                    let delay_time_ms = mod_buf[i];
+                    let delay_samples = (delay_time_ms / 1000.0) * sr + (block_size - i) as f32;
 
-                let offsets = Vf32::from_array(std::array::from_fn(|lane| {
-                    delay_time * sr + (block_size - (chunk_start + lane)) as f32
-                }));
+                    *out = view.read_cubic(delay_samples);
+                }
+            } else {
+                // Fixed path
+                for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                    let chunk_start = LANES * cidx;
 
-                // TODO: Future experimentations here
-                for (lane, out) in chunk.iter_mut().enumerate() {
-                    *out = view.read_cubic(offsets.as_array()[lane]);
+                    let offsets = Vf32::from_array(std::array::from_fn(|lane| {
+                        static_delay_samples + (block_size - (chunk_start + lane)) as f32
+                    }));
+
+                    for (lane, out) in chunk.iter_mut().enumerate() {
+                        *out = view.read_cubic(offsets.as_array()[lane]);
+                    }
                 }
             }
         }
     }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

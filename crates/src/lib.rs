@@ -106,6 +106,10 @@ impl Debug for LegatoApp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LegatoApp")
             .field("runtime", &self.runtime)
+            .field(
+                "sink",
+                self.runtime.get_sink().expect("No sink found in Debug!"),
+            )
             .finish()
     }
 }
