@@ -6,6 +6,7 @@ use crate::resources::{
     arena::{Arena, RuntimeArena},
     buffer::ExternalBuffer,
     delay::{DelayLineView, DelayLineViewMut, ResourceDelay},
+    input::AudioInput,
     params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend},
     window::Window,
 };
@@ -13,11 +14,13 @@ use crate::resources::{
 pub mod arena;
 pub mod buffer;
 pub mod delay;
+pub mod input;
 pub mod params;
 pub mod window;
 
 new_key_type! { pub struct InternalBufferKey; }
-new_key_type! { pub struct ExternalBufferKey; }
+new_key_type! {pub struct ExternalBufferKey; }
+new_key_type! {pub struct AudioInputKey; }
 new_key_type! { pub struct DelayLineKey; }
 
 #[derive(Debug, Default)]
@@ -42,7 +45,8 @@ pub struct Resources {
     internal_buffers: SlotMap<InternalBufferKey, Window>,
     external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
     delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
-    receiver: rtrb::Consumer<ExternalBufferUpdate>,
+    external_buffer_update_receiver: rtrb::Consumer<ExternalBufferUpdate>,
+    audio_inputs: SlotMap<AudioInputKey, AudioInput>,
     garbage_sender: rtrb::Producer<ExternalBuffer>,
 }
 
@@ -55,6 +59,7 @@ impl Resources {
         internal_buffers: SlotMap<InternalBufferKey, Window>,
         external_buffers: SlotMap<ExternalBufferKey, Option<ExternalBuffer>>,
         delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
+        audio_inputs: SlotMap<AudioInputKey, AudioInput>,
     ) -> Self {
         Self {
             arena,
@@ -62,7 +67,8 @@ impl Resources {
             internal_buffers,
             external_buffers,
             delay_lines,
-            receiver,
+            external_buffer_update_receiver: receiver,
+            audio_inputs,
             garbage_sender,
         }
     }
@@ -117,8 +123,27 @@ impl Resources {
         self.param_store.get(param_key)
     }
 
+    /// The entire buffer [l,l,l,r,r,r] for an audio input
+    #[inline(always)]
+    pub fn get_audio_input(&self, key: AudioInputKey) -> &[f32] {
+        self.audio_inputs
+            .get(key)
+            .expect("Invalid AudioInputKey")
+            .as_slice()
+    }
+
+    /// A single channel's samples for `key`.
+    #[inline(always)]
+    pub fn get_audio_input_chan(&self, key: AudioInputKey, chan: usize) -> &[f32] {
+        self.audio_inputs
+            .get(key)
+            .expect("Invalid AudioInputKey")
+            .channel(chan)
+    }
+
     pub fn drain(&mut self) {
-        while let Ok(incoming) = self.receiver.pop() {
+        // Drain external buffers
+        while let Ok(incoming) = self.external_buffer_update_receiver.pop() {
             if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
                 // This returns the old value, and we can then clean it up in another thread
                 let old_buffer = Option::replace(buffer_ref, incoming.buffer);
@@ -129,10 +154,15 @@ impl Resources {
                 }
             }
         }
+
+        // Drain the incoming audio receivers
+        for (_, ai) in &mut self.audio_inputs {
+            ai.drain();
+        }
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct ResourceBuilder {
     arena: Arena,
     /// Maps to a Window (used to create a slice) on our "arena"
@@ -142,6 +172,10 @@ pub struct ResourceBuilder {
     /// Underlying hoisted DelayLine that is then constructed into a DelayLineView
     delay_lines: SlotMap<DelayLineKey, ResourceDelay>,
     external_buffer_key_lookup: HashMap<String, ExternalBufferKey>,
+    // Register and store the AudioInputs
+    audio_inputs: SlotMap<AudioInputKey, AudioInput>,
+    audio_input_key_lookup: HashMap<String, AudioInputKey>,
+    // RtSafe param store builder
     param_builder: ParamStoreBuilder,
 }
 
@@ -181,6 +215,24 @@ impl ResourceBuilder {
         self.param_builder.add_param(unique_name, meta)
     }
 
+    pub fn register_audio_input(
+        &mut self,
+        name: &str,
+        consumer: rtrb::Consumer<f32>,
+        chans: usize,
+        block_size: usize,
+    ) -> AudioInputKey {
+        let input = AudioInput::new(chans, block_size, consumer);
+        let key = self.audio_inputs.insert(input);
+        self.audio_input_key_lookup.insert(name.into(), key);
+        key
+    }
+
+    /// Look up an audio input key by name (for use in node factories).
+    pub fn get_audio_input_key(&self, name: &str) -> Option<AudioInputKey> {
+        self.audio_input_key_lookup.get(name).copied()
+    }
+
     pub fn build(
         self,
         rt_capacity: usize,
@@ -203,6 +255,7 @@ impl ResourceBuilder {
             self.internal_buffers,
             self.external_buffers,
             self.delay_lines,
+            self.audio_inputs,
         );
 
         let frontend = ResourceFrontend::new(
@@ -243,17 +296,12 @@ impl ResourceFrontend {
         }
     }
 
-    // --------------------------------------------------------
-    // Sample Logic
-    // --------------------------------------------------------
-
     /// Send an external buffer to the runtime
     pub fn send_external_buffer(
         &mut self,
         name: &str,
         buffer: ExternalBuffer,
     ) -> Result<(), PushError<ExternalBufferUpdate>> {
-        dbg!(&self.external_buffer_key_lookup);
         let key = self
             .external_buffer_key_lookup
             .get(name)
@@ -265,16 +313,13 @@ impl ResourceFrontend {
 
     /// Garbage collect any external buffers that are no longer in use
     ///
+    /// TODO: Find a consistent pattern to implement this
     /// We are doing this here, and not on the audio thread to avoid any non-realtime ops
     pub fn drain_garbage(&mut self) {
         while let Ok(garbage) = self.external_sample_garbage_receiver.pop() {
             drop(garbage);
         }
     }
-
-    // --------------------------------------------------------
-    // Parameter Logic
-    // --------------------------------------------------------
 
     pub fn set_param(&self, key: ParamKey, val: f32) -> Result<(), ParamError> {
         self.param_front_end.set_param(key, val)

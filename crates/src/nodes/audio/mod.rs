@@ -1,6 +1,7 @@
 pub mod adsr;
 pub mod allpass;
 pub mod delay;
+pub mod external;
 pub mod fir;
 pub mod mixer;
 pub mod onepole;
