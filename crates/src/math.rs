@@ -1,6 +1,6 @@
-use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
+use std::simd::{Simd, StdFloat};
 
-use crate::simd::{LANES, Vf32, Vusize};
+use crate::simd::{LANES, Vf32, Vidx};
 
 #[inline(always)]
 pub fn lerp(v0: f32, v1: f32, t: f32) -> f32 {
@@ -13,8 +13,6 @@ pub fn lerp_simd<const N: usize>(
     v1: Simd<f32, N>,
     t: Simd<f32, N>,
 ) -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     (Simd::<f32, N>::splat(1.0) - t) * v0 + t * v1
 }
@@ -40,8 +38,6 @@ pub fn cubic_hermite_simd<const N: usize>(
     x2: Simd<f32, N>,
     t: Simd<f32, N>,
 ) -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     let c = (x1 - xm1) * half_f32_simd();
     let v = x0 - x1;
@@ -65,8 +61,6 @@ pub fn fast_tanh(x: f32) -> f32 {
 
 #[inline(always)]
 pub fn fast_tanh_vf32<const N: usize>(x: Simd<f32, N>) -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     let x2 = x * x;
     let x3 = x2 * x;
@@ -81,56 +75,39 @@ where
 
 #[inline(always)]
 pub const fn zero_f32_simd<const N: usize>() -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     Simd::<f32, N>::splat(0.0)
 }
 
 #[inline(always)]
 pub const fn one_f32_simd<const N: usize>() -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     Simd::<f32, N>::splat(1.0)
 }
 
 #[inline(always)]
 pub const fn half_f32_simd<const N: usize>() -> Simd<f32, N>
-where
-    LaneCount<N>: SupportedLaneCount,
 {
     Simd::<f32, N>::splat(0.5)
-}
-
-#[inline(always)]
-pub const fn zero_usize_simd<const N: usize>() -> Simd<usize, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    Simd::<usize, N>::splat(0)
-}
-
-#[inline(always)]
-pub const fn one_usize_simd<const N: usize>() -> Simd<usize, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    Simd::<usize, N>::splat(1)
-}
-
-#[inline(always)]
-pub const fn two_usize_simd<const N: usize>() -> Simd<usize, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    Simd::<usize, N>::splat(2)
 }
 
 pub const ZERO_VF32: Vf32 = zero_f32_simd::<LANES>();
 pub const HALF_VF32: Vf32 = half_f32_simd::<LANES>();
 pub const ONE_VF32: Vf32 = one_f32_simd::<LANES>();
 
-pub const ZERO_VUSIZE: Vusize = zero_usize_simd::<LANES>();
-pub const ONE_VUSIZE: Vusize = one_usize_simd::<LANES>();
-pub const TWO_VUSIZE: Vusize = two_usize_simd::<LANES>();
+#[inline(always)]
+pub const fn zero_u32_simd<const N: usize>() -> Simd<u32, N> {
+    Simd::<u32, N>::splat(0)
+}
+#[inline(always)]
+pub const fn one_u32_simd<const N: usize>() -> Simd<u32, N> {
+    Simd::<u32, N>::splat(1)
+}
+#[inline(always)]
+pub const fn two_u32_simd<const N: usize>() -> Simd<u32, N> {
+    Simd::<u32, N>::splat(2)
+}
+
+pub const ZERO_VIDX: Vidx = zero_u32_simd::<LANES>();
+pub const ONE_VIDX:  Vidx = one_u32_simd::<LANES>();
+pub const TWO_VIDX:  Vidx = two_u32_simd::<LANES>();

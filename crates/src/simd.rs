@@ -27,4 +27,4 @@ pub const LANES: usize = 4;
 pub const LANES: usize = 1;
 
 pub type Vf32 = std::simd::Simd<f32, LANES>;
-pub type Vusize = std::simd::Simd<usize, LANES>; // Note: Could there be edge cases here on different arch?
+pub type Vidx = std::simd::Simd<u32, LANES>;
