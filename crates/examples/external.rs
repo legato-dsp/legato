@@ -1,9 +1,8 @@
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
-    input::{CpalInputConfig, DeviceSelection, start_cpal_input},
-    interface::AudioInterface,
-    out::start_application_audio_thread,
+    input::{DeviceSelection},
+    interface::{AudioInterface, InputSpec},
     ports::PortBuilder,
 };
 
@@ -80,17 +79,7 @@ fn main() {
 
     // Spawn prod consumer pair
 
-    let (producer, consumer) = rtrb::RingBuffer::new(48_000); // 1 second of headroom
-
-    let input_config = CpalInputConfig {
-        producer,
-        chans: 1,
-        host: &host,
-        sample_rate: config.sample_rate as u32,
-        device: DeviceSelection::Default,
-    };
-
-    let res = start_cpal_input(input_config, config.block_size).unwrap();
+    let (producer, consumer) = rtrb::RingBuffer::new(4096 * 4); // 4 frames of headroom
 
     let ports = PortBuilder::default().audio_out(2).build();
 
@@ -98,9 +87,13 @@ fn main() {
         .register_audio_input("one", consumer, 1, config.block_size)
         .build_dsl(&graph);
 
-    let interface = AudioInterface::new(&config, &host);
-
-    start_application_audio_thread(interface, app).expect("Audio thread panic!");
-
-    std::thread::park();
+    AudioInterface::builder(&host, config)
+        .input(InputSpec {
+            producer,
+            chans: 1,
+            device: DeviceSelection::Default,
+        })
+        .build(app)
+        .expect("Failed to start audio")
+        .run_forever();
 }

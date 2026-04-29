@@ -3,7 +3,6 @@ use legato::{
     config::Config,
     interface::AudioInterface,
     midi::{MidiPortKind, start_midi_thread},
-    out::start_application_audio_thread,
     ports::PortBuilder,
 };
 
@@ -113,18 +112,18 @@ fn main() {
     )
     .unwrap();
 
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        .set_midi_runtime(midi_rt_fe)
+        .build_dsl(&graph);
+
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
 
     #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
-
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
-        .set_midi_runtime(midi_rt_fe)
-        .build_dsl(&graph);
-
-    let interface = AudioInterface::new(&config, &host);
-
-    start_application_audio_thread(interface, app).expect("Audio thread panic!");
+    AudioInterface::builder(&host, config)
+        .build(app)
+        .expect("Failed to start audio")
+        .run_forever();
 }

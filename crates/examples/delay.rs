@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use legato::{
-    builder::{LegatoBuilder, Unconfigured}, config::Config, interface::AudioInterface, out::start_application_audio_thread, pipes::Pipe, ports::PortBuilder
+    builder::{LegatoBuilder, Unconfigured}, config::Config, interface::{AudioInterface}, ports::PortBuilder
 };
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
         }
 
         control {
-            signal { name: "cutoff", min: 120.0, max: 24000.0, default: 800.0 }
+            signal { name: "cutoff", min: 120.0, max: 24000.0, default: 3200.0 }
         }
 
         sampler[0..2] >> track_mixer[0..2]
@@ -58,7 +58,8 @@ fn main() {
     #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
-    let interface = AudioInterface::new(&config, &host);
-
-    start_application_audio_thread(interface, app).expect("Audio thread panic!")
+    AudioInterface::builder(&host, config)
+        .build(app)
+        .expect("Failed to start audio")
+        .run_forever();
 }
