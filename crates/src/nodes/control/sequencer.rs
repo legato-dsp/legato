@@ -97,7 +97,11 @@ impl Node for StepSequencer {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         match msg {
-            NodeMessage::SetParam(inner) => if let ("num_steps", RtValue::U32(n)) = (inner.param_name, inner.value) { self.num_steps = (n as usize).min(MAXIMUM_SIZE) },
+            NodeMessage::SetParam(inner) => {
+                if let ("num_steps", RtValue::U32(n)) = (inner.param_name, inner.value) {
+                    self.num_steps = (n as usize).min(MAXIMUM_SIZE)
+                }
+            }
             NodeMessage::SetStep(payload) => {
                 if let Some(step) = self.steps.get_mut(payload.index) {
                     if let Some(v) = payload.freq {
