@@ -133,7 +133,7 @@ fn choose_config(
     });
 
     if let Some(cfg) = exact {
-        let mut selected: StreamConfig = cfg.clone().with_sample_rate(sr).into();
+        let mut selected: StreamConfig = (*cfg).with_sample_rate(sr).into();
         selected.buffer_size = cpal::BufferSize::Fixed(block_size as u32);
         Ok(selected)
     } else {

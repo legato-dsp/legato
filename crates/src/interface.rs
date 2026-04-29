@@ -192,11 +192,10 @@ fn write_block<T>(
     let next_block = &next_block_view.channels[0..next_block_view.chans];
     let chans = config.channels as usize;
 
-    if let Some(producer) = visualization_producer {
-        if next_block.len() >= 2 {
-            write_stereo_mixdown(producer, &next_block[0], &next_block[1]);
+    if let Some(producer) = visualization_producer
+        && next_block.len() >= 2 {
+            write_stereo_mixdown(producer, next_block[0], next_block[1]);
         }
-    }
 
     for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
         for (channel, sample) in frame.iter_mut().enumerate() {
