@@ -5,7 +5,7 @@ use hound::{WavSpec, WavWriter};
 use crate::LegatoApp;
 
 /// Just render out to a .wav file, more used for testing for the time being.
-/// 
+///
 /// TODO: In the future, we will have a dedicated writer thread
 pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hound::Error> {
     let config = app.get_config();

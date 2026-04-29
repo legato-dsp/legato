@@ -4,8 +4,8 @@ use std::simd::{
 };
 
 use crate::{
-    math::{ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
-    simd::{LANES, Vf32, Vusize},
+    math::{ONE_VIDX, TWO_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    simd::{LANES, Vf32, Vidx},
 };
 
 /// It became clear after a while, that delay lines,
@@ -56,31 +56,31 @@ impl<'a> Window<'a> {
     #[inline(always)]
     pub fn read_linear_simd(&self, offsets: Vf32) -> Vf32 {
         let floor_float = offsets.floor();
-        let floor_usize = floor_float.cast::<usize>();
+        let floor_idx = floor_float.cast::<u32>();
         let t = offsets - floor_float;
-        let a = self.gather(floor_usize);
-        let b = self.gather(floor_usize + Vusize::splat(1));
+        let a = self.gather(floor_idx);
+        let b = self.gather(floor_idx + ONE_VIDX);
         lerp_simd(a, b, t)
     }
 
     #[inline(always)]
     pub fn read_cubic_simd(&self, offsets: Vf32) -> Vf32 {
         let floor_float = offsets.floor();
-        let floor_usize = floor_float.cast::<usize>();
+        let floor_idx = floor_float.cast::<u32>();
         let t = offsets - floor_float;
-        let a = self.gather(floor_usize.saturating_sub(ONE_VUSIZE));
-        let b = self.gather(floor_usize);
-        let c = self.gather(floor_usize + ONE_VUSIZE);
-        let d = self.gather(floor_usize + TWO_VUSIZE);
+        let a = self.gather(floor_idx.saturating_sub(ONE_VIDX));
+        let b = self.gather(floor_idx);
+        let c = self.gather(floor_idx + ONE_VIDX);
+        let d = self.gather(floor_idx + TWO_VIDX);
         cubic_hermite_simd(a, b, c, d, t)
     }
 
     #[inline(always)]
-    fn gather(&self, indices: Vusize) -> Vf32 {
+    fn gather(&self, indices: Vidx) -> Vf32 {
         let mut out = [0.0f32; LANES];
         for lane in 0..LANES {
             unsafe {
-                out[lane] = *self.data.get_unchecked(indices[lane]);
+                out[lane] = *self.data.get_unchecked(indices[lane] as usize);
             }
         }
         Vf32::from_array(out)

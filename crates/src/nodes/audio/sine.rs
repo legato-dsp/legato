@@ -32,7 +32,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
+use std::simd::{Simd, StdFloat};
 
 use crate::{
     context::AudioContext,
@@ -152,18 +152,12 @@ impl Node for Sine {
 // Start of BSD-3 Code
 
 #[inline(always)]
-fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
+fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     x - x.round()
 }
 
 #[inline(always)]
-fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
+fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_sq = x * x;
     let x_q = x_sq * x_sq;
 
@@ -181,10 +175,7 @@ where
 }
 
 #[inline(always)]
-fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
+fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
@@ -192,10 +183,7 @@ where
 // End of BSD-3 Code
 
 /// Utility to perform prefix scan
-fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-{
+fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let t1 = x.shift_elements_right::<1>(0.0);
     x += t1;
 

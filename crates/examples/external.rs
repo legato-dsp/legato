@@ -1,7 +1,7 @@
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
-    input::{DeviceSelection},
+    input::DeviceSelection,
     interface::{AudioInterface, InputSpec},
     ports::PortBuilder,
 };

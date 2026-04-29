@@ -1,11 +1,11 @@
 use std::simd::{
-    LaneCount, Simd, StdFloat, SupportedLaneCount,
+    Simd, StdFloat,
     num::{SimdFloat, SimdUint},
 };
 
 use crate::{
-    math::{ONE_VUSIZE, TWO_VUSIZE, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
-    simd::{LANES, Vf32, Vusize},
+    math::{ONE_VIDX, TWO_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    simd::{LANES, Vf32},
 };
 
 #[derive(Debug, Clone)]
@@ -132,54 +132,40 @@ impl RingBuffer {
     #[inline(always)]
     pub fn get_delay_linear_simd(&self, offset: Vf32) -> Vf32 {
         let floor_float = offset.floor();
-
-        let floor_usize = floor_float.cast::<usize>();
-
-        let a = self.gather_simd(floor_usize);
-        let b = self.gather_simd(floor_usize + Vusize::splat(1));
-
+        let floor_idx = floor_float.cast::<u32>();
+        let a = self.gather_simd(floor_idx);
+        let b = self.gather_simd(floor_idx + ONE_VIDX);
         let t = offset - floor_float;
-
         lerp_simd(a, b, t)
     }
 
     #[inline(always)]
     pub fn get_delay_cubic_simd(&self, offset: Vf32) -> Vf32 {
         let floor_float = offset.floor();
-
-        let floor_usize = floor_float.cast::<usize>();
-
-        let a = self.gather_simd(floor_usize.saturating_sub(ONE_VUSIZE));
-        let b = self.gather_simd(floor_usize);
-        let c = self.gather_simd(floor_usize + ONE_VUSIZE);
-        let d = self.gather_simd(floor_usize + TWO_VUSIZE);
-
+        let floor_idx = floor_float.cast::<u32>();
+        let a = self.gather_simd(floor_idx.saturating_sub(ONE_VIDX));
+        let b = self.gather_simd(floor_idx);
+        let c = self.gather_simd(floor_idx + ONE_VIDX);
+        let d = self.gather_simd(floor_idx + TWO_VIDX);
         let t = offset - floor_float;
-
         cubic_hermite_simd(a, b, c, d, t)
     }
 
-    fn gather_simd<const N: usize>(&self, indices: Simd<usize, N>) -> Simd<f32, N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
-        // TODO: Is there a better solution?
+    fn gather_simd<const N: usize>(&self, indices: Simd<u32, N>) -> Simd<f32, N> {
         let mut out = [0.0; N];
         let len = self.capacity;
         let base = (self.write_pos + len - 1) % len;
-
         for i in 0..N {
-            let k = indices[i];
+            let k = indices[i] as usize;
             let idx = (base + len - k) % len;
             out[i] = self.data[idx];
         }
-
         Simd::<f32, N>::from_array(out)
     }
 }
 
 mod test {
-    use crate::math::{one_usize_simd, two_usize_simd};
+    use crate::math::{one_u32_simd, two_u32_simd};
 
     use super::*;
 
@@ -188,18 +174,15 @@ mod test {
         pub fn get_delay_cubic_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
-        ) -> Simd<f32, N>
-        where
-            LaneCount<N>: SupportedLaneCount,
-        {
+        ) -> Simd<f32, N> {
             let floor_float = offset.floor();
 
-            let floor_usize = floor_float.cast::<usize>();
+            let floor_usize = floor_float.cast::<u32>();
 
-            let a = self.gather_simd(floor_usize.saturating_sub(one_usize_simd()));
+            let a = self.gather_simd(floor_usize.saturating_sub(one_u32_simd()));
             let b = self.gather_simd(floor_usize);
-            let c = self.gather_simd(floor_usize + one_usize_simd());
-            let d = self.gather_simd(floor_usize + two_usize_simd());
+            let c = self.gather_simd(floor_usize + one_u32_simd());
+            let d = self.gather_simd(floor_usize + two_u32_simd());
 
             let t = offset - floor_float;
 
@@ -209,16 +192,13 @@ mod test {
         pub fn get_delay_linear_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
-        ) -> Simd<f32, N>
-        where
-            LaneCount<N>: SupportedLaneCount,
-        {
+        ) -> Simd<f32, N> {
             let floor_float = offset.floor();
 
-            let floor_usize = floor_float.cast::<usize>();
+            let floor_usize = floor_float.cast::<u32>();
 
             let a = self.gather_simd(floor_usize);
-            let b = self.gather_simd(floor_usize + one_usize_simd());
+            let b = self.gather_simd(floor_usize + one_u32_simd());
 
             let t = offset - floor_float;
 

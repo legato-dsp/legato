@@ -5,9 +5,9 @@ use cpal::{
 };
 
 /// The different kinds of device selection available.
-/// 
+///
 /// Default just hands off to cpal default
-/// 
+///
 /// By name tries to find a match
 pub enum DeviceSelection {
     Default,
@@ -36,8 +36,14 @@ impl std::fmt::Display for CpalInputError {
             Self::NoMatchingConfig(e) => write!(f, "{e}"),
             Self::BuildStreamFailed(e) => write!(f, "Failed to build input stream: {e}"),
             Self::PlayStreamFailed(e) => write!(f, "Failed to start input stream: {e}"),
-            Self::ChannelMismatch { requested, available } => {
-                write!(f, "Requested {requested} channels but device only has {available}")
+            Self::ChannelMismatch {
+                requested,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Requested {requested} channels but device only has {available}"
+                )
             }
         }
     }
@@ -67,7 +73,7 @@ pub(crate) fn build_input_stream(
                     if to_write == 0 {
                         return;
                     }
-                    // Here, we break into two chunks, to do two copies. 
+                    // Here, we break into two chunks, to do two copies.
                     // This is needed because we don't have one continous slice with a ring buffer
                     if let Ok(mut chunk) = producer.write_chunk(to_write) {
                         let (first, second) = chunk.as_mut_slices();
@@ -95,7 +101,11 @@ fn select_device(host: &Host, selection: &DeviceSelection) -> Result<Device, Cpa
             let lower = name.to_lowercase();
             host.input_devices()
                 .map_err(CpalInputError::DevicesEnumerationFailed)?
-                .find(|d| d.name().map(|n| n.to_lowercase().contains(&lower)).unwrap_or(false))
+                .find(|d| {
+                    d.name()
+                        .map(|n| n.to_lowercase().contains(&lower))
+                        .unwrap_or(false)
+                })
                 .ok_or_else(|| CpalInputError::DeviceNotFound(name.clone()))
         }
     }
@@ -123,7 +133,7 @@ fn choose_config(
     });
 
     if let Some(cfg) = exact {
-        let mut selected: StreamConfig = cfg.clone().with_sample_rate(sr).into();
+        let mut selected: StreamConfig = (*cfg).with_sample_rate(sr).into();
         selected.buffer_size = cpal::BufferSize::Fixed(block_size as u32);
         Ok(selected)
     } else {
