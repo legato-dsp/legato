@@ -684,16 +684,12 @@ pub struct ResourceBuilderView<'a> {
 
 impl<'a> ResourceBuilderView<'a> {
     pub fn add_delay_line(&mut self, name: &str, capacity: usize) -> DelayLineKey {
-        // Check and see if this key already has an entry
         let new_key = self.resource_builder.add_delay_line(capacity);
-
         if let Some(values) = self.delay_keys.get_mut(name) {
             values.push(new_key);
         } else {
-            let new_key = self.resource_builder.add_delay_line(capacity);
             self.delay_keys.insert(name.into(), vec![new_key]);
         }
-
         new_key
     }
 
