@@ -61,16 +61,22 @@ fn main() {
         external >> mono_fan_out
         mono_fan_out >> basic_verb
 
-        { basic_verb }
+        { mono_fan_out }
     "#,
     );
 
     let config = Config {
         sample_rate: 48_000,
-        block_size: 1024,
+        block_size: 4096,
         channels: 2,
         rt_capacity: 0,
     };
+
+    #[cfg(target_os = "macos")]
+    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
+
+    #[cfg(target_os = "linux")]
+    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
     // Spawn prod consumer pair
 
@@ -79,6 +85,7 @@ fn main() {
     let input_config = CpalInputConfig {
         producer,
         chans: 1,
+        host: &host,
         sample_rate: config.sample_rate as u32,
         device: DeviceSelection::Default,
     };
@@ -91,7 +98,9 @@ fn main() {
         .register_audio_input("one", consumer, 1, config.block_size)
         .build_dsl(&graph);
 
-    let interface = AudioInterface::default_with_config(&config);
+    let interface = AudioInterface::new(&config, &host);
 
     start_application_audio_thread(interface, app).expect("Audio thread panic!");
+
+    std::thread::park();
 }

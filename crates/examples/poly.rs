@@ -113,11 +113,18 @@ fn main() {
     )
     .unwrap();
 
+    #[cfg(target_os = "macos")]
+    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
+
+    #[cfg(target_os = "linux")]
+    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
+
+
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .set_midi_runtime(midi_rt_fe)
         .build_dsl(&graph);
 
-    let interface = AudioInterface::default_with_config(&config);
+    let interface = AudioInterface::new(&config, &host);
 
     start_application_audio_thread(interface, app).expect("Audio thread panic!");
 }

@@ -1,26 +1,17 @@
-use cpal::{Device, StreamConfig, traits::HostTrait};
+use cpal::{Device, Host, StreamConfig, traits::HostTrait};
 
 use crate::config::Config;
 
-pub struct AudioInterface {
-    pub device: Device,
+pub struct AudioInterface<'a> {
+    _host: &'a Host,
+    pub output_device: Device,
     pub stream_config: StreamConfig,
 }
 
-impl AudioInterface {
-    pub fn default_with_config(config: &Config) -> Self {
-        // TODO: More hosts
-        #[cfg(feature = "jack")]
-        let host = cpal::host_from_id(cpal::HostId::Jack);
-        #[cfg(feature = "asio")]
-        let host = cpal::host_from_id(cpal::HostId::Asio);
-
-        #[cfg(not(any(feature = "jack", feature = "asio")))]
-        let host = cpal::default_host();
-
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
+impl<'a> AudioInterface<'a> {
+    pub fn new(config: &Config, host: &'a Host) -> Self {
+        let output_device = host.default_output_device()
+            .expect("Not output device available");
 
         let stream_config = cpal::StreamConfig {
             channels: config.channels as u16,
@@ -29,8 +20,9 @@ impl AudioInterface {
         };
 
         Self {
-            device,
-            stream_config,
+            _host: host,
+            output_device,
+            stream_config
         }
     }
 }

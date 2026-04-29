@@ -11,11 +11,10 @@ pub enum DeviceSelection {
     ByName(String),
 }
 
-pub struct CpalInputConfig {
-    /// The producer side of the ring buffer registered with
+pub struct CpalInputConfig<'a> {
     pub producer: rtrb::Producer<f32>,
-    /// Must match the `chans` passed to `register_audio_input`.
     pub chans: usize,
+    pub host: &'a Host,
     pub sample_rate: u32,
     pub device: DeviceSelection,
 }
@@ -26,6 +25,7 @@ pub enum CpalInputError {
     DeviceNotFound(String),
     DevicesEnumerationFailed(cpal::DevicesError),
     UnsupportedConfig(cpal::SupportedStreamConfigsError),
+    NoMatchingConfig(String),
     BuildStreamFailed(cpal::BuildStreamError),
     PlayStreamFailed(cpal::PlayStreamError),
     ChannelMismatch { requested: usize, available: usize },
@@ -38,6 +38,7 @@ impl std::fmt::Display for CpalInputError {
             Self::DeviceNotFound(n) => write!(f, "Input device not found: {n}"),
             Self::DevicesEnumerationFailed(e) => write!(f, "Failed to enumerate devices: {e}"),
             Self::UnsupportedConfig(e) => write!(f, "Unsupported stream config: {e}"),
+            Self::NoMatchingConfig(e) => write!(f, "{e}"),
             Self::BuildStreamFailed(e) => write!(f, "Failed to build input stream: {e}"),
             Self::PlayStreamFailed(e) => write!(f, "Failed to start input stream: {e}"),
             Self::ChannelMismatch {
@@ -53,22 +54,34 @@ impl std::fmt::Display for CpalInputError {
 
 impl std::error::Error for CpalInputError {}
 
-/// Build and start a CPAL input stream that feeds `config.producer`.
+pub struct CpalInputStream<'a> {
+    pub stream: Stream,
+    // Keep host and device alive for the lifetime of the stream.
+    _device: Device,
+    _host: &'a Host,
+}
+
 pub fn start_cpal_input(
     config: CpalInputConfig,
     block_size: usize,
-) -> Result<Stream, CpalInputError> {
-    let host = cpal::default_host();
-    let device = select_device(&host, &config.device)?;
-
+) -> Result<CpalInputStream, CpalInputError> {
+    let device = select_device(&config.host, &config.device)?;
     let stream_config = choose_config(&device, config.chans, config.sample_rate, block_size)?;
 
     println!(
         "negotiated: {}Hz, {} ch, buffer ~{:?}",
-        stream_config.sample_rate.0, stream_config.channels, stream_config.buffer_size
+        stream_config.sample_rate.0,
+        stream_config.channels,
+        stream_config.buffer_size
     );
 
-    build_stream(device, stream_config, config.producer, config.chans)
+    let stream = build_stream(device.clone(), stream_config, config.producer, config.chans)?;
+
+    Ok(CpalInputStream {
+        stream,
+        _device: device,
+        _host: config.host,
+    })
 }
 
 fn select_device(host: &Host, selection: &DeviceSelection) -> Result<Device, CpalInputError> {
@@ -118,9 +131,10 @@ fn choose_config(
         let mut selected_cfg: StreamConfig = cfg.clone().with_sample_rate(sr).into();
         selected_cfg.buffer_size = cpal::BufferSize::Fixed(block_size as u32);
         Ok(selected_cfg)
-    } else {
-        panic!("No supported config found!")
-    }
+    } 
+        else {
+            Err(CpalInputError::NoMatchingConfig("Could not find matching CPAL config!".into()))
+        }
 }
 
 fn build_stream(

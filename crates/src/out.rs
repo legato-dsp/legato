@@ -7,7 +7,6 @@ use cpal::{
 use hound::{WavSpec, WavWriter};
 
 use crate::LegatoApp;
-#[cfg(feature = "cpal-backend")]
 use crate::interface::AudioInterface;
 
 use assert_no_alloc::*;
@@ -49,7 +48,6 @@ pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hou
     Ok(())
 }
 
-#[cfg(feature = "cpal-backend")]
 #[inline(always)]
 fn write_runtime_data_cpal_app<T>(output: &mut [T], config: &StreamConfig, app: &mut LegatoApp)
 where
@@ -68,12 +66,11 @@ where
     }
 }
 
-#[cfg(feature = "cpal-backend")]
 pub fn start_application_audio_thread(
     interface: AudioInterface,
     mut app: LegatoApp,
 ) -> Result<(), BuildStreamError> {
-    let stream = interface.device.build_output_stream(
+    let stream = interface.output_device.build_output_stream(
         &interface.stream_config.clone(),
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             assert_no_alloc(|| {
@@ -95,7 +92,6 @@ pub fn start_application_audio_thread(
 // Version with external output for visualization
 // ----------------------------------------------
 
-#[cfg(feature = "cpal-backend")]
 #[inline(always)]
 fn write_runtime_data_cpal_external_out<T>(
     output: &mut [T],
@@ -127,14 +123,13 @@ fn write_runtime_data_cpal_external_out<T>(
     }
 }
 
-#[cfg(feature = "cpal-backend")]
 pub fn start_application_audio_thread_external_output(
     interface: AudioInterface,
     mut output_producer: rtrb::Producer<f32>,
     mut app: LegatoApp,
 ) -> Result<(), BuildStreamError> {
     let cfg = interface.stream_config.clone();
-    let stream = interface.device.build_output_stream(
+    let stream = interface.output_device.build_output_stream(
         &interface.stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             assert_no_alloc(|| {
