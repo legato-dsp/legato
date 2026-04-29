@@ -152,14 +152,12 @@ impl Node for Sine {
 // Start of BSD-3 Code
 
 #[inline(always)]
-fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-{
+fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     x - x.round()
 }
 
 #[inline(always)]
-fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-{
+fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_sq = x * x;
     let x_q = x_sq * x_sq;
 
@@ -177,8 +175,7 @@ fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f
 }
 
 #[inline(always)]
-fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
-{
+fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi_7(x_wrapped)
 }
@@ -186,8 +183,7 @@ fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES>
 // End of BSD-3 Code
 
 /// Utility to perform prefix scan
-fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES>
-{
+fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let t1 = x.shift_elements_right::<1>(0.0);
     x += t1;
 

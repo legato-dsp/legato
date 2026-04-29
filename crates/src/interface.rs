@@ -6,9 +6,9 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 
-use crate::{LegatoApp, input::build_input_stream};
 use crate::config::Config;
 use crate::input::{CpalInputError, DeviceSelection};
+use crate::{LegatoApp, input::build_input_stream};
 
 #[derive(Debug)]
 pub enum InterfaceError {
@@ -36,7 +36,9 @@ impl std::fmt::Display for InterfaceError {
 impl std::error::Error for InterfaceError {}
 
 impl From<CpalInputError> for InterfaceError {
-    fn from(e: CpalInputError) -> Self { Self::Input(e) }
+    fn from(e: CpalInputError) -> Self {
+        Self::Input(e)
+    }
 }
 
 pub struct InputSpec {
@@ -80,10 +82,10 @@ impl<'a> AudioInterfaceBuilder<'a> {
     }
 
     /// This function takes ownership of the LegatoApp
-    /// 
+    ///
     /// It is responsible now for the audio runtime, as well as the input and output
-    /// CPAL threads. 
-    /// 
+    /// CPAL threads.
+    ///
     /// If Host is dropped, we lose the connection to the specific audio API we are using.
     pub fn build(self, app: LegatoApp) -> Result<AudioInterface<'a>, InterfaceError> {
         let output_device = resolve_output_device(self.host, &self.output_device)?;
@@ -107,13 +109,11 @@ impl<'a> AudioInterfaceBuilder<'a> {
             input_streams.push(stream);
         }
 
-        let output_stream = build_output_stream(
-            &output_device,
-            &stream_config,
-            app,
-            self.visualization,
-        )?;
-        output_stream.play().map_err(InterfaceError::PlayOutputStream)?;
+        let output_stream =
+            build_output_stream(&output_device, &stream_config, app, self.visualization)?;
+        output_stream
+            .play()
+            .map_err(InterfaceError::PlayOutputStream)?;
 
         Ok(AudioInterface {
             _output_stream: output_stream,
@@ -150,7 +150,11 @@ fn resolve_output_device(host: &Host, sel: &DeviceSelection) -> Result<Device, I
             let lower = name.to_lowercase();
             host.output_devices()
                 .map_err(InterfaceError::EnumerateDevices)?
-                .find(|d| d.name().map(|n| n.to_lowercase().contains(&lower)).unwrap_or(false))
+                .find(|d| {
+                    d.name()
+                        .map(|n| n.to_lowercase().contains(&lower))
+                        .unwrap_or(false)
+                })
                 .ok_or_else(|| InterfaceError::OutputDeviceNotFound(name.clone()))
         }
     }

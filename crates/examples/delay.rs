@@ -1,7 +1,10 @@
 use std::path::Path;
 
 use legato::{
-    builder::{LegatoBuilder, Unconfigured}, config::Config, interface::{AudioInterface}, ports::PortBuilder
+    builder::{LegatoBuilder, Unconfigured},
+    config::Config,
+    interface::AudioInterface,
+    ports::PortBuilder,
 };
 
 fn main() {
@@ -42,8 +45,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
-        .build_dsl(&graph);
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
 
     let _ = frontend.load_sample(
         &String::from("amen"),

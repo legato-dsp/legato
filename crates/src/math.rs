@@ -12,8 +12,7 @@ pub fn lerp_simd<const N: usize>(
     v0: Simd<f32, N>,
     v1: Simd<f32, N>,
     t: Simd<f32, N>,
-) -> Simd<f32, N>
-{
+) -> Simd<f32, N> {
     (Simd::<f32, N>::splat(1.0) - t) * v0 + t * v1
 }
 
@@ -37,8 +36,7 @@ pub fn cubic_hermite_simd<const N: usize>(
     x1: Simd<f32, N>,
     x2: Simd<f32, N>,
     t: Simd<f32, N>,
-) -> Simd<f32, N>
-{
+) -> Simd<f32, N> {
     let c = (x1 - xm1) * half_f32_simd();
     let v = x0 - x1;
     let w = c + v;
@@ -60,8 +58,7 @@ pub fn fast_tanh(x: f32) -> f32 {
 }
 
 #[inline(always)]
-pub fn fast_tanh_vf32<const N: usize>(x: Simd<f32, N>) -> Simd<f32, N>
-{
+pub fn fast_tanh_vf32<const N: usize>(x: Simd<f32, N>) -> Simd<f32, N> {
     let x2 = x * x;
     let x3 = x2 * x;
     let x5 = x3 * x2;
@@ -74,20 +71,17 @@ pub fn fast_tanh_vf32<const N: usize>(x: Simd<f32, N>) -> Simd<f32, N>
 // A few constants to avoid splats everywhere
 
 #[inline(always)]
-pub const fn zero_f32_simd<const N: usize>() -> Simd<f32, N>
-{
+pub const fn zero_f32_simd<const N: usize>() -> Simd<f32, N> {
     Simd::<f32, N>::splat(0.0)
 }
 
 #[inline(always)]
-pub const fn one_f32_simd<const N: usize>() -> Simd<f32, N>
-{
+pub const fn one_f32_simd<const N: usize>() -> Simd<f32, N> {
     Simd::<f32, N>::splat(1.0)
 }
 
 #[inline(always)]
-pub const fn half_f32_simd<const N: usize>() -> Simd<f32, N>
-{
+pub const fn half_f32_simd<const N: usize>() -> Simd<f32, N> {
     Simd::<f32, N>::splat(0.5)
 }
 
@@ -109,5 +103,5 @@ pub const fn two_u32_simd<const N: usize>() -> Simd<u32, N> {
 }
 
 pub const ZERO_VIDX: Vidx = zero_u32_simd::<LANES>();
-pub const ONE_VIDX:  Vidx = one_u32_simd::<LANES>();
-pub const TWO_VIDX:  Vidx = two_u32_simd::<LANES>();
+pub const ONE_VIDX: Vidx = one_u32_simd::<LANES>();
+pub const TWO_VIDX: Vidx = two_u32_simd::<LANES>();

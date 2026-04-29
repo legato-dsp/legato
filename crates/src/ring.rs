@@ -174,8 +174,7 @@ mod test {
         pub fn get_delay_cubic_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
-        ) -> Simd<f32, N>
-        {
+        ) -> Simd<f32, N> {
             let floor_float = offset.floor();
 
             let floor_usize = floor_float.cast::<u32>();
@@ -193,8 +192,7 @@ mod test {
         pub fn get_delay_linear_simd_generic<const N: usize>(
             &self,
             offset: Simd<f32, N>,
-        ) -> Simd<f32, N>
-        {
+        ) -> Simd<f32, N> {
             let floor_float = offset.floor();
 
             let floor_usize = floor_float.cast::<u32>();
