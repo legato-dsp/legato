@@ -1,9 +1,8 @@
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
-    input::{CpalInputConfig, DeviceSelection, start_cpal_input},
-    interface::AudioInterface,
-    out::start_application_audio_thread,
+    input::{DeviceSelection},
+    interface::{AudioInterface, InputSpec},
     ports::PortBuilder,
 };
 
@@ -61,29 +60,26 @@ fn main() {
         external >> mono_fan_out
         mono_fan_out >> basic_verb
 
-        { basic_verb }
+        { mono_fan_out }
     "#,
     );
 
     let config = Config {
         sample_rate: 48_000,
-        block_size: 1024,
+        block_size: 4096,
         channels: 2,
         rt_capacity: 0,
     };
 
+    #[cfg(target_os = "macos")]
+    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
+
+    #[cfg(target_os = "linux")]
+    let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
+
     // Spawn prod consumer pair
 
-    let (producer, consumer) = rtrb::RingBuffer::new(48_000); // 1 second of headroom
-
-    let input_config = CpalInputConfig {
-        producer,
-        chans: 1,
-        sample_rate: config.sample_rate as u32,
-        device: DeviceSelection::Default,
-    };
-
-    let res = start_cpal_input(input_config, config.block_size).unwrap();
+    let (producer, consumer) = rtrb::RingBuffer::new(4096 * 4); // 4 frames of headroom
 
     let ports = PortBuilder::default().audio_out(2).build();
 
@@ -91,7 +87,13 @@ fn main() {
         .register_audio_input("one", consumer, 1, config.block_size)
         .build_dsl(&graph);
 
-    let interface = AudioInterface::default_with_config(&config);
-
-    start_application_audio_thread(interface, app).expect("Audio thread panic!");
+    AudioInterface::builder(&host, config)
+        .input(InputSpec {
+            producer,
+            chans: 1,
+            device: DeviceSelection::Default,
+        })
+        .build(app)
+        .expect("Failed to start audio")
+        .run_forever();
 }
