@@ -290,7 +290,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                             "bandpass" => FilterType::BandPass,
                             "bell" => FilterType::Bell,
                             "highshelf" => FilterType::HighShelf,
-                            "lowshell" => FilterType::LowShelf,
+                            "lowshelf" => FilterType::LowShelf,
                             "notch" => FilterType::Notch,
                             "peak" => FilterType::Peak,
                             _ => panic!("Could not find filter type!"),
