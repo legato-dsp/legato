@@ -274,7 +274,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
         node_spec!(
             "svf".into(),
             required = [],
-            optional = ["cutoff", "q", "type", "chans"],
+            optional = ["cutoff", "q", "type", "chans", "gain"],
             build = |rb, p| {
                 let cutoff = p.get_f32("cutoff").unwrap_or(7500.0);
                 let chans = p.get_usize("chans").unwrap_or(2);
@@ -290,6 +290,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
                             "bandpass" => FilterType::BandPass,
                             "bell" => FilterType::Bell,
                             "highshelf" => FilterType::HighShelf,
+                            "lowshell" => FilterType::LowShelf,
                             "notch" => FilterType::Notch,
                             "peak" => FilterType::Peak,
                             _ => panic!("Could not find filter type!"),
