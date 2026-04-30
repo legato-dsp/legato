@@ -76,3 +76,24 @@ impl Node for HadamardMixer {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for HadamardMixer {
+    const NAME: &'static str = "hadamard";
+    const DESCRIPTION: &'static str = "Walsh-Hadamard transform mixer for feedback delay networks";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to audio_input");
+        Ok(Box::new(Self::new(chans)))
+    }
+}

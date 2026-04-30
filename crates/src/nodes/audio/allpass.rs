@@ -93,3 +93,34 @@ impl Node for Allpass {
         }
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Allpass {
+    const NAME: &'static str = "allpass";
+    const DESCRIPTION: &'static str = "Allpass filter with configurable delay length and feedback";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "feedback", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
+
+    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        use std::time::Duration;
+        let config = rb.get_config();
+        let sr = config.sample_rate;
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let delay_length = p
+            .get_duration_ms("delay_length")
+            .unwrap_or(Duration::from_millis(200));
+        let delay_length_samples = sr as f32 * delay_length.as_secs_f32();
+        let feedback = p.get_f32("feedback").unwrap_or(0.5);
+        let mut capacity = p.get_usize("capacity").unwrap_or(sr);
+        if capacity < (delay_length_samples as usize) {
+            capacity = (delay_length_samples as usize) * 2;
+        }
+        Ok(Box::new(Self::new(chans, feedback, delay_length_samples, capacity)))
+    }
+}

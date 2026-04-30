@@ -313,3 +313,47 @@ impl Node for PolyVoice {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Voice {
+    const NAME: &'static str = "voice";
+    const DESCRIPTION: &'static str = "Decodes MIDI note events on a channel to gate, frequency, and velocity signals";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["chan"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let channel = p
+            .get_usize("chan")
+            .expect("Must provide midi channel (chan) (0-15) to voice!");
+        assert!(channel <= 15);
+        Ok(Box::new(Self::new(channel)))
+    }
+}
+
+impl NodeDefinition for PolyVoice {
+    const NAME: &'static str = "poly_voice";
+    const DESCRIPTION: &'static str = "Polyphonic MIDI voice decoder outputting per-voice gate, frequency, and velocity";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["voices", "chan"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let channel = p
+            .get_usize("chan")
+            .expect("Must provide midi channel (chan) (0-15) to voice!");
+        let voices = p
+            .get_usize("voices")
+            .expect("Must provide number of voices to poly voice!");
+        assert!(channel <= 15);
+        assert!(
+            voices < 10,
+            "Currently, a maximum of 32 tracks is supported."
+        );
+        Ok(Box::new(Self::new(voices, channel)))
+    }
+}

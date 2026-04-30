@@ -59,3 +59,43 @@ impl Node for Phasor {
         }
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Phasor {
+    const NAME: &'static str = "phasor";
+    const DESCRIPTION: &'static str = "Ramp oscillator producing a signal from 0.0 to 1.0";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["freq"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let freq = p.get_f32("freq").expect("Must pass frequency to phasor");
+        Ok(Box::new(Self::new(freq)))
+    }
+}
+
+/// Zero-size definition type for the `clock` DSL node, which derives a
+/// phasor frequency from BPM, beat division, and step count.
+pub struct ClockDef;
+
+impl NodeDefinition for ClockDef {
+    const NAME: &'static str = "clock";
+    const DESCRIPTION: &'static str = "Clock signal derived from BPM, beat division, and step count";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["bpm", "division", "steps"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
+        let division = p
+            .get_usize("division")
+            .expect("Must pass division to clock");
+        let steps = p.get_usize("steps").expect("Must pass steps to clock");
+        let freq = (bpm * division) as f32 / (60.0 * steps as f32);
+        Ok(Box::new(Phasor::new(freq)))
+    }
+}

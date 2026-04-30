@@ -74,3 +74,26 @@ impl Node for Sampler {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Sampler {
+    const NAME: &'static str = "sampler";
+    const DESCRIPTION: &'static str = "Plays back a loaded audio sample";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["sampler_name"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
+
+    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let name = p
+            .get_str("sampler_name")
+            .expect("Could not find required parameter sampler_name");
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let key = rb.add_external_buffer_key(&name);
+        Ok(Box::new(Self::new(key, chans)))
+    }
+}

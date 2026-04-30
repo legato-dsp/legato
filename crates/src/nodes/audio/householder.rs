@@ -44,3 +44,24 @@ impl Node for HouseholderMixer {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for HouseholderMixer {
+    const NAME: &'static str = "householder";
+    const DESCRIPTION: &'static str = "Householder reflection mixer for feedback delay networks";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to audio_input");
+        Ok(Box::new(Self::new(chans)))
+    }
+}

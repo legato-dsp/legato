@@ -35,3 +35,33 @@ impl Node for ExternalInput {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for ExternalInput {
+    const NAME: &'static str = "external";
+    const DESCRIPTION: &'static str = "Receives audio from an external hardware interface";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["interface_name", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let interface_name = p.get_str("interface_name").expect(
+            "Must pass in the name the interface was defined with to the audio_input node!",
+        );
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to audio_input");
+        let key = rb.get_audio_input_key(&interface_name).unwrap_or_else(|_| {
+            panic!(
+                "Could not find AudioInputKey for interface {}",
+                interface_name,
+            )
+        });
+        Ok(Box::new(Self::new(chans, key)))
+    }
+}
