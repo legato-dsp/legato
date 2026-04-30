@@ -96,6 +96,7 @@
           src = ./crates;
           cargo = nightly;
           rustc = nightly;
+          singleStep = true;
 
           nativeBuildInputs = commonArgs.nativeBuildInputs;
           buildInputs = commonArgs.buildInputs;
