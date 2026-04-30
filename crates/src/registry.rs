@@ -6,7 +6,6 @@ use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::DynNode,
-    node_spec,
     nodes::{
         audio::{
             adsr::Adsr,
@@ -39,7 +38,6 @@ use crate::{
 ///
 /// This lets Legato users add additional nodes to a "namespace" of nodes.
 pub struct NodeRegistry {
-    // For now, entries must contain a specific rate as I work out graph semantics
     data: HashMap<String, NodeSpec>,
 }
 

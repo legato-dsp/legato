@@ -694,6 +694,8 @@ dependencies = [
  "portable-atomic",
  "rand",
  "rtrb",
+ "serde",
+ "serde_json",
  "slotmap",
 ]
 

@@ -41,6 +41,8 @@ pub mod simd;
 pub mod spec;
 pub mod window;
 
+#[cfg(feature = "docs")]
+pub mod docs;
 pub mod nodes;
 
 #[derive(Debug, PartialEq, Clone)]

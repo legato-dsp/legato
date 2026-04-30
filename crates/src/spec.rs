@@ -73,6 +73,7 @@ pub trait NodeDefinition {
 
 /// Static documentation for a node, suitable for serialisation to JSON.
 #[derive(Debug)]
+#[cfg_attr(feature = "docs", derive(serde::Serialize))]
 pub struct NodeDoc {
     pub name: &'static str,
     pub description: &'static str,

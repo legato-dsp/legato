@@ -6,7 +6,13 @@ edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
+[features]
+docs = ["dep:serde", "dep:serde_json"]
+
 [dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
 assert_no_alloc = "1.1.2"
 portable-atomic = { version = "1.11.1", features = ["float"] }
 arc-swap = "1.7.1"
@@ -26,6 +32,11 @@ rtrb = "0.3.3"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bin]]
+name = "export-docs"
+path = "src/bin/export_docs.rs"
+required-features = ["docs"]
 
 [[bench]]
 name = "nodes"
