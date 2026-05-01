@@ -21,10 +21,10 @@ const { data: docs } = await useAsyncData(() => {
         </p>
       </div>
       <div class="w-full h-full flex flex-col items-center">
-        <div class="h-full max-w-200">
+        <div class="h-full w-full max-w-200">
           <div class="w-full">
             <div v-if="data">
-              <article class="prose-sm">
+              <article class="prose">
                 <h1>{{ data.title }}</h1>
                 <ContentRenderer :value="data"> </ContentRenderer>
               </article>
