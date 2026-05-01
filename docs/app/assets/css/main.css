@@ -16,6 +16,7 @@
   --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
   --text-primary: #ffffff;
   --text-secondary: #bfbfbf;
+  --border: #222325;
 }
 
 body {
@@ -31,9 +32,19 @@ h6 {
   @apply font-heading font-semibold text-primary;
 }
 
-span,
 p {
   @apply font-display text-primary;
+}
+
+span:not(pre span):not(code span) {
+  @apply font-display text-primary;
+}
+
+pre.shiki {
+  background-color: var(--bg) !important;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: rgba(186, 186, 186, 0.03) 0px 4px 6px;;
 }
 
 .bg-gradient {

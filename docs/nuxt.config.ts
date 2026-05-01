@@ -11,10 +11,7 @@ export default defineNuxtConfig({
       markdown: {
         highlight: {
           langs: ["rust", "shell", "typescript"],
-          theme: {
-            default: "github-light",
-            dark: "github-dark",
-          },
+          theme: "vitesse-dark",
         },
       },
     },
