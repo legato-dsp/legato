@@ -6,6 +6,7 @@
 
   --color-primary: var(--text-primary);
   --color-secondary: var(--text-secondary);
+  --color-paragraph: var(--text-paragraph);
 }
 
 :root {
@@ -15,6 +16,7 @@
   --bg: #060606;
   --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
   --text-primary: #ffffff;
+  --text-paragraph: #bfbfbf;
   --text-secondary: #bfbfbf;
   --border: #222325;
 }
@@ -32,8 +34,12 @@ h6 {
   @apply font-heading font-semibold text-primary;
 }
 
-p {
+a {
   @apply font-display text-primary;
+}
+
+p {
+  @apply font-display text-paragraph font-light;
 }
 
 span:not(pre span):not(code span) {
