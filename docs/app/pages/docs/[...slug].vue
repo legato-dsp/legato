@@ -1,20 +1,37 @@
 <script lang="ts" setup>
-definePageMeta({ layout: "docs" });
-
 const route = useRoute();
 const pageId = computed(() => `/docs/${route.path}`);
 const { data } = await useAsyncData(pageId, () => {
   return queryCollection("docs").path(route.path).first();
 });
+
+const { data: docs } = await useAsyncData(() => {
+  return queryCollection("docs").all();
+});
 </script>
 
 <template>
-  <div>
-    <div v-if="data">
-      <article class="prose-lg">
-        <h1>{{ data.title }}</h1>
-        <ContentRenderer :value="data"> </ContentRenderer>
-      </article>
+  <div class="w-full h-full">
+    <div class="w-full h-full grid grid-cols-[128px_1fr] sm:gap-6 md:gap-16">
+      <div class="flex flex-col gap-3">
+        <p v-for="doc in docs" :key="doc.id">
+          <nuxt-link :to="doc.path">
+            {{ doc.title }}
+          </nuxt-link>
+        </p>
+      </div>
+      <div class="w-full h-full flex flex-col items-center">
+        <div class="h-full max-w-200">
+          <div class="w-full">
+            <div v-if="data">
+              <article class="prose-sm">
+                <h1>{{ data.title }}</h1>
+                <ContentRenderer :value="data"> </ContentRenderer>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

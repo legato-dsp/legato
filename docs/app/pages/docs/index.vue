@@ -1,9 +1,3 @@
-<script lang="ts" setup>
-definePageMeta({ layout: "docs" });
+<script setup lang="ts">
+await navigateTo("/docs/getting-started");
 </script>
-
-<template>
-  <div class="flex flex-col gap-3">
-    <h1>Docs</h1>
-  </div>
-</template>
