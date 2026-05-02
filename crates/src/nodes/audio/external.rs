@@ -49,7 +49,10 @@ impl NodeDefinition for ExternalInput {
     const REQUIRED_PARAMS: &'static [&'static str] = &["interface_name", "chans"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let interface_name = p.get_str("interface_name").expect(
             "Must pass in the name the interface was defined with to the audio_input node!",
         );

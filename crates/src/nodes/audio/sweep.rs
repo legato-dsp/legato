@@ -71,11 +71,15 @@ use crate::{
 
 impl NodeDefinition for Sweep {
     const NAME: &'static str = "sweep";
-    const DESCRIPTION: &'static str = "Frequency sweep oscillator over a configurable range and duration";
+    const DESCRIPTION: &'static str =
+        "Frequency sweep oscillator over a configurable range and duration";
     const REQUIRED_PARAMS: &'static [&'static str] = &[];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["duration", "range", "chans"];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         use std::time::Duration;
         let chans = p.get_usize("chans").unwrap_or(2);
         let duration = p

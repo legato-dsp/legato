@@ -107,7 +107,10 @@ impl NodeDefinition for Allpass {
     const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "feedback", "chans"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         use std::time::Duration;
         let config = rb.get_config();
         let sr = config.sample_rate;
@@ -121,6 +124,11 @@ impl NodeDefinition for Allpass {
         if capacity < (delay_length_samples as usize) {
             capacity = (delay_length_samples as usize) * 2;
         }
-        Ok(Box::new(Self::new(chans, feedback, delay_length_samples, capacity)))
+        Ok(Box::new(Self::new(
+            chans,
+            feedback,
+            delay_length_samples,
+            capacity,
+        )))
     }
 }

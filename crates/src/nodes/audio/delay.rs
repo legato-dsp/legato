@@ -262,7 +262,10 @@ impl NodeDefinition for DelayWrite {
     const REQUIRED_PARAMS: &'static [&'static str] = &["delay_name"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let name = p
             .get_str("delay_name")
             .expect("Could not find required parameter delay_name");
@@ -293,11 +296,15 @@ impl NodeDefinition for DelayWrite {
 
 impl NodeDefinition for DelayRead {
     const NAME: &'static str = "delay_read";
-    const DESCRIPTION: &'static str = "Reads audio from a named shared delay line with interpolation";
+    const DESCRIPTION: &'static str =
+        "Reads audio from a named shared delay line with interpolation";
     const REQUIRED_PARAMS: &'static [&'static str] = &["delay_name"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let name = p
             .get_str("delay_name")
             .expect("Could not find required parameter sampler_name");
@@ -308,9 +315,9 @@ impl NodeDefinition for DelayRead {
 
         let chans = p.get_usize("chans").unwrap_or(2);
 
-        let key = rb.get_delay_line_key(&name).unwrap_or_else(|| {
-            (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect()
-        });
+        let key = rb
+            .get_delay_line_key(&name)
+            .unwrap_or_else(|| (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect());
 
         Ok(Box::new(Self::new(chans, key, len)))
     }

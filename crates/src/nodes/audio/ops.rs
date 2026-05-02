@@ -145,7 +145,10 @@ impl NodeDefinition for MultDef {
     const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let val = p.get_f32("val").unwrap_or(1.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Mult)))
     }
@@ -157,7 +160,10 @@ impl NodeDefinition for AddDef {
     const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let val = p.get_f32("val").unwrap_or(0.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Add)))
     }
@@ -169,7 +175,10 @@ impl NodeDefinition for SubDef {
     const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let val = p.get_f32("val").unwrap_or(0.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Subtract)))
     }
@@ -181,7 +190,10 @@ impl NodeDefinition for DivDef {
     const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let val = p.get_f32("val").unwrap_or(0.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Div)))
     }
@@ -189,11 +201,15 @@ impl NodeDefinition for DivDef {
 
 impl NodeDefinition for GainDef {
     const NAME: &'static str = "gain";
-    const DESCRIPTION: &'static str = "Applies multichannel gain with soft clipping (tanh saturation)";
+    const DESCRIPTION: &'static str =
+        "Applies multichannel gain with soft clipping (tanh saturation)";
     const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans = p.get_usize("chans").unwrap_or(2);
         let val = p.get_f32("val").unwrap_or(1.0);
         Ok(Box::new(mult_node_factory(val, chans, ApplyOpKind::Gain)))

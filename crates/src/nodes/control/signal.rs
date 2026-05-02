@@ -56,7 +56,10 @@ impl NodeDefinition for Signal {
     const REQUIRED_PARAMS: &'static [&'static str] = &["name", "min", "max", "default"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["smoothing"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let name = p.get_str("name").expect("Must pass name to signal!");
         let min = p.get_f32("min").expect("Must provide min to signal!");
         let max = p.get_f32("max").expect("Must provide max to signal!");

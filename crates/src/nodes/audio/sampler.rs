@@ -88,7 +88,10 @@ impl NodeDefinition for Sampler {
     const REQUIRED_PARAMS: &'static [&'static str] = &["sampler_name"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let name = p
             .get_str("sampler_name")
             .expect("Could not find required parameter sampler_name");

@@ -110,11 +110,15 @@ use crate::{
 
 impl NodeDefinition for TrackMixer {
     const NAME: &'static str = "track_mixer";
-    const DESCRIPTION: &'static str = "Mixes multiple audio tracks with configurable per-track gain";
+    const DESCRIPTION: &'static str =
+        "Mixes multiple audio tracks with configurable per-track gain";
     const REQUIRED_PARAMS: &'static [&'static str] = &["tracks", "chans_per_track"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["gain"];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans_per_track = p
             .get_usize("chans_per_track")
             .expect("Could not find required parameter chans_per_track for track mixer!");
@@ -130,11 +134,15 @@ impl NodeDefinition for TrackMixer {
 
 impl NodeDefinition for MonoFanOut {
     const NAME: &'static str = "mono_fan_out";
-    const DESCRIPTION: &'static str = "Fans a mono signal out to multiple channels with equal power normalisation";
+    const DESCRIPTION: &'static str =
+        "Fans a mono signal out to multiple channels with equal power normalisation";
     const REQUIRED_PARAMS: &'static [&'static str] = &[];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans = p.get_usize("chans").unwrap_or(2);
         Ok(Box::new(Self::new(chans)))
     }

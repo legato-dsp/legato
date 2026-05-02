@@ -58,7 +58,10 @@ impl NodeDefinition for HouseholderMixer {
     const REQUIRED_PARAMS: &'static [&'static str] = &["chans"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans = p
             .get_usize("chans")
             .expect("Must provide chans to audio_input");

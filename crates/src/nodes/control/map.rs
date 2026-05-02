@@ -83,7 +83,10 @@ impl NodeDefinition for Map {
     const REQUIRED_PARAMS: &'static [&'static str] = &["range", "new_range"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let range = p
             .get_array_f32("range")
             .expect("Must pass original range to map");

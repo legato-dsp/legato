@@ -55,8 +55,14 @@ pub trait NodeDefinition {
         NodeSpec {
             name: Self::NAME.to_string(),
             description: Self::DESCRIPTION,
-            required_params: Self::REQUIRED_PARAMS.iter().map(|s| s.to_string()).collect(),
-            optional_params: Self::OPTIONAL_PARAMS.iter().map(|s| s.to_string()).collect(),
+            required_params: Self::REQUIRED_PARAMS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            optional_params: Self::OPTIONAL_PARAMS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             build: Self::create,
         }
     }

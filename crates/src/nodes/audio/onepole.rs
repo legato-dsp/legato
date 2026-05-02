@@ -80,7 +80,10 @@ impl NodeDefinition for OnePole {
     const REQUIRED_PARAMS: &'static [&'static str] = &["cutoff"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
 
-    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans = p.get_usize("chans").unwrap_or(2);
         let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
         let sr = rb.get_config().sample_rate;

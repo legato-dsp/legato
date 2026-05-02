@@ -73,7 +73,10 @@ impl NodeDefinition for Phasor {
     const REQUIRED_PARAMS: &'static [&'static str] = &["freq"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let freq = p.get_f32("freq").expect("Must pass frequency to phasor");
         Ok(Box::new(Self::new(freq)))
     }
@@ -85,11 +88,15 @@ pub struct ClockDef;
 
 impl NodeDefinition for ClockDef {
     const NAME: &'static str = "clock";
-    const DESCRIPTION: &'static str = "Clock signal derived from BPM, beat division, and step count";
+    const DESCRIPTION: &'static str =
+        "Clock signal derived from BPM, beat division, and step count";
     const REQUIRED_PARAMS: &'static [&'static str] = &["bpm", "division", "steps"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
         let division = p
             .get_usize("division")

@@ -177,10 +177,14 @@ use crate::{
 impl NodeDefinition for Adsr {
     const NAME: &'static str = "adsr";
     const DESCRIPTION: &'static str = "Attack-decay-sustain-release envelope generator";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["attack", "decay", "sustain", "release", "chans"];
+    const REQUIRED_PARAMS: &'static [&'static str] =
+        &["attack", "decay", "sustain", "release", "chans"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
-    fn create(_rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let attack = p.get_f32("attack").expect("Must provide attack to ADSR");
         let decay = p.get_f32("decay").expect("Must provide decay to ADSR");
         let sustain = p.get_f32("sustain").expect("Must provide sustain to ADSR");
