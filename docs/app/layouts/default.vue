@@ -1,15 +1,15 @@
 <script setup lang="ts"></script>
 
 <template>
-  <div class="w-screen h-screen bg-(--bg)">
+  <div class="w-screen h-screen">
     <div class="bg-gradient pointer-events-none touch-none fixed inset-0"></div>
-    <div class="w-full h-full inset-0 bg-(--bg)">
-      <div class="grid grid-rows-(auto,1fr)">
+    <div class="w-full h-full inset-0">
+      <div class="w-full h-full grid grid-rows-[96px,1fr]">
         <!-- Nav Bar-->
-        <div class="w-full flex justify-between items-center py-8 px-16">
+        <div class="w-full h-full flex justify-between items-center py-8 px-16">
           <div class="flex gap-12 items-center">
             <NuxtLink to="/">
-              <NuxtImg class="xl:w-36 md:w-24 w-12" src="/images/legato.svg" />
+              <NuxtImg class="xl:w-36 w-24" src="/images/legato.svg" />
             </NuxtLink>
             <div class="flex sm:gap-12 gap-6 font-light">
               <NuxtLink class="text-(--text-secondary)" to="/docs"
@@ -27,7 +27,7 @@
             <img class="w-8" src="/images/github-mark-white.svg" />
           </a>
         </div>
-        <div class="w-full h-full px-6 py-3 md:px-16 md:py-6">
+        <div class="w-full h-full overflow-y-auto px-6 py-3 md:px-16 md:py-6">
           <slot />
         </div>
       </div>

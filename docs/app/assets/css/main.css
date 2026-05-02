@@ -10,9 +10,9 @@
 }
 
 :root {
-  overflow: hidden;
   width: 100vw;
   height: 100vh;
+  
   --bg: #060606;
   --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
   --text-primary: #ffffff;
@@ -22,7 +22,9 @@
 }
 
 body {
+  overflow: hidden;
   color: var(--text-primary);
+  background: var(--bg);
 }
 
 h1,
@@ -36,6 +38,17 @@ h6 {
 
 a {
   @apply font-display text-primary;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--text-secondary);
+  text-underline-offset: 6px;
+}
+
+.prose a {
+  text-decoration: none;
+}
+
+strong {
+  @apply text-primary
 }
 
 p {

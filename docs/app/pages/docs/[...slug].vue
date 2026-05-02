@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 const route = useRoute();
 const pageId = computed(() => `/docs/${route.path}`);
+
 const { data } = await useAsyncData(pageId, () => {
   return queryCollection("docs").path(route.path).first();
 });
@@ -20,7 +21,7 @@ const { data: docs } = await useAsyncData(() => {
           </nuxt-link>
         </p>
       </div>
-      <div class="w-full h-full flex flex-col items-center">
+      <div class="w-full h-full flex flex-col items-center overflow-y-auto">
         <div class="h-full w-full max-w-200">
           <div class="w-full">
             <div v-if="data">
