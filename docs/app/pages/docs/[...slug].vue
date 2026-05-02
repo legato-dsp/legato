@@ -13,9 +13,15 @@ const { data: docs } = await useAsyncData(() => {
 
 <template>
   <div class="w-full h-full">
-    <div class="w-full h-full grid grid-cols-[128px_1fr] sm:gap-6 md:gap-16">
+    <div
+      class="w-full h-full grid grid-cols-[128px_1fr] md:grid-cols-[192px_1fr] sm:gap-6 md:gap-16"
+    >
       <div class="flex flex-col gap-3">
-        <p v-for="doc in docs" :key="doc.id">
+        <p
+          :class="doc.path == route.path ? '' : 'opacity-60'"
+          v-for="doc in docs"
+          :key="doc.id"
+        >
           <nuxt-link :to="doc.path">
             {{ doc.title }}
           </nuxt-link>
