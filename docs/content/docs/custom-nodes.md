@@ -1,0 +1,75 @@
+---
+title: Custom Nodes
+---
+
+Nodes in Legato can be added at the start of the application runtime. This allows users the ability to easily
+extend the framework to meet their usecase.
+
+When should you use a custom node?
+
+Basically, if you need some external logic, custom DSP integration, interaction with system resources, etc. and this must happen at
+audio rate (per sample information), you should look into a custom node.
+
+Imagine wiring up some custom gloves that respond to your finger movements. The sensors give a constant stream
+of values. This is a great usecase for a custom node. If you simply have a UI, and can deal with a once per audio block update,
+you can instead just use the LegatoFrontend struct, and send messages or set parameters on the graph.
+
+### Custom Nodes
+
+The node trait (simplified), looks something like this:
+
+```rust
+/// Optional inputs. Vary the logic depending on if inputs are present.
+pub type Inputs<'a> = [Option<&'a [f32]>]; // Planar layout, i.e [[L,L],[R,R]]
+
+/// The node trait any audio processing node must implement.
+pub trait Node {
+    /// Where audio processing occurs for your node.
+    fn process(
+        &mut self,
+        ctx: &mut AudioContext,
+        inputs: &Inputs,
+        outputs: &mut [&mut [f32]],
+    );
+
+    /// Pass messages to your node.
+    fn handle_msg(&mut self, _msg: NodeMessage) {}
+
+    /// Get port information for your node.
+    fn ports(&self) -> &Ports;
+}
+```
+
+Additionally, if you want to use your node in the DSL, you need to add some meta data. 
+
+The definition looks like so:
+
+```rust
+impl NodeDefinition for ExternalInput {
+    const NAME: &'static str = "external"; // The name in the DSL
+    const DESCRIPTION: &'static str = "Receives audio from an external hardware interface";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["interface_name", "chans"]; // Must be provided
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[]; // Optionally provided
+
+    /// Used to instantiate the node from the DSL
+    /// 
+    /// DSLParams lets you parse and pull in various primitive values from the DSL.
+    /// 
+    /// ResourceBuilderView gives access to shared resource contstruction.
+    fn create(rb: &mut ResourceBuilderView, p: &DSLParams) -> Result<Box<dyn DynNode>, ValidationError> {
+        let interface_name = p.get_str("interface_name").expect(
+            "Must pass in the name the interface was defined with to the audio_input node!",
+        );
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to audio_input");
+        let key = rb.get_audio_input_key(&interface_name).unwrap_or_else(|_| {
+            panic!(
+                "Could not find AudioInputKey for interface {}",
+                interface_name,
+            )
+        });
+        Ok(Box::new(Self::new(chans, key)))
+    }
+}
+```

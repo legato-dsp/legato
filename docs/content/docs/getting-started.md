@@ -2,7 +2,6 @@
 title: Getting Started
 ---
 
-
 ### What is Legato?
 
 Legato is a realtime audio framework and DSL to quickly build audio applications in Rust. It takes inspiration from a few different tools, like PureData, SuperCollider, FunDSP and MaxMSP, but it tries a slightly different workflow.
@@ -60,7 +59,6 @@ patches {
 }
 ```
 
-
 ### Development Environment
 
 The easiest way to start is to clone the sample repository:
@@ -73,36 +71,19 @@ Alternatively, you can simply start a [new Rust project and add Legato](https://
 Legato currently uses [cpal](https://crates.io/crates/cpal) for cross-platform audio, but this can be sidestepped if desired. To get usable audio, you may have to play around with your sample rate, block size, etc. depending on your operating system and audio backend.
 
 
-### Custom Nodes
+### Planned Features
 
-The node trait (simplified), looks something like this:
+There are quite a few features planned, here is a summary of what I hope to have within the next few year:
 
-```rust
-/// Optional inputs. Vary the logic depending on if inputs are present.
-pub type Inputs<'a> = [Option<&'a [f32]>]; // Planar layout, i.e [[L,L],[R,R]]
-
-/// The node trait any audio processing node must implement.
-pub trait Node {
-    /// Where audio processing occurs for your node.
-    fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        inputs: &Inputs,
-        outputs: &mut [&mut [f32]],
-    );
-
-    /// Pass messages to your node.
-    fn handle_msg(&mut self, _msg: NodeMessage) {}
-
-    /// Get port information for your node.
-    fn ports(&self) -> &Ports;
-}
-```
-
-
+- More nodes: pitch shifters, convolution reverb, band limited wave forms, polyphase resamplers, M/S mixers, etc.
+- LSP for graphs to easily see node arity, descriptions, required and optional ports, etc.
+- A strong, active, open community.
+- Fine-tuned images for users to deploy software on embedded Linux devices.
+- Oversampling logic in the graph + interior engine delay compensation
+- Possible UI tooling
+- VST examples
 
 ### FAQ
-
 
 #### When Should I Use a Custom Node or Patch?
 
@@ -120,12 +101,20 @@ For most users, CPAL is a strong option. It handles the annoyance of having to d
 
 Legato does have a number of escape hatches, and if desired, you can simply call the next_block() function on the runtime and use these samples in another context.
 
+#### How Technical Do I Have to Be?
+
+This is a good question, in summary, I'm targeting somewhat technical users at the start, with an aim to lower
+the barrier to entry overtime.
+
+I would love to make this framework accesible enough that people with minimal programming experience could find themselves creating
+software that they are excited about. Please reach out if anything is confusing, and hopefully I can lower the cognitive load overtime.
+
 #### Can You Explain the License?
 
 The source of truth here is the LICENSE, CONTRIBUTING and ADDITIONAL_PERMISSIONS distributed in the repository, everything below is informal advice.
 
-Legato is first and foremost AGPLv3, and any contributions will fall under this. 
-
 At the end of the day, you can do whatever you want with it, provided you follow the terms of the AGPLv3 license. 
 
-However, I want to balance having an open source engine, and hopefully the ability to one day monetize the project in order to advance the development. I'm hoping to help balance this by waiving the source disclosure for some creative projects. In summary, VSTs, software synths/grooveboxes, creative applications, without DAW or AI functionality, can monetize their products without any worries of disclosing source. Please check the CONTRIBUTING distributed with the repository for the actual underlying agreement.
+However, I'm hoping to make this a bit more open by waiving the source disclosure for most creative projects. In summary, VSTs, software synths/grooveboxes, creative applications, without DAW or AI functionality, can deploy or monetize their products without any worries of disclosing source. 
+
+Please check the LICENSE and ADDITIONAL_PERMISSIONS distributed with the repository for the actual underlying agreement.
