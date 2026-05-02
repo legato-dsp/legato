@@ -7,6 +7,7 @@ export default defineNuxtConfig({
   css: ["~/assets/css/main.css"],
   modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts", "@nuxt/image"],
   content: {
+    experimental: { sqliteConnector: "native" }, // Required for vercel
     build: {
       markdown: {
         highlight: {
