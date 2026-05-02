@@ -51,7 +51,7 @@ strong {
   @apply text-primary
 }
 
-p {
+p, li {
   @apply font-display text-paragraph font-light;
 }
 

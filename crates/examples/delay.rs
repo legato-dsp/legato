@@ -4,6 +4,7 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
+    msg::ParamPayload,
     ports::PortBuilder,
 };
 
