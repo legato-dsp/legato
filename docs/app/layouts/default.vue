@@ -25,7 +25,7 @@
               >
             </div>
           </div>
-          <a href="https://github.com/legato-dsp/legato">
+          <a href="https://github.com/legato-dsp">
             <img class="w-8" src="/images/github-mark-white.svg" />
           </a>
         </div>
