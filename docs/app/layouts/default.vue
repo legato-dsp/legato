@@ -1,4 +1,10 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+const links = [
+  { title: "Docs", to: "/docs" },
+  { title: "Contributing", to: "/contributing" },
+  { title: "About", to: "/about" },
+];
+</script>
 
 <template>
   <div class="w-screen h-screen">
@@ -13,24 +19,22 @@
             <NuxtLink to="/">
               <NuxtImg class="xl:w-36 w-24" src="/images/legato.svg" />
             </NuxtLink>
-            <div class="flex sm:gap-12 gap-6 font-light">
-              <NuxtLink class="text-(--text-secondary)" to="/docs"
-                >Docs</NuxtLink
-              >
-              <NuxtLink class="text-(--text-secondary)" to="/contributing"
-                >Contributing</NuxtLink
-              >
-              <NuxtLink class="text-(--text-secondary)" to="/about"
-                >About</NuxtLink
-              >
-            </div>
+            <NuxtLink
+              v-for="item in links"
+              :key="item.to"
+              :to="item.to"
+              activeClass="opacity-100"
+              class="transition-opacity opacity-60"
+            >
+              {{ item.title }}
+            </NuxtLink>
           </div>
           <a href="https://github.com/legato-dsp">
             <img class="w-8" src="/images/github-mark-white.svg" />
           </a>
         </div>
         <div class="w-full h-full overflow-y-auto px-6 py-3 md:px-16 md:py-6">
-          <slot />
+          <slot></slot>
         </div>
       </div>
     </div>

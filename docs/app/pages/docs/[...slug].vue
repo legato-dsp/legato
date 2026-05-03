@@ -1,4 +1,8 @@
 <script lang="ts" setup>
+definePageMeta({
+  layout: "default",
+});
+
 const route = useRoute();
 const pageId = computed(() => `/docs/${route.path}`);
 

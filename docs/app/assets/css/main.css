@@ -12,6 +12,7 @@
 :root {
   width: 100vw;
   height: 100vh;
+  overflow: hidden;
   
   --bg: #060606;
   --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
@@ -21,8 +22,12 @@
   --border: #222325;
 }
 
+
+html, body {
+  height: 100%;
+}
+
 body {
-  overflow: hidden;
   color: var(--text-primary);
   background: var(--bg);
 }
