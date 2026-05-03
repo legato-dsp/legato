@@ -13,18 +13,18 @@ const links = [
       <div class="w-full h-full flex flex-col">
         <!-- Nav Bar-->
         <div
-          class="w-full max-h-24 flex justify-between items-center py-8 px-16"
+          class="w-full max-h-24 flex justify-between items-center py-3 md:py-8 px-3 sm:px-8 md:px-16"
         >
-          <div class="flex gap-12 items-center">
-            <NuxtLink to="/">
-              <NuxtImg class="xl:w-36 w-24" src="/images/legato.svg" />
+          <div class="flex gap-3 md:gap-12 items-center">
+            <NuxtLink class="shrink-0" to="/">
+              <NuxtImg class="xl:w-36 w-24 shrink-0" src="/images/legato.svg" />
             </NuxtLink>
             <NuxtLink
               v-for="item in links"
               :key="item.to"
               :to="item.to"
               activeClass="opacity-100"
-              class="transition-opacity opacity-60"
+              class="transition-opacity opacity-60 text-base"
             >
               {{ item.title }}
             </NuxtLink>
@@ -33,6 +33,7 @@ const links = [
             <img class="w-8" src="/images/github-mark-white.svg" />
           </a>
         </div>
+        <!-- Content -->
         <div class="w-full h-full overflow-y-auto px-6 py-3 md:px-16 md:py-6">
           <slot></slot>
         </div>

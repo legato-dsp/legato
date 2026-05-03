@@ -48,7 +48,7 @@ a {
   text-underline-offset: 6px;
 }
 
-.prose a {
+.prose a, .prose-sm a {
   text-decoration: none;
 }
 
