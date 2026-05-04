@@ -6,11 +6,14 @@ export default defineNuxtConfig({
   vite: { plugins: [tailwindcss()] },
   css: ["~/assets/css/main.css"],
   modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts", "@nuxt/image"],
+  routeRules: {
+    "/": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
+    "/docs": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
+    "/docs/**": { prerender: true },
+  },
   content: {
-    experimental: { sqliteConnector: "native" }, // Required for vercel
-    renderer: {
-      anchorLinks: false,
-    },
+    experimental: { sqliteConnector: "native" },
+    renderer: { anchorLinks: false },
     build: {
       markdown: {
         highlight: {
