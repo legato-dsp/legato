@@ -11,6 +11,11 @@ export default defineNuxtConfig({
     "/docs": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
     "/docs/**": { prerender: true },
   },
+  app: {
+    head: {
+      link: [{ rel: "icon", type: "image/x-icon", href: "/favico.ico" }],
+    },
+  },
   content: {
     experimental: { sqliteConnector: "native" },
     renderer: { anchorLinks: false },
