@@ -8,6 +8,9 @@ export default defineNuxtConfig({
   modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts", "@nuxt/image"],
   content: {
     experimental: { sqliteConnector: "native" }, // Required for vercel
+    renderer: {
+      anchorLinks: false,
+    },
     build: {
       markdown: {
         highlight: {
