@@ -126,3 +126,28 @@ impl Node for StepSequencer {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for StepSequencer {
+    const NAME: &'static str = "sequencer";
+    const DESCRIPTION: &'static str =
+        "Step sequencer outputting gate, frequency, and velocity per step";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["num_steps"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let num_steps = p
+            .get_usize("num_steps")
+            .expect("Must pass num_steps to sequencer");
+        Ok(Box::new(Self::new(num_steps)))
+    }
+}

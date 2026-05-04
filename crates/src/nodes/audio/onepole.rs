@@ -66,3 +66,27 @@ fn get_a_from_cutoff(sr: f32, fc: f32) -> f32 {
     let pole = x / (x + 1.0);
     1.0 - pole
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for OnePole {
+    const NAME: &'static str = "onepole";
+    const DESCRIPTION: &'static str = "Single-pole lowpass filter";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["cutoff"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
+        let sr = rb.get_config().sample_rate;
+        Ok(Box::new(Self::new(cutoff, chans, sr)))
+    }
+}

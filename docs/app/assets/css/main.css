@@ -6,24 +6,30 @@
 
   --color-primary: var(--text-primary);
   --color-secondary: var(--text-secondary);
+  --color-paragraph: var(--text-paragraph);
 }
 
 :root {
-  overflow: hidden;
   width: 100vw;
   height: 100vh;
-  --bg: #080711;
-  --bg-gradient: radial-gradient(
-    40.3% 40.53% at 46.77% 37.39%,
-    rgba(101, 255, 81, 0.35) 0%,
-    rgba(188, 242, 183, 0) 100%
-  );
+  overflow: hidden;
+  
+  --bg: #060606;
+  --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
   --text-primary: #ffffff;
+  --text-paragraph: #bfbfbf;
   --text-secondary: #bfbfbf;
+  --border: #222325;
+}
+
+
+html, body {
+  height: 100%;
 }
 
 body {
   color: var(--text-primary);
+  background: var(--bg);
 }
 
 h1,
@@ -35,9 +41,34 @@ h6 {
   @apply font-heading font-semibold text-primary;
 }
 
-span,
-p {
+a {
   @apply font-display text-primary;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--text-secondary);
+  text-underline-offset: 6px;
+}
+
+.prose a, .prose-sm a {
+  text-decoration: none;
+}
+
+strong {
+  @apply text-primary
+}
+
+p, li {
+  @apply font-display text-paragraph font-light;
+}
+
+span:not(pre span):not(code span) {
+  @apply font-display text-primary;
+}
+
+pre.shiki {
+  background-color: var(--bg) !important;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: rgba(186, 186, 186, 0.03) 0px 4px 6px;;
 }
 
 .bg-gradient {
@@ -47,6 +78,6 @@ p {
   height: 4096px;
   left: -1215px;
   top: -1624px;
-  opacity: 0.25;
+  opacity: 0.15;
   border-radius: 100%;
 }

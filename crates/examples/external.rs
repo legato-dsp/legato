@@ -79,9 +79,9 @@ fn main() {
 
     // Spawn prod consumer pair
 
-    let (producer, consumer) = rtrb::RingBuffer::new(4096 * 4); // 4 frames of headroom
-
     let ports = PortBuilder::default().audio_out(2).build();
+
+    let (producer, consumer) = rtrb::RingBuffer::new(4096 * 4); // 4 frames of headroom
 
     let (app, _) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_audio_input("one", consumer, 1, config.block_size)

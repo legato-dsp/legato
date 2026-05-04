@@ -149,6 +149,29 @@ impl Node for Sine {
     }
 }
 
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Sine {
+    const NAME: &'static str = "sine";
+    const DESCRIPTION: &'static str = "Sine wave oscillator with optional FM input";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans"];
+
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let freq = p.get_f32("freq").unwrap_or(440.0);
+        let chans = p.get_usize("chans").unwrap_or(2);
+        Ok(Box::new(Self::new(freq, chans)))
+    }
+}
+
 // Start of BSD-3 Code
 
 #[inline(always)]

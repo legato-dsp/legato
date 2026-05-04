@@ -70,6 +70,39 @@ fn map_range_simd(x: Vf32, in_min: Vf32, in_max: Vf32, out_min: Vf32, out_max: V
     out_min + ((x - in_min) * (new_range / original_range))
 }
 
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Map {
+    const NAME: &'static str = "map";
+    const DESCRIPTION: &'static str = "Maps one numeric range to another (e.g. -1..1 → 120..240)";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["range", "new_range"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let range = p
+            .get_array_f32("range")
+            .expect("Must pass original range to map");
+        let new_range = p
+            .get_array_f32("new_range")
+            .expect("Must pass new_range to map");
+        assert!(range.len() == 2);
+        assert!(new_range.len() == 2);
+        let mut r_0 = [0.0; 2];
+        let mut r_1 = [0.0; 2];
+        r_0.copy_from_slice(&range[..2]);
+        r_1.copy_from_slice(&new_range[..2]);
+        Ok(Box::new(Self::new(r_0, r_1)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

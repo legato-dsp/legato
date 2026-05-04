@@ -43,11 +43,9 @@
           
           commonArgs = {
             nativeBuildInputs = with pkgs; [ clang pkg-config ];
-            buildInputs = with pkgs; [ 
-              alsa-lib 
-              jack2 
-              ffmpeg_6-full 
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ udev ];
+            buildInputs = with pkgs; [     
+              # TODO: Tidy this up, currently doing this so I can still write scripts on MacOS
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ udev alsa-lib jack2 ffmpeg_6-full   ];
           };
         in f { inherit pkgs system nightly naersk' commonArgs; });
     in
@@ -88,14 +86,25 @@
           src = ./crates;
           cargo = nightly;
           rustc = nightly;
-          
+
           nativeBuildInputs = commonArgs.nativeBuildInputs;
           buildInputs = commonArgs.buildInputs;
           RUSTFLAGS = if pkgs.stdenv.isx86_64 then "-C target-cpu=x86-64-v3" else "";
         };
+
+        generate-docs = naersk'.buildPackage {
+          src = ./crates;
+          cargo = nightly;
+          rustc = nightly;
+          singleStep = true;
+
+          nativeBuildInputs = commonArgs.nativeBuildInputs;
+          buildInputs = commonArgs.buildInputs;
+          cargoBuildOptions = prev: prev ++ [ "--features" "docs" "--bin" "export-docs" ];
+        };
       });
 
-      apps = forEachSystem ({ pkgs, ... }: 
+      apps = forEachSystem ({ pkgs, ... }@args: 
         let
           mkApp = name: scriptPath: {
             type = "app";
@@ -106,6 +115,11 @@
         in {
           spectrogram = mkApp "spectrogram" ./scripts/dsp/spectrogram.py;
           filter-design = mkApp "filter-design" ./scripts/dsp/filter-design.py;
+          
+          generate-docs = {
+            type = "app";
+            program = "${self.packages.${args.system}.generate-docs}/bin/export-docs";
+          };
       });
     };
 }

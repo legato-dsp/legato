@@ -5,17 +5,25 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   vite: { plugins: [tailwindcss()] },
   css: ["~/assets/css/main.css"],
-  modules: [
-    "@nuxt/content",
-    "@nuxt/eslint",
-    "@nuxt/fonts",
-    "@nuxt/image",
-  ],
+  modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts", "@nuxt/image"],
+  routeRules: {
+    "/": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
+    "/docs": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
+    "/docs/**": { prerender: true },
+  },
+  app: {
+    head: {
+      link: [{ rel: "icon", type: "image/x-icon", href: "/favico.ico" }],
+    },
+  },
   content: {
+    experimental: { sqliteConnector: "native" },
+    renderer: { anchorLinks: false },
     build: {
       markdown: {
         highlight: {
           langs: ["rust", "shell", "typescript"],
+          theme: "vitesse-dark",
         },
       },
     },

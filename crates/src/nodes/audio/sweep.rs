@@ -61,3 +61,31 @@ impl Node for Sweep {
         &self.ports
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Sweep {
+    const NAME: &'static str = "sweep";
+    const DESCRIPTION: &'static str =
+        "Frequency sweep oscillator over a configurable range and duration";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["duration", "range", "chans"];
+
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        use std::time::Duration;
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let duration = p
+            .get_duration_ms("duration")
+            .unwrap_or(Duration::from_secs_f32(5.0));
+        let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
+        Ok(Box::new(Self::new(&range, duration, chans)))
+    }
+}

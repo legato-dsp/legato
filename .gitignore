@@ -5,7 +5,8 @@ target/
 /samples
 example.png
 example.wav
-*.png
+/*.png
+/scripts/**/*.png
 *.wav
 crates/legato-core/samples
 /result

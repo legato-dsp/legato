@@ -248,3 +248,77 @@ mod test_delay_simd_equivalence {
         }
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for DelayWrite {
+    const NAME: &'static str = "delay_write";
+    const DESCRIPTION: &'static str = "Writes audio into a named shared delay line";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_name"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let name = p
+            .get_str("delay_name")
+            .expect("Could not find required parameter delay_name");
+
+        let len = p
+            .get_duration_ms("delay_length")
+            .unwrap_or(Duration::from_secs(1));
+
+        let chans = p.get_usize("chans").unwrap_or(2);
+
+        let sr = rb.get_config().sample_rate as f32;
+        let capacity = sr * len.as_secs_f32();
+
+        let keys: Vec<_> = if let Some(existing_keys) = rb.get_delay_line_key(&name) {
+            existing_keys.iter().for_each(|key| {
+                rb.replace_delay_line(*key, (capacity as usize).next_power_of_two());
+            });
+            existing_keys
+        } else {
+            (0..chans)
+                .map(|_| rb.add_delay_line(&name, (capacity as usize).next_power_of_two()))
+                .collect()
+        };
+
+        Ok(Box::new(Self::new(keys, chans)))
+    }
+}
+
+impl NodeDefinition for DelayRead {
+    const NAME: &'static str = "delay_read";
+    const DESCRIPTION: &'static str =
+        "Reads audio from a named shared delay line with interpolation";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_name"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let name = p
+            .get_str("delay_name")
+            .expect("Could not find required parameter sampler_name");
+
+        let len = p
+            .get_array_duration_ms("delay_length")
+            .unwrap_or(vec![Duration::from_secs(1); 2]);
+
+        let chans = p.get_usize("chans").unwrap_or(2);
+
+        let key = rb
+            .get_delay_line_key(&name)
+            .unwrap_or_else(|| (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect());
+
+        Ok(Box::new(Self::new(chans, key, len)))
+    }
+}

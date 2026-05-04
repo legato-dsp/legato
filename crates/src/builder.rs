@@ -141,6 +141,7 @@ impl LegatoBuilder<Unconfigured> {
         let control_registry = control_registry_factory();
         let midi_registry = midi_registry_factory();
 
+        // Default namespaces
         namespaces.insert("audio".into(), audio_registry);
         namespaces.insert("control".into(), control_registry);
         namespaces.insert("midi".into(), midi_registry);

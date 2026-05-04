@@ -297,3 +297,46 @@ impl Node for Svf {
         todo!()
     }
 }
+
+use crate::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
+
+impl NodeDefinition for Svf {
+    const NAME: &'static str = "svf";
+    const DESCRIPTION: &'static str =
+        "State variable filter (lowpass, highpass, bandpass, and more)";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["cutoff", "q", "type", "chans", "gain"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        let cutoff = p.get_f32("cutoff").unwrap_or(7500.0);
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let gain = p.get_f32("gain").unwrap_or(1.0);
+        let q = p.get_f32("q").unwrap_or(0.4);
+
+        let filter_type = p
+            .get_str("type")
+            .map_or(FilterType::LowPass, |f| match f.as_str() {
+                "lowpass" => FilterType::LowPass,
+                "highpass" => FilterType::HighPass,
+                "allpass" => FilterType::AllPass,
+                "bandpass" => FilterType::BandPass,
+                "bell" => FilterType::Bell,
+                "highshelf" => FilterType::HighShelf,
+                "lowshelf" => FilterType::LowShelf,
+                "notch" => FilterType::Notch,
+                "peak" => FilterType::Peak,
+                _ => panic!("Could not find filter type!"),
+            });
+
+        let sr = rb.get_config().sample_rate as f32;
+        Ok(Box::new(Self::new(sr, filter_type, cutoff, gain, q, chans)))
+    }
+}
