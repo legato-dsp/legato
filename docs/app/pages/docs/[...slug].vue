@@ -2,12 +2,13 @@
 definePageMeta({ layout: "default" });
 
 const route = useRoute();
-const router = useRouter();
 
 const pageId = computed(() => `/docs/${route.path}`);
+
 const { data } = await useAsyncData(pageId, () =>
   queryCollection("docs").path(route.path).first()
 );
+
 const { data: docs } = await useAsyncData(() => queryCollection("docs").all());
 
 const currentDoc = computed(() =>
@@ -15,11 +16,6 @@ const currentDoc = computed(() =>
 );
 const mobileOpen = ref(false);
 const dropdownRef = ref<HTMLElement | null>(null);
-
-function navigate(path: string) {
-  router.push(path);
-  mobileOpen.value = false;
-}
 
 function onClickOutside(e: MouseEvent) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
@@ -119,16 +115,12 @@ onUnmounted(() => document.removeEventListener("mousedown", onClickOutside));
         </p>
       </div>
 
-      <div class="w-full h-full flex flex-col items-center overflow-y-auto">
-        <div class="h-full w-full max-w-200">
-          <div class="w-full">
-            <div v-if="data">
-              <article class="prose">
-                <h1>{{ data.title }}</h1>
-                <ContentRenderer :value="data" />
-              </article>
-            </div>
-          </div>
+      <div class="w-full min-h-0 flex flex-col items-center overflow-y-auto">
+        <div class="w-full max-w-200">
+          <article v-if="data" class="prose">
+            <h1>{{ data.title }}</h1>
+            <ContentRenderer :value="data" />
+          </article>
         </div>
       </div>
     </div>
