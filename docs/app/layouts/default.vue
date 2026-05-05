@@ -36,7 +36,7 @@ const links = [
         </a>
       </div>
       <!-- Content -->
-      <div class="w-full h-full overflow-y-auto px-6 py-3 md:px-16 md:py-6">
+      <div class="w-full flex-1 min-h-0 px-6 py-3 md:px-16 md:py-6">
         <slot></slot>
       </div>
     </div>

@@ -1,9 +1,9 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
 @theme {
   --font-display: "Satoshi", "sans-serif";
   --font-heading: "Chillax", "sans-serif";
-
   --color-primary: var(--text-primary);
   --color-secondary: var(--text-secondary);
   --color-paragraph: var(--text-paragraph);
@@ -13,7 +13,7 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  
+
   --bg: #060606;
   --bg-gradient:radial-gradient(62.5% 62.87% at 40.23% 40.23%, rgba(219, 192, 245, 0.405) 0%, rgba(50, 114, 252, 0.07) 100%);
   --text-primary: #ffffff;
@@ -30,6 +30,10 @@ html, body {
 body {
   color: var(--text-primary);
   background: var(--bg);
+}
+
+#__nuxt {
+  height: 100%;
 }
 
 h1,
