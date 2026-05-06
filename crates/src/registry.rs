@@ -17,7 +17,9 @@ use crate::{
             mixer::{MonoFanOut, TrackMixer},
             onepole::OnePole,
             ops::{AddDef, DivDef, GainDef, MultDef, SubDef},
+            pan::Pan,
             sampler::Sampler,
+            saw::Saw,
             sine::Sine,
             svf::Svf,
             sweep::Sweep,
@@ -88,6 +90,7 @@ impl NodeRegistry {
 pub fn audio_registry_factory() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register_node::<Sine>();
+    registry.register_node::<Saw>();
     registry.register_node::<Sampler>();
     registry.register_node::<DelayWrite>();
     registry.register_node::<DelayRead>();
@@ -99,6 +102,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<GainDef>();
     registry.register_node::<Adsr>();
     registry.register_node::<Svf>();
+    registry.register_node::<Pan>();
     registry.register_node::<MonoFanOut>();
     registry.register_node::<Sweep>();
     registry.register_node::<OnePole>();

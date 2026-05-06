@@ -205,8 +205,11 @@ fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
 
 // End of BSD-3 Code
 
-/// Utility to perform prefix scan
-fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+/// Utility to perform prefix scan.
+///
+/// Note: branches probably compiled away
+pub fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+    // TODO: a nicer way
     let t1 = x.shift_elements_right::<1>(0.0);
     x += t1;
 
