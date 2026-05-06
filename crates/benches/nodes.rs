@@ -5,6 +5,7 @@ use legato::{
     harness::get_node_test_harness_stereo_4096,
     nodes::audio::{
         fir::FirFilter,
+        saw::Saw,
         sine::Sine,
         svf::{FilterType, Svf},
     },
@@ -16,6 +17,17 @@ fn bench_stereo_sine(c: &mut Criterion) {
     let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0, 2)));
 
     c.bench_function("Sine", |b| {
+        b.iter(|| {
+            let out = graph.next_block(None);
+            black_box(out);
+        })
+    });
+}
+
+fn bench_stereo_saw(c: &mut Criterion) {
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Saw::new(440.0, 2)));
+
+    c.bench_function("Saw", |b| {
         b.iter(|| {
             let out = graph.next_block(None);
             black_box(out);
@@ -336,6 +348,7 @@ fn bench_svf(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_stereo_sine,
+    bench_stereo_saw,
     bench_fir,
     bench_stereo_delay,
     bench_svf,
