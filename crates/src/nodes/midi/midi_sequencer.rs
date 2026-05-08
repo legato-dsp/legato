@@ -37,6 +37,7 @@ pub struct MidiSequencer {
     midi_chan: u8,
     last_idx: usize,
     held_note: Option<u8>,
+    note_off_sent: bool,
     steps: Box<[SequencerStep]>,
     num_steps: usize, // Essentially, we take the first 0..num_steps, so we can preallocate the max step size
     ports: Ports,
@@ -53,6 +54,7 @@ impl MidiSequencer {
             midi_chan,
             last_idx: 0,
             held_note: None,
+            note_off_sent: false,
             steps: vec![SequencerStep::default(); MAXIMUM_SIZE].into(),
             num_steps,
             ports,
@@ -79,16 +81,16 @@ impl Node for MidiSequencer {
         let block_size = cfg.block_size;
 
         let block_start = ctx.get_instant();
-
         for n in 0..block_size {
             let phase = phasor_in[n];
-            let idx = self.step_index(phase).min(self.num_steps - 1);
+            let idx = self.step_index(phase);
+            let local_phase = (phase * self.num_steps as f32).fract();
 
-            // edge detection
+            let when = block_start + Duration::from_secs_f32(n as f32 / sr as f32);
+
+            // Step edge: send NoteOff for previous note, NoteOn for new step
             if idx != self.last_idx {
-                let when_to_write = block_start + Duration::from_secs_f32((n / sr) as f32);
-
-                let step = &self.steps[idx];
+                self.note_off_sent = false;
 
                 if let Some(prev_note) = self.held_note.take() {
                     let _ = ctx.send_to_system_midi(
@@ -97,12 +99,14 @@ impl Node for MidiSequencer {
                                 note: prev_note,
                                 velocity: 0,
                             },
-                            instant: when_to_write,
+                            instant: when,
                             channel_idx: self.midi_chan,
                         },
-                        when_to_write,
+                        when,
                     );
                 }
+
+                let step = &self.steps[idx];
                 if step.gate > 0.0 {
                     let note = ftom(step.freq);
                     let _ = ctx.send_to_system_midi(
@@ -111,15 +115,33 @@ impl Node for MidiSequencer {
                                 note,
                                 velocity: (step.vel * 127.0) as u8,
                             },
-                            instant: when_to_write,
+                            instant: when,
                             channel_idx: self.midi_chan,
                         },
-                        when_to_write,
+                        when,
                     );
                     self.held_note = Some(note);
-                    // also schedule the NoteOff for `when + step.length * step_duration`
                 }
+
                 self.last_idx = idx;
+            }
+
+            // Within-step NoteOff based on length
+            if !self.note_off_sent {
+                let step = &self.steps[idx];
+                if local_phase >= step.length {
+                    if let Some(note) = self.held_note.take() {
+                        let _ = ctx.send_to_system_midi(
+                            MidiMessage {
+                                data: MidiMessageKind::NoteOff { note, velocity: 0 },
+                                instant: when,
+                                channel_idx: self.midi_chan,
+                            },
+                            when,
+                        );
+                    }
+                    self.note_off_sent = true;
+                }
             }
         }
     }
