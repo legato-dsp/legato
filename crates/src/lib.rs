@@ -53,7 +53,6 @@ pub enum LegatoError {
 
 pub struct LegatoApp {
     runtime: Runtime,
-    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     msg_consumer: rtrb::Consumer<LegatoMsg>,
 }
 
@@ -61,7 +60,6 @@ impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: rtrb::Consumer<LegatoMsg>) -> Self {
         Self {
             runtime,
-            midi_runtime_frontend: None,
             msg_consumer: receiver,
         }
     }
@@ -84,10 +82,6 @@ impl LegatoApp {
         }
 
         self.runtime.next_block(external_inputs)
-    }
-
-    pub fn set_midi_runtime(&mut self, rt: MidiRuntimeFrontend) {
-        self.midi_runtime_frontend = Some(rt);
     }
 
     pub fn get_config(&self) -> Config {

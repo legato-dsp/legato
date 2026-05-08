@@ -96,6 +96,10 @@ impl AudioContext {
         self.midi_store = Some(store);
     }
 
+    pub fn set_midi_runtime_frontend(&mut self, frontend: MidiRuntimeFrontend) {
+        self.midi_runtime_frontend = Some(frontend)
+    }
+
     pub fn send_to_system_midi(
         &mut self,
         msg: MidiMessage,
