@@ -447,9 +447,10 @@ pub fn start_midi_thread(
             move |_, message, _| {
                 let instant = Instant::now();
                 if let Ok(msg) = parse_midi(message, instant)
-                    && midi_listener.send_to_store(msg, instant).is_err() {
-                        eprintln!("MIDI DROP");
-                    }
+                    && midi_listener.send_to_store(msg, instant).is_err()
+                {
+                    eprintln!("MIDI DROP");
+                }
             },
             (),
         )

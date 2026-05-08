@@ -36,7 +36,6 @@ const MAXIMUM_SIZE: usize = 256;
 pub struct MidiSequencer {
     midi_chan: u8,
     last_idx: usize,
-    prev_note: Option<u8>,
     held_note: Option<u8>,
     steps: Box<[SequencerStep]>,
     num_steps: usize, // Essentially, we take the first 0..num_steps, so we can preallocate the max step size
@@ -53,7 +52,6 @@ impl MidiSequencer {
         Self {
             midi_chan,
             last_idx: 0,
-            prev_note: None,
             held_note: None,
             steps: vec![SequencerStep::default(); MAXIMUM_SIZE].into(),
             num_steps,
