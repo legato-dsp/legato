@@ -72,18 +72,9 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
-        // If we have a midi runtime, drain it.
-        if let Some(midi_runtime) = &self.midi_runtime_frontend {
-            let ctx = self.runtime.get_context_mut();
-            // Clear our old messages
-            ctx.clear_midi();
-            while let Some(msg) = midi_runtime.recv() {
-                // TOOD: Realtime logging with channel maybe?
-                if let Err(e) = ctx.insert_midi_msg(msg) {
-                    eprintln!("{:?}", e);
-                }
-            }
-        }
+        let ctx = self.runtime.get_context_mut();
+        ctx.update_midi();
+
         // Drain messages for sample update
         self.runtime.drain_external_sample_msg();
 

@@ -4,7 +4,7 @@ use slotmap::new_key_type;
 
 use crate::{
     config::Config,
-    midi::{MidiError, MidiMessage, MidiStore, MidiWriterFrontend},
+    midi::{MidiError, MidiMessage, MidiRuntimeFrontend, MidiStore},
     resources::{
         Resources,
         params::{ParamError, ParamKey},
@@ -21,7 +21,7 @@ new_key_type! { struct ExternalAudioKey; }
 pub struct AudioContext {
     config: Config,
     midi_store: Option<MidiStore>,
-    midi_writer_frontend: Option<MidiWriterFrontend>,
+    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     resources: Resources,
     block_start: Instant,
 }
@@ -32,13 +32,29 @@ impl AudioContext {
             config,
             midi_store: None,
             resources,
-            midi_writer_frontend: None,
+            midi_runtime_frontend: None,
             block_start: Instant::now(),
         }
     }
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
     pub fn set_sample_rate(&mut self, sr: usize) {
         self.config.sample_rate = sr;
+    }
+
+    pub(crate) fn update_midi(&mut self) {
+        self.clear_midi();
+
+        let Some(runtime) = self.midi_runtime_frontend.take() else {
+            return;
+        };
+
+        while let Some(msg) = runtime.recv() {
+            if let Err(e) = self.insert_midi_msg(msg) {
+                eprintln!("{:?}", e);
+            }
+        }
+
+        self.midi_runtime_frontend = Some(runtime);
     }
 
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
@@ -80,12 +96,16 @@ impl AudioContext {
         self.midi_store = Some(store);
     }
 
-    pub fn set_midi_writer_frontend(&mut self, frontend: MidiWriterFrontend) {
-        self.midi_writer_frontend = Some(frontend);
-    }
-
-    pub fn get_midi_writer_frontend(&mut self) -> Option<&mut MidiWriterFrontend> {
-        self.midi_writer_frontend.as_mut()
+    pub fn send_to_system_midi(
+        &mut self,
+        msg: MidiMessage,
+        instant: Instant,
+    ) -> Result<(), MidiError> {
+        if let Some(inner) = &mut self.midi_runtime_frontend {
+            inner.writer_frontend.send_to_system_midi(msg, instant)
+        } else {
+            Err(MidiError::MissingRuntime)
+        }
     }
 
     #[inline(always)]

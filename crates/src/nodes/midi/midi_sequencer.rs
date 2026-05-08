@@ -67,11 +67,6 @@ impl MidiSequencer {
         // Clamp index to last elemenet
         idx.min(num_steps - 1)
     }
-
-    #[inline(always)]
-    fn phase_within_step(&self, phase: f32) -> f32 {
-        (phase * self.num_steps as f32).fract()
-    }
 }
 
 impl Node for MidiSequencer {
@@ -85,10 +80,6 @@ impl Node for MidiSequencer {
 
         let block_start = ctx.get_instant();
 
-        let writer = ctx
-            .get_midi_writer_frontend()
-            .expect("No MidiWriterFrontend found on current runtime. Did you register it?");
-
         for n in 0..block_size {
             let phase = phasor_in[n];
             let idx = self.step_index(phase);
@@ -100,7 +91,7 @@ impl Node for MidiSequencer {
                 let step = &self.steps[idx];
 
                 if let Some(prev_note) = self.held_note.take() {
-                    let _ = writer.send_to_system_midi(
+                    let _ = ctx.send_to_system_midi(
                         MidiMessage {
                             data: MidiMessageKind::NoteOff {
                                 note: prev_note,
@@ -114,7 +105,7 @@ impl Node for MidiSequencer {
                 }
                 if step.gate > 0.0 {
                     let note = ftom(step.freq);
-                    let _ = writer.send_to_system_midi(
+                    let _ = ctx.send_to_system_midi(
                         MidiMessage {
                             data: MidiMessageKind::NoteOn {
                                 note,

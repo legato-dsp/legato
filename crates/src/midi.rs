@@ -19,6 +19,7 @@ pub enum MidiError {
     RingbufferFull,
     ConnectionError(String),
     SendError(String),
+    MissingRuntime,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -385,7 +386,7 @@ impl MidiStore {
 pub struct MidiRuntimeFrontend {
     _reader_handle: MidiInputConnection<()>,
     _writer_handle: JoinHandle<()>,
-    writer_frontend: MidiWriterFrontend,
+    pub(crate) writer_frontend: MidiWriterFrontend,
     reader_consumer: MidiReceiver,
 }
 
