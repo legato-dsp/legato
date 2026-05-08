@@ -1,10 +1,10 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use slotmap::new_key_type;
 
 use crate::{
     config::Config,
-    midi::{MidiError, MidiMessage, MidiStore, MidiWriter, MidiWriterFrontend},
+    midi::{MidiError, MidiMessage, MidiStore, MidiWriterFrontend},
     resources::{
         Resources,
         params::{ParamError, ParamKey},

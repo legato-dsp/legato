@@ -1,14 +1,10 @@
 use std::{
     fmt::Debug,
-    sync::Arc,
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 
-use crossbeam::{
-    channel::{Receiver, RecvError, RecvTimeoutError, Sender, bounded},
-    select,
-};
+use crossbeam::channel::{Receiver, RecvTimeoutError, Sender, bounded};
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
 pub type MidiProducer = Sender<(MidiMessage, Instant)>;
@@ -450,11 +446,10 @@ pub fn start_midi_thread(
             port_name,
             move |_, message, _| {
                 let instant = Instant::now();
-                if let Ok(msg) = parse_midi(message, instant) {
-                    if midi_listener.send_to_store(msg, instant).is_err() {
+                if let Ok(msg) = parse_midi(message, instant)
+                    && midi_listener.send_to_store(msg, instant).is_err() {
                         eprintln!("MIDI DROP");
                     }
-                }
             },
             (),
         )
