@@ -185,7 +185,9 @@ impl MidiWriter {
                 // If the next message is at or before our time to run, send to the Midi driver
                 if dt_next_message <= Duration::ZERO {
                     let s = self.queue.pop().unwrap().0;
-                    let _ = self.send_to_midi_output(s.msg, connection);
+                    if let Err(err) = self.send_to_midi_output(s.msg, connection) {
+                        eprintln!("Error thrown when sending midi out {:?}", err);
+                    }
                 }
                 // Here, we spin for very small next incoming messages
                 else if dt_next_message < Duration::from_micros(500) {
@@ -471,7 +473,8 @@ pub fn start_midi_thread(
 
     let mut output_connection = output
         .connect(output_port, port_name)
-        .map_err(|x| MidiError::ConnectionError(x.to_string()))?;
+        .map_err(|x| MidiError::ConnectionError(x.to_string()))
+        .unwrap();
 
     // Spawning the writer thread, we keep the handle as we will use this on the MidiRuntime struct
     let writer_handle = std::thread::spawn(move || {

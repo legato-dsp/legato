@@ -82,7 +82,7 @@ impl Node for MidiSequencer {
 
         for n in 0..block_size {
             let phase = phasor_in[n];
-            let idx = self.step_index(phase);
+            let idx = self.step_index(phase).min(self.num_steps - 1);
 
             // edge detection
             if idx != self.last_idx {
