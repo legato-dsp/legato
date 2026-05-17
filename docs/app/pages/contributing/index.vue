@@ -6,7 +6,7 @@ const { data } = await useAsyncData(() => {
 
 <template>
   <div class="w-full h-full flex justify-center">
-    <div class="max-w-200">
+    <div class="max-w-200 h-full overflow-auto">
       <article v-if="data" class="prose">
         <h1>{{ data.title }}</h1>
         <ContentRenderer :value="data"> </ContentRenderer>
