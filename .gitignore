@@ -10,4 +10,4 @@ example.wav
 *.wav
 crates/legato-core/samples
 /result
-**/*/.DS_STORE
+**/*/.DS_Store
