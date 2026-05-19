@@ -6,6 +6,7 @@ pub mod fir;
 pub mod hadamard;
 pub mod householder;
 pub mod mixer;
+pub mod noise;
 pub mod onepole;
 pub mod ops;
 pub mod oversample;
