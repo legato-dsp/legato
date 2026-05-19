@@ -15,6 +15,7 @@ use crate::{
             hadamard::HadamardMixer,
             householder::HouseholderMixer,
             mixer::{MonoFanOut, TrackMixer},
+            noise::Noise,
             onepole::OnePole,
             ops::{AddDef, DivDef, GainDef, MultDef, SubDef},
             pan::Pan,
@@ -105,6 +106,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<Pan>();
     registry.register_node::<MonoFanOut>();
     registry.register_node::<Sweep>();
+    registry.register_node::<Noise>();
     registry.register_node::<OnePole>();
     registry.register_node::<Allpass>();
     registry.register_node::<HadamardMixer>();
