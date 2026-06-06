@@ -6,7 +6,6 @@ use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
-    midi::MidiRuntimeFrontend,
     msg::{LegatoMsg, NodeMessage},
     node::Inputs,
     resources::{
