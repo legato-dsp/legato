@@ -12,6 +12,12 @@ pub struct Noise {
     ports: Ports,
 }
 
+impl Default for Noise {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Noise {
     pub fn new() -> Self {
         Self {

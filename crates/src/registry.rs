@@ -31,7 +31,10 @@ use crate::{
             sequencer::StepSequencer,
             signal::Signal,
         },
-        midi::voice::{PolyVoice, Voice},
+        midi::{
+            midi_sequencer::MidiSequencer,
+            voice::{PolyVoice, Voice},
+        },
     },
     spec::{NodeDefinition, NodeSpec},
 };
@@ -129,5 +132,6 @@ pub fn midi_registry_factory() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register_node::<Voice>();
     registry.register_node::<PolyVoice>();
+    registry.register_node::<MidiSequencer>();
     registry
 }

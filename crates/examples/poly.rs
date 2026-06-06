@@ -153,7 +153,7 @@ fn main() {
             map { range: [-1.0, 1.0], new_range: [0.3, 0.7 ] },
         }
 
-        midi { 
+        midi {
             poly_voice { chan: 0, voices: 5 }
         }
 
@@ -180,7 +180,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (midi_rt_fe, _writer_fe) = start_midi_thread(
+    let midi_rt_fe = start_midi_thread(
         256,
         "my_port",
         MidiPortKind::Index(0),

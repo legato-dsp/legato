@@ -467,7 +467,7 @@ impl<S> LegatoBuilder<S>
 where
     S: CanBuild,
 {
-    pub fn build(self) -> (LegatoApp, LegatoFrontend) {
+    pub fn build(mut self) -> (LegatoApp, LegatoFrontend) {
         let mut runtime = self.runtime;
 
         let cfg = runtime.get_config();
@@ -482,18 +482,15 @@ where
         // Allocate all of the audio buffers needed at runtime
         runtime.prepare();
 
-        if self.midi_runtime_frontend.is_some() {
+        if let Some(fe) = self.midi_runtime_frontend.take() {
             let ctx = runtime.get_context_mut();
             ctx.set_midi_store(MidiStore::new(256));
+            ctx.set_midi_runtime_frontend(fe);
         }
 
         let (producer, consumer) = rtrb::RingBuffer::new(512);
 
-        let mut app = LegatoApp::new(runtime, consumer);
-
-        if let Some(midi_rt) = self.midi_runtime_frontend {
-            app.set_midi_runtime(midi_rt);
-        }
+        let app = LegatoApp::new(runtime, consumer);
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 

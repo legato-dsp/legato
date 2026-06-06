@@ -30,7 +30,7 @@ impl Pan {
 impl Node for Pan {
     fn process(&mut self, _ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let input = inputs
-            .get(0)
+            .first()
             .and_then(|x| *x)
             .expect("No mono input for pan node!");
 

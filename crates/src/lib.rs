@@ -6,7 +6,6 @@ use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
-    midi::MidiRuntimeFrontend,
     msg::{LegatoMsg, NodeMessage},
     node::Inputs,
     resources::{
@@ -53,7 +52,6 @@ pub enum LegatoError {
 
 pub struct LegatoApp {
     runtime: Runtime,
-    midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     msg_consumer: rtrb::Consumer<LegatoMsg>,
 }
 
@@ -61,7 +59,6 @@ impl LegatoApp {
     pub fn new(runtime: Runtime, receiver: rtrb::Consumer<LegatoMsg>) -> Self {
         Self {
             runtime,
-            midi_runtime_frontend: None,
             msg_consumer: receiver,
         }
     }
@@ -72,18 +69,9 @@ impl LegatoApp {
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
     pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
-        // If we have a midi runtime, drain it.
-        if let Some(midi_runtime) = &self.midi_runtime_frontend {
-            let ctx = self.runtime.get_context_mut();
-            // Clear our old messages
-            ctx.clear_midi();
-            while let Some(msg) = midi_runtime.recv() {
-                // TOOD: Realtime logging with channel maybe?
-                if let Err(e) = ctx.insert_midi_msg(msg) {
-                    eprintln!("{:?}", e);
-                }
-            }
-        }
+        let ctx = self.runtime.get_context_mut();
+        ctx.update_midi();
+
         // Drain messages for sample update
         self.runtime.drain_external_sample_msg();
 
@@ -93,10 +81,6 @@ impl LegatoApp {
         }
 
         self.runtime.next_block(external_inputs)
-    }
-
-    pub fn set_midi_runtime(&mut self, rt: MidiRuntimeFrontend) {
-        self.midi_runtime_frontend = Some(rt);
     }
 
     pub fn get_config(&self) -> Config {
