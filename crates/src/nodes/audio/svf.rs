@@ -69,7 +69,7 @@ impl Svf {
             coefficients: SvfCoefficients::default(),
             ports: PortBuilder::default()
                 .audio_in(chans)
-                .audio_in_named(&["cutoff"])
+                .audio_in_named(&["cutoff", "q"])
                 .audio_out(chans)
                 .build(),
         };
@@ -197,9 +197,11 @@ impl Svf {
         }
     }
 
+    const Q_EPSILON: f32 = 1e-4; // Hysterisis for q-value
+
     // TODO: SIMD, maybe hold the coefficients in chunks, replace certain operations with SIMD polynomial approximations?
 
-    fn process_with_cutoff(
+    fn process_modulated(
         &mut self,
         ctx: &mut AudioContext,
         inputs: &Inputs,
@@ -207,31 +209,31 @@ impl Svf {
     ) {
         let chans = self.ports.audio_out.len();
         let block_size = ctx.get_config().block_size;
-        let cutoff_idx = chans; // chans index + 1
-
-        let cutoff = inputs[cutoff_idx].unwrap();
+        let cutoff_buf = inputs[chans];
+        let q_buf = inputs[chans + 1];
 
         for n in 0..block_size {
-            let new_cutoff = cutoff[n];
-            let clamped_cutoff = new_cutoff.clamp(1.0, 0.49 * self.sample_rate);
+            let new_cutoff =
+                cutoff_buf.map_or(self.cutoff, |b| b[n].clamp(1.0, 0.49 * self.sample_rate));
+            let new_q = q_buf.map_or(self.q, |b| b[n].max(Self::Q_EPSILON));
 
-            if (new_cutoff - self.cutoff).abs() > CUTOFF_EPSILON {
+            let cutoff_moved = (new_cutoff - self.cutoff).abs() > CUTOFF_EPSILON;
+            let q_moved = (new_q - self.q).abs() > Self::Q_EPSILON;
+            if cutoff_moved || q_moved {
                 self.set(
                     self.filter_type,
                     self.sample_rate,
-                    clamped_cutoff,
-                    self.q,
+                    new_cutoff,
+                    new_q,
                     self.gain,
                 );
-            } else {
-                self.cutoff = clamped_cutoff;
             }
+
             for c in 0..chans {
                 let sample = inputs[c].unwrap()[n];
-                let filter_state = &mut self.filter_state[c];
 
-                let v0 = sample;
-                let v3 = v0 - filter_state.ic2eq;
+                let filter_state = &mut self.filter_state[c];
+                let v3 = sample - filter_state.ic2eq;
 
                 let v1 = self.coefficients.a1 * filter_state.ic1eq + self.coefficients.a2 * v3;
 
@@ -242,7 +244,7 @@ impl Svf {
                 filter_state.ic1eq = 2.0 * v1 - filter_state.ic1eq;
                 filter_state.ic2eq = 2.0 * v2 - filter_state.ic2eq;
 
-                outputs[c][n] = self.coefficients.m0 * v0
+                outputs[c][n] = self.coefficients.m0 * sample
                     + self.coefficients.m1 * v1
                     + self.coefficients.m2 * v2;
             }
@@ -283,11 +285,15 @@ impl Svf {
 
 impl Node for Svf {
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
-        let cutoff_idx = self.ports.audio_in.len() - 1;
-        if inputs[cutoff_idx].is_some() {
-            self.process_with_cutoff(ctx, inputs, outputs);
+        let chans = self.ports.audio_out.len();
+
+        let cutoff_present = inputs[chans].is_some();
+        let q_present = inputs[chans + 1].is_some();
+
+        if cutoff_present || q_present {
+            self.process_modulated(ctx, inputs, outputs)
         } else {
-            self.process_without_cutoff(ctx, inputs, outputs);
+            self.process_without_cutoff(ctx, inputs, outputs)
         }
     }
     fn ports(&self) -> &Ports {
