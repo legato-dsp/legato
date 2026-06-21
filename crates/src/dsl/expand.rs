@@ -1,6 +1,32 @@
-use crate::dsl::{ir::*, pipeline::GraphPass};
+use crate::dsl::{ir::*, pipeline::GraphPass, resolve::port_for_instance};
 use indexmap::IndexMap;
 use std::collections::HashMap;
+
+/// Choose the source selector for the `i`-th instance of a macro, given the
+/// source and macro node counts.
+///
+/// This is the selector-space analogue of [`crate::dsl::resolve::broadcast`]:
+/// macro expansion runs *before* [`crate::dsl::spawn`], so the source multi-node
+/// has not been split into concrete instances yet and the arity must be encoded
+/// as a [`NodeSelector`] for spawn to materialise later.
+///
+/// - `n:n` (n > 1) → zip: instance `i` of the source pairs with instance `i`
+/// - `n:1` / `1:n` / `1:1` → preserve the original selector (fan-in / broadcast)
+/// - `n:m` (both > 1, n != m) → arity error
+fn instance_source_selector(
+    src_count: u32,
+    macro_count: u32,
+    i: usize,
+    original: &NodeSelector,
+) -> NodeSelector {
+    match (src_count, macro_count) {
+        (n, m) if n == m && n > 1 => NodeSelector::Index(i),
+        (n, m) if n > 1 && m > 1 => {
+            panic!("Cannot match node selection arity {n}:{m} during macro expansion")
+        }
+        _ => original.clone(),
+    }
+}
 
 /// This pass expands all [`IRMacros`] into the interior nodes,
 /// wires the new interior connections, then handles connections
@@ -79,34 +105,20 @@ impl MacroExpansionPass {
 
             // Rewire incoming edges into each instance.
             for edge in &incoming {
-                // Resolve to a specific source port depending on the type
-                let resolved_source_port = match &edge.source_port {
-                    Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
-                    Port::Slice(start, _) => Port::Index(start + i),
-                    other => other.clone(),
+                // A strided/sliced source port is distributed one index per macro
+                // instance — but only when there are several instances. A single
+                // instance keeps the port intact (e.g. its full stereo slice) so
+                // the builder can fan it across channels rather than collapsing it.
+                let resolved_source_port = if node.count > 1 {
+                    port_for_instance(&edge.source_port, i)
+                } else {
+                    edge.source_port.clone()
                 };
 
-                // We also want to change behavior depending on the src_count.
-                // We want the following invariants:
-                // n:n arity -> zip
-                // n:1 arity -> fan in
-                // 1:n arity -> fan out
-                // n:m -> panic
-                let resolved_source_selector = {
-                    let src_count = graph.get_node(edge.source).map(|n| n.count).unwrap_or(1);
-                    match (src_count, node.count) {
-                        (n, m) if n == m && n > 1 => NodeSelector::Index(i), // zip, just use node count i
-                        (n, m) if n != m && n > 1 && m > 1 => {
-                            let source = graph.get_node(edge.source);
-                            let sink = graph.get_node(edge.sink);
-                            panic!(
-                                "Cannot match node selection arity {}:{} for nodes {:?}:{:?}",
-                                n, m, source, sink
-                            )
-                        }
-                        _ => edge.source_selector.clone(), // 1:1, 1:N broadcast, N:1, fan-in,  preserve original
-                    }
-                };
+                // Encode the source/macro arity as a selector for spawn to expand.
+                let src_count = graph.get_node(edge.source).map(|n| n.count).unwrap_or(1);
+                let resolved_source_selector =
+                    instance_source_selector(src_count, node.count, i, &edge.source_selector);
 
                 let targets: Vec<(NodeId, NodeSelector, Port)> = match &edge.sink_port {
                     Port::Named(name) => remapped_virtual.get(name).cloned().unwrap_or_else(|| {
@@ -143,11 +155,16 @@ impl MacroExpansionPass {
         // Rewire outgoing edges from the last instance
         for edge in &outgoing {
             let srcs = edge.source_selector.select(&new_sinks).to_vec();
+            let multi_src = srcs.len() > 1;
             for (i, &src) in srcs.iter().enumerate() {
-                let resolved_sink_port = match &edge.sink_port {
-                    Port::Slice(start, _) => Port::Index(start + i),
-                    Port::Stride { start, stride, .. } => Port::Index(start + i * stride),
-                    other => other.clone(),
+                // Distribute a strided/sliced sink port one index per source
+                // instance only when several instances share it. A single
+                // instance preserves the slice so the builder fans it across
+                // the sink's channels (e.g. a stereo macro into `mixer[0..2]`).
+                let resolved_sink_port = if multi_src {
+                    port_for_instance(&edge.sink_port, i)
+                } else {
+                    edge.sink_port.clone()
                 };
                 graph.connect_multi(
                     src,

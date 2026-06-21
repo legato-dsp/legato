@@ -370,6 +370,13 @@ where
             }
         };
 
+        // Guard against port indices that exceed the instantiated node's port
+        // counts (e.g. reading `mixer[2..4]` from a node with only 2 outputs).
+        // Without this the bad index slips through to the audio thread and
+        // panics mid-process; here it fails loudly at build time instead.
+        self.assert_ports_in_range(&connection.source, &source_indicies, PortDir::Out);
+        self.assert_ports_in_range(&connection.sink, &sink_indicies, PortDir::In);
+
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
 
@@ -386,12 +393,23 @@ where
                 source_indicies[0],
                 sink_indicies.as_slice(),
             ),
-            (n, 1) if n >= 1 => n_to_one(
-                &mut self.runtime,
-                connection,
-                source_indicies.as_slice(),
-                sink_indicies[0],
-            ),
+            (n, 1) if n >= 1 => {
+                print!("n_to_one path!!");
+
+                dbg!("source: ", self.runtime.get_node(&connection.source));
+                dbg!("sink: ", self.runtime.get_node(&connection.sink));
+
+                dbg!(&connection);
+
+                dbg!(source_arity, sink_arity);
+
+                n_to_one(
+                    &mut self.runtime,
+                    connection,
+                    source_indicies.as_slice(),
+                    sink_indicies[0],
+                )
+            }
             (n, m) if n == m => n_to_n(
                 &mut self.runtime,
                 connection,
@@ -416,6 +434,38 @@ where
         self._connect_ref_self(connection);
         self.into_state()
     }
+
+    /// Panic with a descriptive message if any resolved port index falls outside
+    /// the node's instantiated port range for the given direction.
+    fn assert_ports_in_range(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
+        let ports = self.runtime.get_node_ports(key);
+        let available = match dir {
+            PortDir::In => ports.audio_in.len(),
+            PortDir::Out => ports.audio_out.len(),
+        };
+        if let Some(&bad) = indices.iter().find(|&&i| i >= available) {
+            let (alias, kind) = self
+                .runtime
+                .get_node(key)
+                .map(|n| (n.name.clone(), n.node_kind.clone()))
+                .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+            panic!(
+                "Connection {dir:?} port index {bad} is out of range for node '{alias}' ({kind}): \
+                 it has {available} audio {} port(s) (valid indices 0..{available})",
+                match dir {
+                    PortDir::In => "input",
+                    PortDir::Out => "output",
+                },
+            );
+        }
+    }
+}
+
+/// Which side of a node a port index refers to, used by port-range validation.
+#[derive(Debug, Clone, Copy)]
+enum PortDir {
+    In,
+    Out,
 }
 
 impl<S> LegatoBuilder<S>

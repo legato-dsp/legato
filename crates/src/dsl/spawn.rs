@@ -1,4 +1,8 @@
-use crate::dsl::{ir::*, pipeline::GraphPass};
+use crate::dsl::{
+    ir::*,
+    pipeline::GraphPass,
+    resolve::{Plan, broadcast, port_for_instance},
+};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -95,57 +99,51 @@ impl SpawnKNodesPass {
     /// Wire up a concrete set of source and sink NodeIds according to the
     /// original edge's port configuration.
     fn expand_edge(graph: &mut IRGraph, edge: &IREdge, srcs: &[NodeId], snks: &[NodeId]) {
-        match &edge.sink_port {
-            Port::Slice(start, end) => {
-                assert_eq!(
-                    srcs.len(),
-                    end - start,
-                    "SpawnKNodesPass: source instance count ({}) must equal \
-                     port slice width ({}) for edge to {:?}",
-                    srcs.len(),
-                    end - start,
-                    edge.sink,
+        // Coupled case: N source instances zipped onto a contiguous port slice
+        // of a single sink (e.g. `src(0..N) >> mixer[a..b]`). The instance index
+        // selects the concrete port, so this is its own zip rather than a plain
+        // node-level broadcast.
+        if let Port::Slice(start, end) = &edge.sink_port {
+            assert_eq!(
+                srcs.len(),
+                end - start,
+                "SpawnKNodesPass: source instance count ({}) must equal \
+                 port slice width ({}) for edge to {:?}",
+                srcs.len(),
+                end - start,
+                edge.sink,
+            );
+            for (i, &src) in srcs.iter().enumerate() {
+                graph.connect(
+                    src,
+                    edge.source_port.clone(),
+                    snks[0],
+                    port_for_instance(&edge.sink_port, i),
                 );
-                let snk = snks[0];
-                for (i, &src) in srcs.iter().enumerate() {
-                    graph.connect(src, edge.source_port.clone(), snk, Port::Index(start + i));
+            }
+            return;
+        }
+
+        // All other node-level multiplicity follows the shared broadcasting rule.
+        let connect = |graph: &mut IRGraph, src: NodeId, snk: NodeId| {
+            graph.connect(src, edge.source_port.clone(), snk, edge.sink_port.clone());
+        };
+        match broadcast(srcs, snks).unwrap_or_else(|e| panic!("SpawnKNodesPass: {e}")) {
+            Plan::Zip(pairs) => {
+                for (src, snk) in pairs {
+                    connect(graph, src, snk);
                 }
             }
-            _ => match (srcs.len(), snks.len()) {
-                (1, _) => {
-                    // Broadcast: one source -> all sinks.
-                    for &snk in snks {
-                        graph.connect(
-                            srcs[0],
-                            edge.source_port.clone(),
-                            snk,
-                            edge.sink_port.clone(),
-                        );
-                    }
+            Plan::OneToMany(src, snks) => {
+                for snk in snks {
+                    connect(graph, src, snk);
                 }
-                (_, 1) => {
-                    // Fan-in: all sources -> single sink.
-                    for &src in srcs {
-                        graph.connect(
-                            src,
-                            edge.source_port.clone(),
-                            snks[0],
-                            edge.sink_port.clone(),
-                        );
-                    }
+            }
+            Plan::ManyToOne(srcs, snk) => {
+                for src in srcs {
+                    connect(graph, src, snk);
                 }
-                (n, m) => {
-                    // Automap / zip.
-                    assert_eq!(
-                        n, m,
-                        "SpawnKNodesPass: cannot automap nodes with different \
-                         instance counts ({n} vs {m})"
-                    );
-                    for (&src, &snk) in srcs.iter().zip(snks.iter()) {
-                        graph.connect(src, edge.source_port.clone(), snk, edge.sink_port.clone());
-                    }
-                }
-            },
+            }
         }
     }
 }

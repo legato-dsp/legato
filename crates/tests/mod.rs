@@ -1068,4 +1068,349 @@ mod parse_and_lower {
         // 3 instances × (2 freq fan-out + 2 gate fan-out + 1 interior) = 15
         assert_eq!(graph.edge_count(), 15);
     }
+
+    #[test]
+    fn test_e2e_single_instance_macro_sink_to_port_slice() {
+        // This issue was found earlier with a filter bank demo.
+        // This is checking to make sure that a macro with a single instance correctly maps out.
+        let src = r#"
+            patch filter(freq = 3400.0, chans = 2) {
+                in audio_in
+
+                audio {
+                    svf  { cutoff: $freq, chans: $chans, type: "bandpass" },
+                    gain { val: 1.0, chans: $chans }
+                }
+
+                audio_in >> svf[0..2]
+                svf      >> gain[0..2]
+
+                { gain }
+            }
+
+            audio {
+                filter: fb1 { freq: 80.0 },
+                filter: fb2 { freq: 160.0 },
+                track_mixer { chans_per_track: 2, tracks: 2 }
+            }
+
+            fb1 >> track_mixer[0..2]
+            fb2 >> track_mixer[2..4]
+
+            { track_mixer }
+        "#;
+
+        let graph = parse_and_lower(src);
+
+        // fb1.gain -> track_mixer must keep the slice [0..2].
+        let fb1_edges = graph.find_edges_between("fb1.gain", "track_mixer");
+        assert_eq!(
+            fb1_edges.len(),
+            1,
+            "expected one fb1.gain -> track_mixer edge"
+        );
+        assert_eq!(
+            fb1_edges[0].sink_port,
+            Port::Slice(0, 2),
+            "single-instance macro sink should preserve the port slice, got {:?}",
+            fb1_edges[0].sink_port
+        );
+
+        // fb2.gain -> track_mixer must keep the slice [2..4].
+        let fb2_edges = graph.find_edges_between("fb2.gain", "track_mixer");
+        assert_eq!(
+            fb2_edges.len(),
+            1,
+            "expected one fb2.gain -> track_mixer edge"
+        );
+        assert_eq!(
+            fb2_edges[0].sink_port,
+            Port::Slice(2, 4),
+            "single-instance macro sink should preserve the port slice, got {:?}",
+            fb2_edges[0].sink_port
+        );
+    }
+}
+
+#[cfg(test)]
+mod build_dsl {
+    use legato::{
+        builder::{LegatoBuilder, Unconfigured},
+        config::Config,
+        ports::PortBuilder,
+    };
+
+    pub(crate) const POLY_GRAPH: &str = r#"
+        patch basic_verb(){
+            in audio_in
+            audio {
+                svf: input_hp { type: "highpass", cutoff: 120.0, q: 0.7, chans: 2 },
+                svf: input_lp { type: "lowpass", cutoff: 8000.0, q: 0.7, chans: 2 },
+                svf: loop_shelf { type: "lowshelf", cutoff: 300.0, gain: -6.0, q: 0.7, chans: 8 },
+
+                allpass: pre_ap1 { delay_length: 13.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap2 { delay_length: 31.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap3 { delay_length: 59.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap4 { delay_length: 71.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap5 { delay_length: 97.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap6 { delay_length: 113.0, feedback: 0.4, chans: 2 },
+                allpass: pre_ap7 { delay_length: 137.0, feedback: 0.4, chans: 2 },
+
+                delay_write: dw1 { delay_name: "d_a", delay_length: 700.0,  chans: 2 },
+                delay_write: dw2 { delay_name: "d_b", delay_length: 1000.0, chans: 2 },
+                delay_write: dw3 { delay_name: "d_c", delay_length: 1500.0, chans: 2 },
+                delay_write: dw4 { delay_name: "d_d", delay_length: 2500.0, chans: 2 },
+
+                delay_read: dr1 { delay_name: "d_a", chans: 2, delay_length: [ 557,  613  ] },
+                delay_read: dr2 { delay_name: "d_b", chans: 2, delay_length: [ 809,  877  ] },
+                delay_read: dr3 { delay_name: "d_c", chans: 2, delay_length: [ 1201, 1327 ] },
+                delay_read: dr4 { delay_name: "d_d", chans: 2, delay_length: [ 2137, 2311 ] },
+
+                allpass: ap_tap1 { delay_length: 17.0, feedback: 0.4, chans: 2 },
+                allpass: ap_tap2 { delay_length: 23.0, feedback: 0.4, chans: 2 },
+                allpass: ap_tap3 { delay_length: 31.0, feedback: 0.4, chans: 2 },
+                allpass: ap_tap4 { delay_length: 41.0, feedback: 0.4, chans: 2 },
+
+                hadamard { chans: 8 },
+                hadamard: input_had { chans: 8 },
+
+                onepole { cutoff: 2000.0, chans: 8 },
+
+                allpass: loop_ap1 { delay_length: 5.0,  feedback: 0.2, chans: 8 },
+                allpass: loop_ap2 { delay_length: 9.0,  feedback: 0.2, chans: 8 },
+                allpass: loop_ap3 { delay_length: 14.0, feedback: 0.2, chans: 8 },
+                allpass: loop_ap4 { delay_length: 19.0, feedback: 0.2, chans: 8 },
+
+                sine: lfo1 { freq: 0.11 },
+                sine: lfo2 { freq: 0.13 },
+                sine: lfo3 { freq: 0.17 },
+                sine: lfo4 { freq: 0.19 },
+                sine: lfo5 { freq: 0.07 },
+                sine: lfo6 { freq: 0.23 },
+
+                track_mixer: feedback    { tracks: 1, chans_per_track: 8, gain: [0.5] },
+                track_mixer: hm_mix_down { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
+                track_mixer: wet_dry     { tracks: 2, chans_per_track: 2, gain: [0.5, 0.8] },
+            }
+
+            control {
+                map: lfo1_map { range: [-1.0, 1.0], new_range: [4.0,  6.0 ] },
+                map: lfo2_map { range: [-1.0, 1.0], new_range: [7.5,  10.5] },
+                map: lfo3_map { range: [-1.0, 1.0], new_range: [13.0, 15.0] },
+                map: lfo4_map { range: [-1.0, 1.0], new_range: [17.5, 20.5] },
+                map: lfo5_map { range: [-1.0, 1.0], new_range: [15.0, 19.0] },
+                map: lfo6_map { range: [-1.0, 1.0], new_range: [28.0, 34.0] },
+            }
+
+            lfo1 >> lfo1_map >> loop_ap1.delay_length
+            lfo2 >> lfo2_map >> loop_ap2.delay_length
+            lfo3 >> lfo3_map >> loop_ap3.delay_length
+            lfo4 >> lfo4_map >> loop_ap4.delay_length
+
+            lfo5 >> lfo5_map >> ap_tap1.delay_length
+            lfo6 >> lfo6_map >> ap_tap3.delay_length
+
+            audio_in >> input_hp[0..2] >> input_lp[0..2] >> pre_ap1[0..2]
+            pre_ap1[0..2] >> pre_ap2[0..2] >> pre_ap3[0..2] >> pre_ap4[0..2] >> pre_ap5[0..2] >> pre_ap6[0..2] >> pre_ap7[0..2]
+
+            pre_ap7[0..2] >> input_had[0..2]
+            pre_ap7[0..2] >> input_had[2..4]
+            pre_ap7[0..2] >> input_had[4..6]
+            pre_ap7[0..2] >> input_had[6..8]
+
+            input_had[0..2] >> dw1
+            input_had[2..4] >> dw2
+            input_had[4..6] >> dw3
+            input_had[6..8] >> dw4
+
+            dr1 >> ap_tap1[0..2] >> hadamard[0..2]
+            dr2 >> ap_tap2[0..2] >> hadamard[2..4]
+            dr3 >> ap_tap3[0..2] >> hadamard[4..6]
+            dr4 >> ap_tap4[0..2] >> hadamard[6..8]
+
+            hadamard >> onepole[0..8] >> loop_shelf[0..8] >> loop_ap1[0..8] >> loop_ap2[0..8] >> loop_ap3[0..8] >> loop_ap4[0..8]
+
+            loop_ap4    >> hm_mix_down
+            hm_mix_down >> wet_dry[2..4]
+            audio_in    >> wet_dry[0..2]
+
+            loop_ap4       >> feedback
+            feedback[0..2] >> dw1
+            feedback[2..4] >> dw2
+            feedback[4..6] >> dw3
+            feedback[6..8] >> dw4
+
+            { wet_dry }
+        }
+
+        patch voice(
+            attack = 50.0,
+            decay = 30.0,
+            sustain = 0.3,
+            release = 50.0
+        ) {
+            in freq gate
+
+            audio {
+                saw { chans: 1 },
+                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+            }
+
+            freq >> saw
+            gate >> adsr.gate
+            saw >> adsr[1]
+
+            { adsr }
+        }
+
+        patches {
+            voice * 5 { },
+            basic_verb { }
+        }
+
+        audio {
+            sine: pan_lfo { freq: 0.3 },
+            pan,
+            svf { chans: 2, cutoff: 5400.0, q: 0.4, type: "lowpass" },
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+        }
+
+        control {
+            map { range: [-1.0, 1.0], new_range: [0.3, 0.7 ] },
+        }
+
+        midi {
+            poly_voice { chan: 0, voices: 5 }
+        }
+
+        poly_voice[0:13:3] >> voice(*).gate
+        poly_voice[1:13:3] >> voice(*).freq
+        voice(*) >> osc_mixer[0..5]
+
+        osc_mixer >> svf[0] >> pan[0]
+
+        pan_lfo >> map >> pan.pan
+
+        pan >> basic_verb
+
+        { basic_verb }
+    "#;
+
+    #[test]
+    fn test_poly_reverb_graph_builds() {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: 1024,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let ports = PortBuilder::default().audio_out(2).build();
+
+        // Builds the whole graph end-to-end (pipeline + builder + prepare).
+        // No MIDI runtime / audio device is required to construct the app.
+        let (_app, _frontend) =
+            LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(POLY_GRAPH);
+    }
+}
+
+#[cfg(test)]
+mod build_dsl_delay {
+    use legato::{
+        builder::{LegatoBuilder, Unconfigured},
+        config::Config,
+        ports::PortBuilder,
+    };
+
+    const DELAY_GRAPH: &str = r#"
+        patch filter(freq = 3400.0, chans = 2, q = 2) {
+            in audio_in
+
+            audio {
+                svf  { cutoff: $freq, q: $q, chans: $chans, type: "bandpass" },
+                gain { val: 1.0, chans: $chans }
+            }
+
+            audio_in >> svf[0..2]
+            svf      >> gain[0..2]
+
+            { gain }
+        }
+
+        audio {
+            sampler { sampler_name: "amen" },
+            filter: fb1 { freq: 80.0 },
+            filter: fb2 { freq: 164.0 },
+            filter: fb3 { freq: 335.0 },
+            filter: fb4 { freq: 685.0, q: 3.0 },
+            filter: fb5 { freq: 1402.0 },
+            filter: fb6 { freq: 2868.0, q: 3.0 },
+            filter: fb7 { freq: 5868.0 },
+            filter: fb8 { freq: 12000.0 },
+            track_mixer { chans_per_track: 2, tracks: 8 }
+        }
+
+        sampler >> fb1
+        sampler >> fb2
+        sampler >> fb3
+        sampler >> fb4
+        sampler >> fb5
+        sampler >> fb6
+        sampler >> fb7
+        sampler >> fb8
+
+        fb1 >> track_mixer[0..2]
+        fb2 >> track_mixer[2..4]
+        fb3 >> track_mixer[4..6]
+        fb4 >> track_mixer[6..8]
+        fb5 >> track_mixer[8..10]
+        fb6 >> track_mixer[10..12]
+        fb7 >> track_mixer[12..14]
+        fb8 >> track_mixer[14..16]
+
+        { track_mixer }
+    "#;
+
+    /// The build-time port-range guard must reject a connection that reads a
+    /// port the node does not have (here `feedback` has only 2 outputs but the
+    /// graph reads `[2..4]`). Previously this slipped through to the audio thread
+    /// and panicked mid-process.
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn test_out_of_range_port_is_rejected_at_build() {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: 1024,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let ports = PortBuilder::default().audio_out(2).build();
+
+        let graph = r#"
+            audio {
+                track_mixer: feedback { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
+                delay_write: dw { delay_name: "d", delay_length: 100.0, chans: 2 }
+            }
+
+            feedback[2..4] >> dw
+
+            { feedback }
+        "#;
+
+        let _ = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(graph);
+    }
+
+    #[test]
+    fn test_resonant_filterbank_graph_builds() {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: 1024,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let ports = PortBuilder::default().audio_out(2).build();
+
+        // Sample data is loaded later via the frontend; the graph builds without it.
+        let (_app, _frontend) =
+            LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(DELAY_GRAPH);
+    }
 }

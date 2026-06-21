@@ -42,25 +42,57 @@ use crate::{
     simd::{LANES, Vf32},
 };
 
+/// Polynomial order used for the sine approximation. Higher is more spectrally
+/// pure; lower is cheaper. Low/Med are intended for audio-rate modulation
+/// sources (e.g. delay-line modulators) where harmonic purity is inaudible.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Quality {
+    /// order-3, ~5% peak error
+    Low,
+    /// order-5
+    Med,
+    /// order-7
+    #[default]
+    High,
+}
+
+impl Quality {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "low" | "3" => Some(Quality::Low),
+            "med" | "medium" | "5" => Some(Quality::Med),
+            "high" | "7" => Some(Quality::High),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Sine {
     freq: f32,
     phase: f32,
+    quality: Quality,
     ports: Ports,
 }
 
 impl Sine {
-    pub fn new(freq: f32, chans: usize) -> Self {
+    pub fn new(freq: f32) -> Self {
+        Self::with_quality(freq, Quality::default())
+    }
+
+    pub fn with_quality(freq: f32, quality: Quality) -> Self {
         Self {
             freq,
             phase: 0.0,
+            quality,
             ports: PortBuilder::default()
                 .audio_in_named(&["freq"])
-                .audio_out(chans)
+                .audio_out(1)
                 .build(),
         }
     }
-    fn process_external_freq(
+
+    fn process_external_freq<const ORDER: usize>(
         &mut self,
         ctx: &mut AudioContext,
         fm_in: &[f32],
@@ -81,7 +113,7 @@ impl Sine {
 
             self.phase = phase.as_array()[LANES - 1];
 
-            let sample = sin_turns_7(phase);
+            let sample = sin_turns::<ORDER, LANES>(phase);
 
             let start = n * LANES;
             let end = start + LANES;
@@ -94,7 +126,11 @@ impl Sine {
         }
     }
 
-    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+    fn process_internal_freq<const ORDER: usize>(
+        &mut self,
+        ctx: &mut AudioContext,
+        ao: &mut [&mut [f32]],
+    ) {
         let config = ctx.get_config();
         let freq = Vf32::splat(self.freq);
 
@@ -113,7 +149,7 @@ impl Sine {
 
             self.phase = phase.as_array()[LANES - 1];
 
-            let sample = sin_turns_7(phase);
+            let sample = sin_turns::<ORDER, LANES>(phase);
 
             let start = i * LANES;
             let end = start + LANES;
@@ -127,10 +163,13 @@ impl Sine {
 
 impl Node for Sine {
     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        if let Some(fm_in) = ai[0] {
-            self.process_external_freq(ctx, fm_in, ao);
-        } else {
-            self.process_internal_freq(ctx, ao);
+        match (self.quality, ai[0]) {
+            (Quality::High, Some(fm)) => self.process_external_freq::<7>(ctx, fm, ao),
+            (Quality::High, None) => self.process_internal_freq::<7>(ctx, ao),
+            (Quality::Med, Some(fm)) => self.process_external_freq::<5>(ctx, fm, ao),
+            (Quality::Med, None) => self.process_internal_freq::<5>(ctx, ao),
+            (Quality::Low, Some(fm)) => self.process_external_freq::<3>(ctx, fm, ao),
+            (Quality::Low, None) => self.process_internal_freq::<3>(ctx, ao),
         }
     }
 
@@ -160,15 +199,25 @@ impl NodeDefinition for Sine {
     const NAME: &'static str = "sine";
     const DESCRIPTION: &'static str = "Sine wave oscillator with optional FM input";
     const REQUIRED_PARAMS: &'static [&'static str] = &[];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans", "quality"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let freq = p.get_f32("freq").unwrap_or(440.0);
-        let chans = p.get_usize("chans").unwrap_or(2);
-        Ok(Box::new(Self::new(freq, chans)))
+        let quality = p
+            .get_str("quality")
+            .map(|s| {
+                Quality::from_str(&s).ok_or_else(|| {
+                    ValidationError::InvalidParameter(
+                        "quality must be one of: low/3, med/5, high/7".into(),
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok(Box::new(Self::with_quality(freq, quality)))
     }
 }
 
@@ -180,34 +229,42 @@ fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LAN
 }
 
 #[inline(always)]
-fn sin_turns_mhalfpi_halfpi_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+fn sin_turns_mhalfpi_halfpi<const ORDER: usize, const LANES: usize>(
+    x: Simd<f32, LANES>,
+) -> Simd<f32, LANES> {
     let x_sq = x * x;
-    let x_q = x_sq * x_sq;
 
-    let c1 = Simd::splat(-25.132_366_f32);
-    let c3 = Simd::splat(64.787_45_f32);
-    let c5 = Simd::splat(-66.094_78_f32);
-    let c7 = Simd::splat(32.026_8_f32);
+    let y = match ORDER {
+        3 => {
+            // -24.6941916306 x + 50.1403295328 x^3
+            let x_1_3 = Simd::splat(-24.694_19_f32) + Simd::splat(50.140_33_f32) * x_sq;
+            x * x_1_3
+        }
+        5 => {
+            // -25.1167285815 x + 63.6615119634 x^3 - 54.0847297225 x^5
+            let x_3_5 = Simd::splat(63.661_51_f32) + Simd::splat(-54.084_73_f32) * x_sq;
+            let x_1_3_5 = Simd::splat(-25.116_73_f32) + x_3_5 * x_sq;
+            x * x_1_3_5
+        }
+        _ => {
+            // order-7: -25.1323666662 x + 64.7874540567 x^3 - 66.0947787168 x^5 + 32.0267973181 x^7
+            let x_q = x_sq * x_sq;
+            let x_5_7 = Simd::splat(-66.094_78_f32) + Simd::splat(32.026_8_f32) * x_sq;
+            let x_1_3 = Simd::splat(-25.132_366_f32) + Simd::splat(64.787_45_f32) * x_sq;
+            let x_1_3_5_7 = x_1_3 + x_5_7 * x_q;
+            x * x_1_3_5_7
+        }
+    };
 
-    let x_5_7 = c5 + c7 * x_sq;
-    let x_1_3 = c1 + c3 * x_sq;
-    let x_1_3_5_7 = x_1_3 + x_5_7 * x_q;
-
-    let y = x * x_1_3_5_7;
     y * (x + Simd::splat(0.5)) * (x - Simd::splat(0.5))
 }
 
 #[inline(always)]
-fn sin_turns_7<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+fn sin_turns<const ORDER: usize, const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_wrapped = fast_mod_mhalf_half(x);
-    sin_turns_mhalfpi_halfpi_7(x_wrapped)
+    sin_turns_mhalfpi_halfpi::<ORDER, LANES>(x_wrapped)
 }
 
-// End of BSD-3 Code
-
-/// Utility to perform prefix scan.
-///
-/// Note: branches probably compiled away
 pub fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     // TODO: a nicer way
     let t1 = x.shift_elements_right::<1>(0.0);
@@ -231,7 +288,7 @@ pub fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES
 
 #[cfg(test)]
 mod test {
-    use crate::nodes::audio::sine::simd_scan;
+    use super::{simd_scan, sin_turns};
 
     #[test]
     fn check_prefix_sum_block_simd() {
@@ -257,5 +314,23 @@ mod test {
         assert_eq!(expected_two, simd_scan(input_two));
         assert_eq!(expected_three, simd_scan(input_three));
         assert_eq!(expected_four, simd_scan(input_four));
+    }
+
+    fn max_err<const ORDER: usize>() -> f32 {
+        let mut worst = 0.0f32;
+        for i in 0..1000 {
+            let turns = i as f32 / 1000.0 - 0.5;
+            let approx = sin_turns::<ORDER, 1>(std::simd::Simd::splat(turns)).as_array()[0];
+            let exact = (turns * std::f32::consts::TAU).sin();
+            worst = worst.max((approx - exact).abs());
+        }
+        worst
+    }
+
+    #[test]
+    fn quality_orders_bounded() {
+        assert!(max_err::<7>() < 1e-3, "order-7 too inaccurate");
+        assert!(max_err::<5>() < 1e-2, "order-5 too inaccurate");
+        assert!(max_err::<3>() < 1e-1, "order-3 too inaccurate");
     }
 }
