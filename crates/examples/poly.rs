@@ -31,10 +31,10 @@ fn main() {
                 delay_write: dw3 { delay_name: "d_c", delay_length: 1500.0, chans: 2 },
                 delay_write: dw4 { delay_name: "d_d", delay_length: 2500.0, chans: 2 },
 
-                delay_read: dr1 { delay_name: "d_a", chans: 2, delay_length: [ 557,  613  ] },
-                delay_read: dr2 { delay_name: "d_b", chans: 2, delay_length: [ 809,  877  ] },
-                delay_read: dr3 { delay_name: "d_c", chans: 2, delay_length: [ 1201, 1327 ] },
-                delay_read: dr4 { delay_name: "d_d", chans: 2, delay_length: [ 2137, 2311 ] },
+                delay_read: dr1 { delay_name: "d_a", chans: 2, delay_length: 557 },
+                delay_read: dr2 { delay_name: "d_b", chans: 2, delay_length: 809 },
+                delay_read: dr3 { delay_name: "d_c", chans: 2, delay_length: 1201 },
+                delay_read: dr4 { delay_name: "d_d", chans: 2, delay_length: 2137 },
 
                 // Per-tap diffusers
                 allpass: ap_tap1 { delay_length: 17.0, feedback: 0.4, chans: 2 },
