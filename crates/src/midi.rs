@@ -429,6 +429,11 @@ pub fn start_midi_thread(
     input.ignore(Ignore::SysexAndActiveSense);
 
     let in_ports = input.ports();
+    
+    for p in &input.ports() {
+        eprintln!("midir in: {:?}", input.port_name(p));
+    }
+
     // Find our port index from the enum passed in
     let in_port_index = in_port
         .select_port_in(&input)
@@ -725,38 +730,35 @@ pub enum MidiPortKind {
 
 impl MidiPortKind {
     pub fn select_port_in(&self, midi_input: &MidiInput) -> Result<usize, MidiError> {
-        match self {
-            MidiPortKind::Default => Ok(0),
-            MidiPortKind::Index(i) => Ok(*i),
-            MidiPortKind::Named(name) => {
-                if let Some(idx) = midi_input
-                    .ports()
-                    .iter()
-                    .position(|x| midi_input.port_name(x).unwrap() == *name)
-                {
-                    Ok(idx)
-                } else {
-                    Err(MidiError::InvalidPort)
-                }
-            }
-        }
+        let n = midi_input.ports().len();
+        let idx = match self {
+            MidiPortKind::Default => 0,
+            MidiPortKind::Index(i) => *i,
+            MidiPortKind::Named(name) => midi_input
+                .ports()
+                .iter()
+                .position(|x| {
+                    midi_input.port_name(x).map_or(false, |n| n.contains(name))
+                })
+                .ok_or(MidiError::InvalidPort)?,
+        };
+        if idx < n { Ok(idx) } else { Err(MidiError::InvalidPort) }
     }
+
     pub fn select_port_out(&self, midi_output: &MidiOutput) -> Result<usize, MidiError> {
-        match self {
-            MidiPortKind::Default => Ok(0),
-            MidiPortKind::Index(i) => Ok(*i),
-            MidiPortKind::Named(name) => {
-                if let Some(idx) = midi_output
-                    .ports()
-                    .iter()
-                    .position(|x| midi_output.port_name(x).unwrap() == *name)
-                {
-                    Ok(idx)
-                } else {
-                    Err(MidiError::InvalidPort)
-                }
-            }
-        }
+        let n = midi_output.ports().len();
+        let idx = match self {
+            MidiPortKind::Default => 0,
+            MidiPortKind::Index(i) => *i,
+            MidiPortKind::Named(name) => midi_output
+                .ports()
+                .iter()
+                .position(|x| {
+                    midi_output.port_name(x).map_or(false, |n| n.contains(name))
+                })
+                .ok_or(MidiError::InvalidPort)?,
+        };
+        if idx < n { Ok(idx) } else { Err(MidiError::InvalidPort) }
     }
 }
 
