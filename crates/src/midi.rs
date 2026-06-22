@@ -462,7 +462,7 @@ pub fn start_midi_thread(
             },
             (),
         )
-        .map_err(|x| MidiError::ConnectionError(x.to_string()))?;
+    .map_err(|x| MidiError::ConnectionError(format!("input connect: {x}")))?;
 
     let output = MidiOutput::new(client_name).expect("Could not create MidiOutput device!");
 
@@ -478,8 +478,7 @@ pub fn start_midi_thread(
 
     let mut output_connection = output
         .connect(output_port, port_name)
-        .map_err(|x| MidiError::ConnectionError(x.to_string()))
-        .unwrap();
+        .map_err(|x| MidiError::ConnectionError(format!("output connect: {x}")))?;
 
     // Spawning the writer thread, we keep the handle as we will use this on the MidiRuntime struct
     let writer_handle = std::thread::spawn(move || {
