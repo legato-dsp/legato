@@ -73,6 +73,7 @@ impl Resources {
         }
     }
 
+    #[inline(always)]
     pub fn delay_line_view(&self, key: DelayLineKey) -> DelayLineView<'_> {
         let delay = self.delay_lines.get(key).expect("Invalid delay key");
         let data = self.arena.slice(delay.get_window());

@@ -1,9 +1,11 @@
+use std::simd::{Simd, num::{SimdFloat, SimdUint}};
+
 use crate::{
-    math::{cubic_hermite, lerp},
-    resources::window::Window,
+    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp}, resources::window::Window, simd::{Vf32, Vidx},
 };
 
 #[derive(Clone)]
+/// A power of two delay line implementation using an underlying window into a continous resource buffer.
 pub struct ResourceDelay {
     cursor: usize,
     mask: usize, // Must be capacity - 1
@@ -74,6 +76,30 @@ impl ResourceDelay {
     }
 
     #[inline(always)]
+    pub fn get_delay_cubic_simd(&self, data: &[f32], offsets: Vf32) -> Vf32 {
+        debug_assert_eq!(self.window.len, data.len());
+
+        let mask = Vidx::splat(self.mask as u32);
+        let cursor = Vidx::splat(self.cursor as u32);
+
+        let floor = offsets.simd_max(Vf32::splat(0.0)).cast::<u32>();
+        let frac = offsets - floor.cast::<f32>();
+
+        let i1 = (cursor + mask - floor) & mask;
+        let i0 = (i1 + ONE_VIDX) & mask;
+        let i2 = (i1 + mask) & mask;
+        let i3 = (i1 + mask - ONE_VIDX) & mask;
+
+        let gather = |idx: Vidx| -> Vf32 {
+            Vf32::from_array(std::array::from_fn(|k| unsafe {
+                *data.get_unchecked(idx.as_array()[k] as usize)
+            }))
+        };
+
+        cubic_hermite_simd(gather(i0), gather(i1), gather(i2), gather(i3), frac)
+    }
+
+    #[inline(always)]
     pub fn get_window(&self) -> Window {
         self.window
     }
@@ -100,6 +126,11 @@ impl<'a> DelayLineView<'a> {
     #[inline(always)]
     pub fn read_cubic(&self, offset: f32) -> f32 {
         self.delay.get_delay_cubic(self.data, offset)
+    }
+
+    #[inline(always)]
+    pub fn read_cubic_simd(&self, offsets: Vf32) -> Vf32 {
+        self.delay.get_delay_cubic_simd(self.data, offsets)
     }
 }
 

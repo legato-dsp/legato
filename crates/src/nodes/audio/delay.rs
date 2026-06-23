@@ -143,15 +143,11 @@ impl Node for DelayRead {
 
             for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
                 let chunk_start = LANES * cidx;
-
                 let offsets = Vf32::from_array(std::array::from_fn(|lane| {
                     delay_time * sr + (block_size - (chunk_start + lane)) as f32
                 }));
-
-                // TODO: Future experimentations here
-                for (lane, out) in chunk.iter_mut().enumerate() {
-                    *out = view.read_cubic(offsets.as_array()[lane]);
-                }
+                let out = view.read_cubic_simd(offsets);
+                chunk.copy_from_slice(out.as_array());
             }
         }
     }
