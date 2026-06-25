@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use crate::{dsl::ir::*, nodes::audio::pan};
+use crate::dsl::ir::*;
 use std::collections::HashMap;
 
 /// Convert the ASTMacro to the IRMacro

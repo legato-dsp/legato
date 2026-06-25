@@ -59,10 +59,7 @@ pub enum Plan<S, T> {
 /// - `(n, 1)` with `n > 1` → [`Plan::ManyToOne`]
 /// - either side empty → empty [`Plan::Zip`] (nothing to wire)
 /// - otherwise → [`BroadcastError`]
-pub fn broadcast<S: Clone, T: Clone>(
-    srcs: &[S],
-    snks: &[T],
-) -> Result<Plan<S, T>, BroadcastError> {
+pub fn broadcast<S: Clone, T: Clone>(srcs: &[S], snks: &[T]) -> Result<Plan<S, T>, BroadcastError> {
     match (srcs.len(), snks.len()) {
         (0, _) | (_, 0) => Ok(Plan::Zip(Vec::new())),
         (s, t) if s == t => Ok(Plan::Zip(

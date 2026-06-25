@@ -91,7 +91,12 @@ impl Comb {
         }
     }
 
-    fn process_static(&mut self, _: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+    fn process_static(
+        &mut self,
+        _: &mut AudioContext,
+        inputs: &Inputs,
+        outputs: &mut [&mut [f32]],
+    ) {
         let delay_length_samples = self.delay_length_samples.clamp(1.0, self.cap as f32);
         let feedback = self.feedback;
 
@@ -246,7 +251,12 @@ impl CombLp {
         }
     }
 
-    fn process_static(&mut self, _: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+    fn process_static(
+        &mut self,
+        _: &mut AudioContext,
+        inputs: &Inputs,
+        outputs: &mut [&mut [f32]],
+    ) {
         let delay_length_samples = self.delay_length_samples.clamp(1.0, self.cap as f32);
         let feedback = self.feedback;
         let damp = self.damp;
