@@ -5,74 +5,8 @@ use crate::{
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::DelayLineKey,
-    ring::RingBuffer,
     simd::{LANES, Vf32},
 };
-
-#[derive(Clone, Debug)]
-pub struct DelayLine {
-    buffers: Vec<RingBuffer>,
-    write_pos: Vec<usize>,
-}
-
-impl Default for DelayLine {
-    fn default() -> Self {
-        Self {
-            buffers: vec![RingBuffer::new(1024), RingBuffer::new(1024)],
-            write_pos: vec![0, 0],
-        }
-    }
-}
-
-impl DelayLine {
-    pub fn new(capacity: usize, chans: usize) -> Self {
-        let buffers = vec![RingBuffer::new(capacity); chans];
-        Self {
-            buffers,
-            write_pos: vec![0; chans],
-        }
-    }
-    #[inline(always)]
-    pub fn get_write_pos(&self, channel: usize) -> &usize {
-        &self.write_pos[channel]
-    }
-
-    #[inline(always)]
-    pub fn write_block(&mut self, block: &Inputs) {
-        for (c, chan_outer) in block.iter().enumerate() {
-            if let Some(chan) = chan_outer {
-                for chunk in chan.chunks_exact(LANES) {
-                    self.buffers[c].push_simd(&Vf32::from_slice(chunk));
-                }
-            }
-        }
-    }
-
-    #[inline(always)]
-    pub fn get_delay_linear_interp(&self, channel: usize, offset: f32) -> f32 {
-        let buffer = &self.buffers[channel];
-        buffer.get_delay_linear(offset)
-    }
-
-    #[inline(always)]
-    pub fn get_delay_cubic_interp(&self, channel: usize, offset: f32) -> f32 {
-        let buffer = &self.buffers[channel];
-        buffer.get_delay_cubic(offset)
-    }
-
-    #[inline(always)]
-    // This gives an SIMD "chunk" of size LANES after the offset
-    pub fn get_delay_linear_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
-        let buffer = &self.buffers[channel];
-        buffer.get_delay_linear_simd(offset)
-    }
-
-    #[inline(always)]
-    pub fn get_delay_cubic_interp_simd(&self, channel: usize, offset: Vf32) -> Vf32 {
-        let buffer = &self.buffers[channel];
-        buffer.get_delay_cubic_simd(offset)
-    }
-}
 
 #[derive(Clone)]
 pub struct DelayWrite {
@@ -114,7 +48,7 @@ impl Node for DelayWrite {
 pub enum DelayQuality {
     /// Cheaper Linear Interpolation
     Linear,
-    /// 4-point cubic Hermite Interpolation
+    /// More Expensive Cubic Hermite Interpolation
     #[default]
     Cubic,
 }
@@ -140,10 +74,8 @@ impl DelayRead {
             ports: PortBuilder::default().audio_out(chans).build(),
         }
     }
-}
 
-impl Node for DelayRead {
-    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+    fn process_linear(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let block_size = config.block_size;
         let sr = config.sample_rate as f32;
@@ -161,20 +93,43 @@ impl Node for DelayRead {
                 }))
             };
 
-            match self.quality {
-                DelayQuality::Linear => {
-                    for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
-                        let out = view.read_linear_simd(offsets(cidx));
-                        chunk.copy_from_slice(out.as_array());
-                    }
-                }
-                DelayQuality::Cubic => {
-                    for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
-                        let out = view.read_cubic_simd(offsets(cidx));
-                        chunk.copy_from_slice(out.as_array());
-                    }
-                }
+            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                let out = view.read_linear_simd(offsets(cidx));
+                chunk.copy_from_slice(out.as_array());
             }
+        }
+    }
+    fn process_cubic(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+        let config = ctx.get_config();
+        let block_size = config.block_size;
+        let sr = config.sample_rate as f32;
+
+        let resources = ctx.get_resources();
+
+        for (c, chan) in ao.iter_mut().enumerate() {
+            let delay_time = self.delay_times[c].as_secs_f32();
+            let view = resources.delay_line_view(self.delay_line_keys[c]);
+
+            let offsets = |cidx: usize| -> Vf32 {
+                let chunk_start = LANES * cidx;
+                Vf32::from_array(std::array::from_fn(|lane| {
+                    delay_time * sr + (block_size - (chunk_start + lane)) as f32
+                }))
+            };
+
+            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                let out = view.read_cubic_simd(offsets(cidx));
+                chunk.copy_from_slice(out.as_array());
+            }
+        }
+    }
+}
+
+impl Node for DelayRead {
+    fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, ao: &mut [&mut [f32]]) {
+        match self.quality {
+            DelayQuality::Linear => self.process_linear(ctx, ao),
+            DelayQuality::Cubic => self.process_cubic(ctx, ao),
         }
     }
     fn ports(&self) -> &Ports {
@@ -184,48 +139,10 @@ impl Node for DelayRead {
 
 #[cfg(test)]
 mod test_delay_simd_equivalence {
+    use crate::ring::RingBuffer;
+
     use super::*;
     use rand::Rng;
-
-    #[test]
-    fn scalar_and_simd_reads_match() {
-        const CHANS: usize = 1;
-        const CAP: usize = 4096;
-        const BLOCK: usize = 256;
-
-        let mut dl = DelayLine::new(CAP, CHANS);
-
-        let mut inputs_raw: Box<[f32]> = vec![0.0; BLOCK].into_boxed_slice();
-
-        let mut rng = rand::rng();
-
-        for s in inputs_raw.iter_mut() {
-            *s = rng.random::<f32>();
-        }
-
-        let mut inputs: [Option<&[f32]>; 1] = [None; 1];
-
-        inputs[0] = Some(&inputs_raw);
-
-        dl.write_block(&inputs);
-
-        for _ in 0..10_000 {
-            let off = rng.random::<f32>() * (CAP as f32 - 4.0);
-
-            let s = dl.get_delay_linear_interp(0, off);
-
-            let off_simd = Vf32::from_array(std::array::from_fn(|_| off));
-            let v = dl.get_delay_linear_interp_simd(0, off_simd);
-
-            // all SIMD lanes must match the scalar sample
-            for lane in v.as_array().iter() {
-                assert!(
-                    (lane - s).abs() < 1e-5,
-                    "SIMD mismatch: scalar={s}, simd={lane}, offset={off}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn scalar_and_simd_writes_match() {
