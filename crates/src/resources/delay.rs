@@ -1,7 +1,12 @@
-use std::simd::{Simd, num::{SimdFloat, SimdUint}};
+use std::simd::{
+    Simd,
+    num::{SimdFloat, SimdUint},
+};
 
 use crate::{
-    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd}, resources::window::Window, simd::{Vf32, Vidx},
+    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    resources::window::Window,
+    simd::{Vf32, Vidx},
 };
 
 #[derive(Clone)]
