@@ -60,7 +60,12 @@ fn main() {
                 sine: lfo5 { freq: 0.07 },
                 sine: lfo6 { freq: 0.23 },
 
-                track_mixer: feedback    { tracks: 4, chans_per_track: 2, gain: [0.1, 0.1, 0.1, 0.1] },
+                // Feedback is an 8-channel gain stage (NOT a mix-down): channel
+                // mixing is already done by the loop `hadamard`, and the 8 channels
+                // must be routed back intact to the 4 stereo delays below. A 4x2
+                // track_mixer would collapse to 2 outputs and `feedback[2..8]`
+                // would read non-existent ports.
+                track_mixer: feedback    { tracks: 1, chans_per_track: 8, gain: [0.5] },
                 track_mixer: hm_mix_down { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
                 track_mixer: wet_dry     { tracks: 2, chans_per_track: 2, gain: [0.5, 0.8] },
             }
