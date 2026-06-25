@@ -38,8 +38,8 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        block_size: 1024,
+        sample_rate: 44_100,
+        block_size: 4096,
         channels: 2,
         rt_capacity: 0,
     };

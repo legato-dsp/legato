@@ -1,7 +1,7 @@
 use std::simd::{Simd, num::{SimdFloat, SimdUint}};
 
 use crate::{
-    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp}, resources::window::Window, simd::{Vf32, Vidx},
+    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd}, resources::window::Window, simd::{Vf32, Vidx},
 };
 
 #[derive(Clone)]
@@ -76,6 +76,28 @@ impl ResourceDelay {
     }
 
     #[inline(always)]
+    pub fn get_delay_linear_simd(&self, data: &[f32], offsets: Vf32) -> Vf32 {
+        debug_assert_eq!(self.window.len, data.len());
+
+        let mask = Vidx::splat(self.mask as u32);
+        let cursor = Vidx::splat(self.cursor as u32);
+
+        let floor = offsets.simd_max(Vf32::splat(0.0)).cast::<u32>();
+        let frac = offsets - floor.cast::<f32>();
+
+        let base = (cursor + mask - floor) & mask;
+        let prev = (base + mask) & mask;
+
+        let gather = |idx: Vidx| -> Vf32 {
+            Vf32::from_array(std::array::from_fn(|k| unsafe {
+                *data.get_unchecked(idx.as_array()[k] as usize)
+            }))
+        };
+
+        lerp_simd(gather(base), gather(prev), frac)
+    }
+
+    #[inline(always)]
     pub fn get_delay_cubic_simd(&self, data: &[f32], offsets: Vf32) -> Vf32 {
         debug_assert_eq!(self.window.len, data.len());
 
@@ -126,6 +148,11 @@ impl<'a> DelayLineView<'a> {
     #[inline(always)]
     pub fn read_cubic(&self, offset: f32) -> f32 {
         self.delay.get_delay_cubic(self.data, offset)
+    }
+
+    #[inline(always)]
+    pub fn read_linear_simd(&self, offsets: Vf32) -> Vf32 {
+        self.delay.get_delay_linear_simd(self.data, offsets)
     }
 
     #[inline(always)]
@@ -198,6 +225,32 @@ mod tests {
     #[should_panic]
     fn test_non_power_of_two() {
         let _ = ResourceDelay::new(Window { len: 3, start: 0 });
+    }
+
+    #[test]
+    fn linear_scalar_and_simd_match() {
+        let size = 4096;
+        let mut buffer = vec![0.0; size];
+        let mut delay = ResourceDelay::new(Window {
+            len: size,
+            start: 0,
+        });
+
+        for i in 0..size {
+            delay.push(&mut buffer, i as f32);
+        }
+
+        for i in 1..1024 {
+            let off = i as f32 + 0.37;
+            let scalar = delay.get_delay_linear(&buffer, off);
+            let simd = delay.get_delay_linear_simd(&buffer, Vf32::splat(off));
+            for lane in simd.as_array() {
+                assert!(
+                    (lane - scalar).abs() < 1e-4,
+                    "linear SIMD mismatch: scalar={scalar}, simd={lane}, offset={off}"
+                );
+            }
+        }
     }
 
     #[test]
