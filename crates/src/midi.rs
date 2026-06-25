@@ -736,7 +736,7 @@ impl MidiPortKind {
             MidiPortKind::Named(name) => midi_input
                 .ports()
                 .iter()
-                .position(|x| midi_input.port_name(x).map_or(false, |n| n.contains(name)))
+                .position(|x| midi_input.port_name(x).is_ok_and(|n| n.contains(name)))
                 .ok_or(MidiError::InvalidPort)?,
         };
         if idx < n {
@@ -754,7 +754,7 @@ impl MidiPortKind {
             MidiPortKind::Named(name) => midi_output
                 .ports()
                 .iter()
-                .position(|x| midi_output.port_name(x).map_or(false, |n| n.contains(name)))
+                .position(|x| midi_output.port_name(x).is_ok_and(|n| n.contains(name)))
                 .ok_or(MidiError::InvalidPort)?,
         };
         if idx < n {

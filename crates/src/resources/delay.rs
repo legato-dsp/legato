@@ -1,7 +1,4 @@
-use std::simd::{
-    Simd,
-    num::{SimdFloat, SimdUint},
-};
+use std::simd::num::{SimdFloat, SimdUint};
 
 use crate::{
     math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
