@@ -176,6 +176,61 @@ fn bench_stereo_delay(c: &mut Criterion) {
     });
 }
 
+fn bench_delay_quality(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 44_100,
+        rt_capacity: 0,
+    };
+
+    let build = |quality: &str| {
+        let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
+        let graph = format!(
+            r#"
+                audio {{
+                    delay_write {{ delay_name: "a", chans: 2, delay_length: 1000 }},
+                    delay_read {{ delay_name: "a", chans: 2, delay_length: [120, 240], quality: "{quality}" }}
+                }}
+
+                {{ delay_read }}
+            "#
+        );
+        let (app, _) = LegatoBuilder::new(config, ports).build_dsl(&graph);
+        app
+    };
+
+    let ai: &[Box<[f32]>] = &[
+        vec![0.0; config.block_size].into(),
+        vec![0.0; config.block_size].into(),
+    ];
+
+    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
+    for (i, x) in ai.iter().enumerate() {
+        inputs[i] = Some(&x)
+    }
+
+    let mut group = c.benchmark_group("Delay interpolation quality");
+
+    let mut linear = build("linear");
+    group.bench_function("linear", |b| {
+        b.iter(|| {
+            let out = linear.next_block(Some(black_box(&inputs)));
+            black_box(out);
+        });
+    });
+
+    let mut cubic = build("cubic");
+    group.bench_function("cubic", |b| {
+        b.iter(|| {
+            let out = cubic.next_block(Some(black_box(&inputs)));
+            black_box(out);
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_oversampler(c: &mut Criterion) {
     let config = Config {
         block_size: 4096,
@@ -351,6 +406,7 @@ criterion_group!(
     bench_stereo_saw,
     bench_fir,
     bench_stereo_delay,
+    bench_delay_quality,
     bench_svf,
     bench_oversampler,
     bench_kitchen_sink

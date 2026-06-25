@@ -429,7 +429,7 @@ pub fn start_midi_thread(
     input.ignore(Ignore::SysexAndActiveSense);
 
     let in_ports = input.ports();
-    
+
     for p in &input.ports() {
         eprintln!("midir in: {:?}", input.port_name(p));
     }
@@ -462,7 +462,7 @@ pub fn start_midi_thread(
             },
             (),
         )
-    .map_err(|x| MidiError::ConnectionError(format!("input connect: {x}")))?;
+        .map_err(|x| MidiError::ConnectionError(format!("input connect: {x}")))?;
 
     let output = MidiOutput::new(client_name).expect("Could not create MidiOutput device!");
 
@@ -736,12 +736,14 @@ impl MidiPortKind {
             MidiPortKind::Named(name) => midi_input
                 .ports()
                 .iter()
-                .position(|x| {
-                    midi_input.port_name(x).map_or(false, |n| n.contains(name))
-                })
+                .position(|x| midi_input.port_name(x).is_ok_and(|n| n.contains(name)))
                 .ok_or(MidiError::InvalidPort)?,
         };
-        if idx < n { Ok(idx) } else { Err(MidiError::InvalidPort) }
+        if idx < n {
+            Ok(idx)
+        } else {
+            Err(MidiError::InvalidPort)
+        }
     }
 
     pub fn select_port_out(&self, midi_output: &MidiOutput) -> Result<usize, MidiError> {
@@ -752,12 +754,14 @@ impl MidiPortKind {
             MidiPortKind::Named(name) => midi_output
                 .ports()
                 .iter()
-                .position(|x| {
-                    midi_output.port_name(x).map_or(false, |n| n.contains(name))
-                })
+                .position(|x| midi_output.port_name(x).is_ok_and(|n| n.contains(name)))
                 .ok_or(MidiError::InvalidPort)?,
         };
-        if idx < n { Ok(idx) } else { Err(MidiError::InvalidPort) }
+        if idx < n {
+            Ok(idx)
+        } else {
+            Err(MidiError::InvalidPort)
+        }
     }
 }
 

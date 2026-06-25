@@ -109,10 +109,21 @@ impl Node for DelayWrite {
     }
 }
 
+/// Interpolation quality used when reading from the delay line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DelayQuality {
+    /// Cheaper Linear Interpolation
+    Linear,
+    /// 4-point cubic Hermite Interpolation
+    #[default]
+    Cubic,
+}
+
 #[derive(Clone)]
 pub struct DelayRead {
     delay_line_keys: Vec<DelayLineKey>,
     delay_times: Vec<Duration>, // Different times for each channel if desired
+    quality: DelayQuality,
     ports: Ports,
 }
 impl DelayRead {
@@ -120,10 +131,12 @@ impl DelayRead {
         chans: usize,
         delay_line_keys: Vec<DelayLineKey>,
         delay_times: Vec<Duration>,
+        quality: DelayQuality,
     ) -> Self {
         Self {
             delay_line_keys,
             delay_times,
+            quality,
             ports: PortBuilder::default().audio_out(chans).build(),
         }
     }
@@ -141,16 +154,25 @@ impl Node for DelayRead {
             let delay_time = self.delay_times[c].as_secs_f32();
             let view = resources.delay_line_view(self.delay_line_keys[c]);
 
-            for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+            let offsets = |cidx: usize| -> Vf32 {
                 let chunk_start = LANES * cidx;
-
-                let offsets = Vf32::from_array(std::array::from_fn(|lane| {
+                Vf32::from_array(std::array::from_fn(|lane| {
                     delay_time * sr + (block_size - (chunk_start + lane)) as f32
-                }));
+                }))
+            };
 
-                // TODO: Future experimentations here
-                for (lane, out) in chunk.iter_mut().enumerate() {
-                    *out = view.read_cubic(offsets.as_array()[lane]);
+            match self.quality {
+                DelayQuality::Linear => {
+                    for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                        let out = view.read_linear_simd(offsets(cidx));
+                        chunk.copy_from_slice(out.as_array());
+                    }
+                }
+                DelayQuality::Cubic => {
+                    for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
+                        let out = view.read_cubic_simd(offsets(cidx));
+                        chunk.copy_from_slice(out.as_array());
+                    }
                 }
             }
         }
@@ -299,7 +321,7 @@ impl NodeDefinition for DelayRead {
     const DESCRIPTION: &'static str =
         "Reads audio from a named shared delay line with interpolation";
     const REQUIRED_PARAMS: &'static [&'static str] = &["delay_name"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["delay_length", "chans", "quality"];
 
     fn create(
         rb: &mut ResourceBuilderView,
@@ -315,10 +337,18 @@ impl NodeDefinition for DelayRead {
 
         let chans = p.get_usize("chans").unwrap_or(2);
 
+        let quality = p
+            .get_str("quality")
+            .map_or(DelayQuality::default(), |q| match q.as_str() {
+                "linear" => DelayQuality::Linear,
+                "cubic" => DelayQuality::Cubic,
+                _ => panic!("Unknown delay quality '{q}', expected 'linear' or 'cubic'"),
+            });
+
         let key = rb
             .get_delay_line_key(&name)
             .unwrap_or_else(|| (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect());
 
-        Ok(Box::new(Self::new(chans, key, len)))
+        Ok(Box::new(Self::new(chans, key, len, quality)))
     }
 }
