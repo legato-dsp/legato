@@ -60,8 +60,15 @@ fn convert_macro(
         if ast_macro.virtual_ports_in.contains(&conn.source.node) {
             continue;
         }
-        let src = local_alias_to_id[&conn.source.node];
-        let snk = local_alias_to_id[&conn.sink.node];
+
+        let src = *local_alias_to_id
+            .get(&conn.source.node)
+            .unwrap_or_else(|| panic!("Could not find src node for alias {}", conn.source.node));
+
+        let snk = *local_alias_to_id
+            .get(&conn.sink.node)
+            .unwrap_or_else(|| panic!("Could not find sink node for alias {}", conn.sink.node));
+
         body.connect_multi(
             src,
             conn.source.node_selector.clone(),

@@ -10,6 +10,7 @@ use crate::{
         audio::{
             adsr::Adsr,
             allpass::Allpass,
+            comb::{Comb, CombLp},
             delay::{DelayRead, DelayWrite},
             external::ExternalInput,
             hadamard::HadamardMixer,
@@ -24,6 +25,7 @@ use crate::{
             sine::Sine,
             svf::Svf,
             sweep::Sweep,
+            tap::DelayTap,
         },
         control::{
             map::Map,
@@ -112,6 +114,9 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<Noise>();
     registry.register_node::<OnePole>();
     registry.register_node::<Allpass>();
+    registry.register_node::<Comb>();
+    registry.register_node::<CombLp>();
+    registry.register_node::<DelayTap>();
     registry.register_node::<HadamardMixer>();
     registry.register_node::<HouseholderMixer>();
     registry.register_node::<ExternalInput>();

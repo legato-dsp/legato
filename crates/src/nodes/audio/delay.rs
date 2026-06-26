@@ -56,7 +56,7 @@ pub enum DelayQuality {
 #[derive(Clone)]
 pub struct DelayRead {
     delay_line_keys: Vec<DelayLineKey>,
-    delay_times: Vec<Duration>, // Different times for each channel if desired
+    len: Duration, // Different times for each channel if desired
     quality: DelayQuality,
     ports: Ports,
 }
@@ -64,12 +64,12 @@ impl DelayRead {
     pub fn new(
         chans: usize,
         delay_line_keys: Vec<DelayLineKey>,
-        delay_times: Vec<Duration>,
+        len: Duration,
         quality: DelayQuality,
     ) -> Self {
         Self {
             delay_line_keys,
-            delay_times,
+            len,
             quality,
             ports: PortBuilder::default().audio_out(chans).build(),
         }
@@ -83,7 +83,7 @@ impl DelayRead {
         let resources = ctx.get_resources();
 
         for (c, chan) in ao.iter_mut().enumerate() {
-            let delay_time = self.delay_times[c].as_secs_f32();
+            let delay_time = self.len.as_secs_f32();
             let view = resources.delay_line_view(self.delay_line_keys[c]);
 
             let offsets = |cidx: usize| -> Vf32 {
@@ -107,7 +107,7 @@ impl DelayRead {
         let resources = ctx.get_resources();
 
         for (c, chan) in ao.iter_mut().enumerate() {
-            let delay_time = self.delay_times[c].as_secs_f32();
+            let delay_time = self.len.as_secs_f32();
             let view = resources.delay_line_view(self.delay_line_keys[c]);
 
             let offsets = |cidx: usize| -> Vf32 {
@@ -246,13 +246,13 @@ impl NodeDefinition for DelayRead {
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let name = p
             .get_str("delay_name")
-            .expect("Could not find required parameter sampler_name");
-
-        let len = p
-            .get_array_duration_ms("delay_length")
-            .unwrap_or(vec![Duration::from_secs(1); 2]);
+            .expect("Could not find required parameter delay_name");
 
         let chans = p.get_usize("chans").unwrap_or(2);
+
+        let delay_len = p
+            .get_duration_ms("delay_length")
+            .unwrap_or(Duration::from_secs(1));
 
         let quality = p
             .get_str("quality")
@@ -266,6 +266,6 @@ impl NodeDefinition for DelayRead {
             .get_delay_line_key(&name)
             .unwrap_or_else(|| (0..chans).map(|_| rb.add_delay_line(&name, 1024)).collect());
 
-        Ok(Box::new(Self::new(chans, key, len, quality)))
+        Ok(Box::new(Self::new(chans, key, delay_len, quality)))
     }
 }

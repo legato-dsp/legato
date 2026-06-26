@@ -1,4 +1,7 @@
-use crate::dsl::{expand::MacroExpansionPass, ir::*, lower::ast_to_graph, spawn::SpawnKNodesPass};
+use crate::dsl::{
+    expand::MacroExpansionPass, ir::*, lower::ast_to_graph, resolve::ResolvePass,
+    spawn::SpawnKNodesPass,
+};
 
 /// A single, named transformation of an [`IRGraph`].
 pub trait GraphPass {
@@ -41,5 +44,6 @@ impl Default for Pipeline {
         Self::new()
             .add_pass(MacroExpansionPass)
             .add_pass(SpawnKNodesPass)
+            .add_pass(ResolvePass)
     }
 }

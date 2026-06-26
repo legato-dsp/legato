@@ -1,5 +1,6 @@
 pub mod adsr;
 pub mod allpass;
+pub mod comb;
 pub mod delay;
 pub mod external;
 pub mod fir;
@@ -16,3 +17,4 @@ pub mod saw;
 pub mod sine;
 pub mod svf;
 pub mod sweep;
+pub mod tap;

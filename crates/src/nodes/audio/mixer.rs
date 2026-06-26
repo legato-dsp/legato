@@ -22,6 +22,20 @@ pub struct TrackMixer {
 
 impl TrackMixer {
     pub fn new(chans_per_track: usize, tracks: usize, gain: Vec<f32>) -> Self {
+        // `process` indexes one gain per track, so the gain vector must have
+        // exactly `tracks` entries. A single value is broadcast to every track
+        // (the common "uniform gain" case and the default), otherwise the
+        // length must match.
+        let gain = match gain.len() {
+            1 => vec![gain[0]; tracks],
+            n => {
+                assert_eq!(
+                    n, tracks,
+                    "TrackMixer gain length ({n}) must be 1 or equal to tracks ({tracks})"
+                );
+                gain
+            }
+        };
         Self {
             chans_per_track,
             gain: gain.into_iter().map(Vf32::splat).collect(),
@@ -129,6 +143,44 @@ impl NodeDefinition for TrackMixer {
             .get_array_f32("gain")
             .unwrap_or(vec![(1.0 / f32::sqrt(tracks as f32))]);
         Ok(Box::new(Self::new(chans_per_track, tracks, gain)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{
+        config::{BlockSize, Config},
+        harness::build_placeholder_context,
+        node::Node,
+    };
+
+    /// Regression: a single gain value must broadcast across all tracks. The
+    /// default `track_mixer` gain is one element, so an 8-track mixer used to
+    /// panic (`gain[1]` out of bounds) the first time `process` ran.
+    #[test]
+    fn track_mixer_single_gain_broadcasts_over_tracks() {
+        const BLOCK: usize = 64;
+        let config = Config::new(48_000, BlockSize::Block64, 2, 0);
+        let mut ctx = build_placeholder_context(config);
+
+        // tracks=8, chans_per_track=2 -> 16 inputs, 2 outputs.
+        let mut node = TrackMixer::new(2, 8, vec![0.5]);
+
+        let in_bufs = vec![vec![1.0f32; BLOCK]; 16];
+        let inputs: Vec<Option<&[f32]>> = in_bufs.iter().map(|b| Some(b.as_slice())).collect();
+
+        let mut out0 = [0.0f32; BLOCK];
+        let mut out1 = [0.0f32; BLOCK];
+        let mut outputs = [out0.as_mut_slice(), out1.as_mut_slice()];
+
+        // Must not panic, and must produce finite, non-zero output.
+        node.process(&mut ctx, &inputs, &mut outputs);
+        for chan in outputs.iter() {
+            for s in chan.iter() {
+                assert!(s.is_finite() && *s > 0.0, "unexpected mixer output {s}");
+            }
+        }
     }
 }
 

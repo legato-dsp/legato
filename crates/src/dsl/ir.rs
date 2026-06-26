@@ -41,6 +41,25 @@ pub enum Port {
     None,
 }
 
+/// A "pin" is a single connectable endpoint: one [`Port`] on one [`NodeId`]
+/// (the audio-graph analogue of an EDA netlist pin).
+///
+/// A `Pin` is exactly what the builder's connect API addresses — `Pin -> Pin`
+/// maps 1:1 onto a single `connect` call. It is the finalized, selector-free
+/// form an [`IREdge`] takes after the resolve stage, and the convenient unit
+/// for constructing graphs by hand in Rust (see [`IRGraph::connect_pin`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pin {
+    pub node: NodeId,
+    pub port: Port,
+}
+
+impl Pin {
+    pub fn new(node: NodeId, port: Port) -> Self {
+        Self { node, port }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AST types — produced by the parser, consumed by `ast_to_graph`
 // ---------------------------------------------------------------------------
@@ -279,6 +298,14 @@ impl IRGraph {
         });
     }
 
+    /// Add a directed edge between two finalized [`Pin`]s.
+    ///
+    /// This is the selector-free, hand-authoring counterpart to [`connect`].
+    /// Each `Pin -> Pin` edge maps 1:1 onto a single builder `connect` call.
+    pub fn connect_pin(&mut self, from: Pin, to: Pin) {
+        self.connect(from.node, from.port, to.node, to.port);
+    }
+
     /// Create an edge with explicit node selectors (multi-node connections).
     pub fn connect_multi(
         &mut self,
@@ -355,6 +382,14 @@ impl IRGraph {
             self.alias_index.remove(&node.alias);
         }
         self.edges.retain(|e| e.source != id && e.sink != id);
+    }
+
+    /// Remove and return all edges, leaving the graph edge-less.
+    ///
+    /// Used by passes that rebuild the wiring from scratch (e.g. the resolve
+    /// stage).
+    pub fn take_edges(&mut self) -> Vec<IREdge> {
+        std::mem::take(&mut self.edges)
     }
 
     pub fn nodes(&self) -> impl Iterator<Item = &IRNode> {

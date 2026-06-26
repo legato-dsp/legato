@@ -26,9 +26,9 @@ impl ApplyOp {
             apply_op,
             chans,
             ports: PortBuilder::default()
-                .audio_in(1)
+                .audio_in(chans)
                 .audio_in_named(&["val"])
-                .audio_out(1)
+                .audio_out(chans)
                 .build(),
         }
     }

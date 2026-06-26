@@ -14,8 +14,8 @@ fn main() {
         audio {
             sampler { sampler_name: "amen" },
             delay_write: dw1 { delay_name: "d_one", chans: 2 },
-            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 200, 240 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: [ 231, 257 ] },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: 200 },
+            delay_read: dr2 { delay_name: "d_one", chans: 1, delay_length: 231 },
             track_mixer { tracks: 3, chans_per_track: 2, gain: [1.0, 0.3, 0.2] },
             svf { chans: 2, cutoff: 2400.0, q: 0.2, type: "lowpass" },
         }

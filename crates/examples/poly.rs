@@ -31,10 +31,10 @@ fn main() {
                 delay_write: dw3 { delay_name: "d_c", delay_length: 1500.0, chans: 2 },
                 delay_write: dw4 { delay_name: "d_d", delay_length: 2500.0, chans: 2 },
 
-                delay_read: dr1 { delay_name: "d_a", chans: 2, delay_length: [ 557,  613  ] },
-                delay_read: dr2 { delay_name: "d_b", chans: 2, delay_length: [ 809,  877  ] },
-                delay_read: dr3 { delay_name: "d_c", chans: 2, delay_length: [ 1201, 1327 ] },
-                delay_read: dr4 { delay_name: "d_d", chans: 2, delay_length: [ 2137, 2311 ] },
+                delay_read: dr1 { delay_name: "d_a", chans: 2, delay_length: 557 },
+                delay_read: dr2 { delay_name: "d_b", chans: 2, delay_length: 809 },
+                delay_read: dr3 { delay_name: "d_c", chans: 2, delay_length: 1201 },
+                delay_read: dr4 { delay_name: "d_d", chans: 2, delay_length: 2137 },
 
                 // Per-tap diffusers
                 allpass: ap_tap1 { delay_length: 17.0, feedback: 0.4, chans: 2 },
@@ -53,14 +53,19 @@ fn main() {
                 allpass: loop_ap3 { delay_length: 14.0, feedback: 0.2, chans: 8 },
                 allpass: loop_ap4 { delay_length: 19.0, feedback: 0.2, chans: 8 },
 
-                sine: lfo1 { freq: 0.11 },
-                sine: lfo2 { freq: 0.13 },
-                sine: lfo3 { freq: 0.17 },
-                sine: lfo4 { freq: 0.19 },
-                sine: lfo5 { freq: 0.07 },
-                sine: lfo6 { freq: 0.23 },
+                sine: lfo1 { freq: 0.11, quality: "low" },
+                sine: lfo2 { freq: 0.13, quality: "low" },
+                sine: lfo3 { freq: 0.17, quality: "low" },
+                sine: lfo4 { freq: 0.19, quality: "low" },
+                sine: lfo5 { freq: 0.07, quality: "low" },
+                sine: lfo6 { freq: 0.23, quality: "low" },
 
-                track_mixer: feedback    { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
+                // Feedback is an 8-channel gain stage (NOT a mix-down): channel
+                // mixing is already done by the loop `hadamard`, and the 8 channels
+                // must be routed back intact to the 4 stereo delays below. A 4x2
+                // track_mixer would collapse to 2 outputs and `feedback[2..8]`
+                // would read non-existent ports.
+                track_mixer: feedback    { tracks: 1, chans_per_track: 8, gain: [0.5] },
                 track_mixer: hm_mix_down { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
                 track_mixer: wet_dry     { tracks: 2, chans_per_track: 2, gain: [0.5, 0.8] },
             }
@@ -172,8 +177,8 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        block_size: 1024,
+        sample_rate: 44_100,
+        block_size: 4096,
         channels: 2,
         rt_capacity: 0,
     };
