@@ -79,9 +79,10 @@ impl NodeRegistry {
         Ok(node)
     }
     pub fn declare_node(&mut self, spec: NodeSpec) {
-        self.data
-            .insert(spec.name.clone(), spec)
-            .expect("Could not declare node!");
+        // `HashMap::insert` returns the *previous* value (None for a new key), so
+        // `.expect()` here panicked on every first registration. A redefinition
+        // simply replaces the old spec.
+        self.data.insert(spec.name.clone(), spec);
     }
 
     /// Register a node type that implements [`NodeDefinition`].
