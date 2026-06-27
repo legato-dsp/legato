@@ -30,6 +30,7 @@ pub mod midi;
 pub mod msg;
 pub mod node;
 pub mod out;
+pub mod persample;
 pub mod pipes;
 pub mod ports;
 pub mod registry;
