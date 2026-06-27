@@ -7,9 +7,11 @@ export default defineNuxtConfig({
   css: ["~/assets/css/main.css"],
   modules: ["@nuxt/content", "@nuxt/eslint", "@nuxt/fonts", "@nuxt/image"],
   routeRules: {
-    "/": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
+    "/": {
+      redirect: { to: "/docs/getting-started", statusCode: 302 },
+      prerender: true,
+    },
     "/docs": { redirect: { to: "/docs/getting-started", statusCode: 302 } },
-    "/docs/**": { prerender: true },
   },
   app: {
     head: {
