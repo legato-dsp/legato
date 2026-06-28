@@ -274,6 +274,13 @@ impl NodeDefinition for Plate480 {
     }
 }
 
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 fn main() {
     let graph = String::from(
         r#"
@@ -293,10 +300,10 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 44_100,
-        block_size: 64,
-        channels: 2,
-        rt_capacity: 0,
+        sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
+        block_size: env_or("LEGATO_BLOCK_SIZE", 256),
+        channels: env_or("LEGATO_CHANNELS", 2),
+        rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
     let ports = PortBuilder::default().audio_out(2).build();
