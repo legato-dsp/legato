@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     context::AudioContext,
@@ -136,14 +138,11 @@ impl Grain {
 
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    fn spawn(&mut self, sample_pos: f32, sample_len: usize, freq: f32, shape: f32) {
+    fn spawn(&mut self, sample_pos: f32, grain_len_samples: f32, freq: f32, shape: f32) {
         self.win_phase = 0.0;
-        self.win_phase_inc = (freq / MIDDLE_C) / sample_len as f32;
-
+        self.win_phase_inc = 1.0 / grain_len_samples;
         self.sample_pos = sample_pos;
-        // TODO: In the future, this is an interesting source of musical jitter probably
-        self.sample_inc = 1.0;
-
+        self.sample_inc = freq / MIDDLE_C;
         self.shape = shape.clamp(0.001, 0.5);
         self.active = true;
     }
@@ -159,12 +158,14 @@ pub struct Granular {
     /// We store per channel groups of grains
     grains: Vec<[Grain; NUM_GRAINS]>,
     freq: f32,
+    grain_size: Duration,
     /// from 0.001 to 0.5, controls how rectangular (0) -> Hann shaped (0.5) the grains are
     shape: f32,
     sample_pos: f32,
     sample_start: Option<usize>,
     sample_end: Option<usize>,
     sample_increment: f32,
+    last_trig: f32,
     ports: Ports,
 }
 
@@ -173,6 +174,7 @@ impl Granular {
         sample_key: ExternalBufferKey,
         sample_start: Option<usize>,
         sample_end: Option<usize>,
+        grain_size: Duration,
         chans: usize,
     ) -> Self {
         // Just two per chan for now
@@ -182,11 +184,13 @@ impl Granular {
             sample_key,
             grains,
             freq: MIDDLE_C,
+            grain_size,
             shape: 0.5,
             sample_pos: 0.0,
             sample_start,
             sample_end,
-            sample_increment: 1.0,
+            sample_increment: 0.2,
+            last_trig: 0.0,
             ports: PortBuilder::default()
                 .audio_in_named(&["trig", "freq"])
                 .audio_out(chans)
@@ -201,7 +205,10 @@ impl Node for Granular {
     }
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sample = ctx.get_resources().get_external_buffer(self.sample_key);
-        let block_size = ctx.get_config().block_size;
+        let cfg = ctx.get_config();
+
+        let block_size = cfg.block_size;
+        let sr = cfg.sample_rate;
 
         let trig_chan = inputs[0].expect("No trig channel found for granular synth!");
         let freq_chan = inputs[1].expect("No freq channel found for granular synth!"); // TODO: Path with and without modulation
@@ -217,7 +224,8 @@ impl Node for Granular {
             };
 
             for i in 0..block_size {
-                let trig = trig_chan[i] == 1.0;
+                let trig = trig_chan[i] == 1.0 && self.last_trig != 1.0;
+                self.last_trig = trig_chan[i];
 
                 // Go through all channels and grains and stop them
                 if trig {
@@ -230,6 +238,7 @@ impl Node for Granular {
                 }
 
                 self.freq = freq_chan[i];
+                let grain_len_samples = (self.grain_size.as_millis() as f32 / 1000.0) * sr as f32;
 
                 // NOTE: This logic will have to change for future granular algorithms
                 for streams in &mut self.grains {
@@ -243,7 +252,7 @@ impl Node for Granular {
                         // Spawn the first ready grain
                         let grain = streams.iter_mut().find(|x| x.ready());
                         if let Some(inner) = grain {
-                            inner.spawn(self.sample_pos, sample_len, self.freq, self.shape);
+                            inner.spawn(self.sample_pos, grain_len_samples, self.freq, self.shape);
                         }
                     }
                 }
@@ -256,8 +265,9 @@ impl Node for Granular {
 
                     for g in self.grains[c].iter_mut() {
                         destination_sample += g.tick(active_slice);
-                        chan[i] = destination_sample
                     }
+
+                    chan[i] = destination_sample
                 }
 
                 self.sample_pos =
@@ -271,7 +281,7 @@ impl NodeDefinition for Granular {
     const NAME: &'static str = "grain";
     const DESCRIPTION: &'static str = "A basic granular synth";
     const REQUIRED_PARAMS: &'static [&'static str] = &["sampler_name"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans", "size"];
 
     fn create(
         rb: &mut ResourceBuilderView,
@@ -280,10 +290,16 @@ impl NodeDefinition for Granular {
         let name = p
             .get_str("sampler_name")
             .expect("Could not find required parameter sampler_name");
+
         let chans = p.get_usize("chans").unwrap_or(2);
+
+        let grain_size = p
+            .get_duration_ms("size")
+            .unwrap_or(Duration::from_millis(300))
+            .clamp(Duration::from_millis(5), Duration::from_secs(3));
 
         let key = rb.add_external_buffer_key(&name);
 
-        Ok(Box::new(Granular::new(key, None, None, chans)))
+        Ok(Box::new(Granular::new(key, None, None, grain_size, chans)))
     }
 }
