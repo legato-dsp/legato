@@ -6,27 +6,13 @@ use crate::{
     resources::{delay::ResourceDelay, window::Window},
 };
 
-/// A single-tap delay line: `y[n] = x[n - M]`, with no feedback.
-///
-/// The tap is read with cubic interpolation, so `delay_length` may be
-/// fractional and modulated at audio rate (feed the `delay_length` port from an
-/// LFO for chorus/vibrato-style movement). Self-contained and multi-channel —
-/// handy as an early-reflection tap, or several in parallel for a tapped-delay
-/// early-reflection bank.
-///
-/// All channels share a single flat backing allocation laid out channel-major
-/// (`[ch0 .. ][ch1 .. ]`). Since `process` works one channel at a time, each
-/// channel streams through a contiguous region, and we avoid the per-channel
-/// heap blocks (and pointer chasing) a `Vec<RingBuffer>` would introduce. Each
-/// channel keeps a lightweight [`ResourceDelay`] cursor over its slice, reusing
-/// the existing cubic-interpolation read path.
 #[derive(Clone)]
 pub struct DelayTap {
-    /// Single flat allocation, channel-major: `chans * cap` samples.
+    /// Underlying flat allocation for all chans
     data: Box<[f32]>,
-    /// One cursor per channel over the corresponding `data` slice.
+    /// One cursor per chan
     delays: Vec<ResourceDelay>,
-    /// Per-channel capacity (power of two).
+    /// Power of 2 per-channel cap.
     cap: usize,
     delay_length_samples: f32,
     chans: usize,

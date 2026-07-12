@@ -10,9 +10,9 @@ use crate::{
         audio::{
             adsr::Adsr,
             allpass::Allpass,
-            comb::{Comb, CombLp},
             delay::{DelayRead, DelayWrite},
             external::ExternalInput,
+            grain::Granular,
             hadamard::HadamardMixer,
             householder::HouseholderMixer,
             mixer::{MonoFanOut, TrackMixer},
@@ -107,6 +107,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<SubDef>();
     registry.register_node::<DivDef>();
     registry.register_node::<GainDef>();
+    registry.register_node::<Granular>();
     registry.register_node::<Adsr>();
     registry.register_node::<Svf>();
     registry.register_node::<Pan>();
@@ -115,8 +116,6 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<Noise>();
     registry.register_node::<OnePole>();
     registry.register_node::<Allpass>();
-    registry.register_node::<Comb>();
-    registry.register_node::<CombLp>();
     registry.register_node::<DelayTap>();
     registry.register_node::<HadamardMixer>();
     registry.register_node::<HouseholderMixer>();
