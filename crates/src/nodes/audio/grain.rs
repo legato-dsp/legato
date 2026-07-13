@@ -17,6 +17,9 @@ const NUM_GRAINS: usize = 2;
 /// We use this as a constant to scale the incoming stream of freq values
 const MIDDLE_C: f32 = 261.625565;
 
+const MIN_GRAIN: Duration = Duration::from_millis(5);
+const MAX_GRAIN: Duration = Duration::from_millis(1500);
+
 // TODO: Pan, more algorithms, windows, variation
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -74,6 +77,8 @@ impl Grain {
     /// Tukey window: eases between rectangular (a -> 0) and Hann (a = 0.5).
     ///
     /// TODO: We may want a small LUT, re-updated whenever alpha changes.
+    ///
+    /// TODO: More windows, this one is smooth but maybe not the exact sound I want?
     ///
     /// https://en.wikipedia.org/wiki/Window_function#Tukey_window
     #[inline(always)]
@@ -176,7 +181,7 @@ impl Granular {
             scan,
             last_trig: 0.0,
             ports: PortBuilder::default()
-                .audio_in_named(&["trig", "freq"])
+                .audio_in_named(&["trig", "freq", "size"])
                 .audio_out(chans)
                 .build(),
         }
@@ -196,6 +201,7 @@ impl Node for Granular {
 
         let trig_chan = inputs[0].expect("No trig channel found for granular synth!");
         let freq_chan = inputs[1].expect("No freq channel found for granular synth!"); // TODO: Path with and without modulation
+        let size_chan = inputs[2];
 
         let Some(sample) = sample else { return };
 
@@ -225,6 +231,11 @@ impl Node for Granular {
             }
 
             self.freq = freq_chan[i];
+
+            self.grain_size = size_chan.map_or(self.grain_size, |x| {
+                Duration::from_secs_f32(x[i] / 1000.0)
+                    .clamp(Duration::from_millis(5), Duration::from_secs(3))
+            });
 
             // NOTE: This logic will have to change for future granular algorithms
             for streams in &mut self.grains {

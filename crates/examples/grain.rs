@@ -278,17 +278,25 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            attack = 120.0,
-            decay = 120.0,
-            sustain = 0.3,
-            release = 200.0
+            attack = 1200.0,
+            decay = 300.0,
+            sustain = 0.8,
+            release = 700.0
         ) {
             in freq gate
 
             audio {
-                grain { sampler_name: "main", chans: 2, size: 700, shape: 0.5, scan: 1.0 },
+                sine: lfo { freq: 0.1 },
+                grain { sampler_name: "main", chans: 2, size: 70, shape: 0.5, scan: 0.05 },
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 2 },
             }
+
+            control { 
+                map { range: [-1.0, 1.0], new_range: [100, 300] }
+            }
+
+            lfo >> map
+            map >> grain.size
 
             freq >> grain.freq
             gate >> grain.trig
@@ -312,7 +320,7 @@ fn main() {
         }
 
         user {
-            plate480: verb { predelay: 32.0, decay: 0.8, damping: 0.3, mix: 0.8 }
+            plate480: verb { predelay: 32.0, decay: 0.4, damping: 0.3, mix: 0.8 }
         }
 
         poly_voice[0:10:3] >> voice(*).gate
@@ -352,12 +360,14 @@ fn main() {
 
     dbg!(&app);
 
-    let _ = frontend.load_sample(
-        &String::from("main"),
-        Path::new("../samples/string.wav"),
-        2,
-        config.sample_rate as u32,
-    );
+    frontend
+        .load_sample(
+            &String::from("main"),
+            Path::new("../samples/guitar.wav"),
+            2,
+            config.sample_rate as u32,
+        )
+        .expect("Could not load sample!");
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
