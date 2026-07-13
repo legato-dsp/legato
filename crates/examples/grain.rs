@@ -12,10 +12,10 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            attack = 50.0,
+            attack = 120.0,
             decay = 30.0,
             sustain = 0.3,
-            release = 50.0
+            release = 200.0
         ) {
             in freq gate
 
@@ -81,7 +81,7 @@ fn main() {
 
     let _ = frontend.load_sample(
         &String::from("main"),
-        Path::new("../samples/example_two.wav"),
+        Path::new("../samples/string.wav"),
         2,
         config.sample_rate as u32,
     );
