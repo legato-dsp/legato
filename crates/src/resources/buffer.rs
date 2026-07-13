@@ -25,6 +25,10 @@ impl ExternalBuffer {
         let start = idx * stride;
         &self.data[start..start + stride]
     }
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.data.len() / self.num_channels
+    }
 }
 
 // For the time being, we're just using FFMPEG for loading samples.

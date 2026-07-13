@@ -8,11 +8,6 @@ use crate::{
     simd::{LANES, Vf32},
 };
 
-// A semi-naitve FIR filter. In the future, it will be
-// nice to have one in the frequency domain as well.
-//
-// It's also worth noting that keeping the chunks and state
-// in an interleaved format could potentially be faster?
 #[derive(Clone)]
 pub struct FirFilter {
     coeffs: Vec<f32>,

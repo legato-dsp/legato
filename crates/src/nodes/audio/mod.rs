@@ -1,9 +1,9 @@
 pub mod adsr;
 pub mod allpass;
-pub mod comb;
 pub mod delay;
 pub mod external;
 pub mod fir;
+pub mod grain;
 pub mod hadamard;
 pub mod householder;
 pub mod mixer;
