@@ -158,6 +158,7 @@ impl Granular {
         sample_start: Option<usize>,
         sample_end: Option<usize>,
         grain_size: Duration,
+        shape: f32,
         scan: f32,
         chans: usize,
     ) -> Self {
@@ -168,7 +169,7 @@ impl Granular {
             grains,
             freq: MIDDLE_C,
             grain_size,
-            shape: 0.5,
+            shape,
             sample_pos: 0.0,
             sample_start,
             sample_end,
@@ -261,7 +262,7 @@ impl NodeDefinition for Granular {
     const NAME: &'static str = "grain";
     const DESCRIPTION: &'static str = "A basic granular synth";
     const REQUIRED_PARAMS: &'static [&'static str] = &["sampler_name"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans", "size", "scan"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans", "size", "scan", "shape"];
 
     fn create(
         rb: &mut ResourceBuilderView,
@@ -278,11 +279,13 @@ impl NodeDefinition for Granular {
             .unwrap_or(Duration::from_millis(200))
             .clamp(Duration::from_millis(5), Duration::from_secs(3));
 
+        let shape = p.get_f32("shape").unwrap_or(0.3);
+
+        let scan = p.get_f32("scan").unwrap_or(1.0);
+
         let key = rb.add_external_buffer_key(&name);
 
-        let scan = p.get_f32("scan").unwrap_or(0.01);
-
-        let node = Granular::new(key, None, None, grain_size, scan, chans);
+        let node = Granular::new(key, None, None, grain_size, shape, scan, chans);
 
         Ok(Box::new(node))
     }
