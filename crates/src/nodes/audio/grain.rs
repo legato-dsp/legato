@@ -17,11 +17,10 @@ const NUM_GRAINS: usize = 2;
 /// We use this as a constant to scale the incoming stream of freq values
 const MIDDLE_C: f32 = 261.625565;
 
-const MIN_GRAIN: Duration = Duration::from_millis(5);
-const MAX_GRAIN: Duration = Duration::from_millis(1500);
-
 // TODO: Pan, more algorithms, windows, variation
 
+/// A graunlar synthesizer, not very feature complete,
+/// roughly based on a certain popular grain device
 #[derive(Debug, Clone, Copy, Default)]
 struct Grain {
     /// Used to manually kill grains on retrig

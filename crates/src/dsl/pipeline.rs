@@ -142,11 +142,15 @@ mod grain_example_tests {
         assert_eq!(graph.node_count(), 8, "graph:\n{graph}");
         for i in 0..3 {
             assert!(
-                graph.find_node_by_alias(&format!("voice.{i}.grain")).is_some(),
+                graph
+                    .find_node_by_alias(&format!("voice.{i}.grain"))
+                    .is_some(),
                 "missing voice.{i}.grain"
             );
             assert!(
-                graph.find_node_by_alias(&format!("voice.{i}.adsr")).is_some(),
+                graph
+                    .find_node_by_alias(&format!("voice.{i}.adsr"))
+                    .is_some(),
                 "missing voice.{i}.adsr"
             );
         }
@@ -158,9 +162,27 @@ mod grain_example_tests {
             let grain = format!("voice.{i}.grain");
             let adsr = format!("voice.{i}.adsr");
 
-            assert_edge(&graph, "poly_voice", Port::Index(3 * i), &grain, Port::Named("trig".into()));
-            assert_edge(&graph, "poly_voice", Port::Index(3 * i), &adsr, Port::Named("gate".into()));
-            assert_edge(&graph, "poly_voice", Port::Index(3 * i + 1), &grain, Port::Named("freq".into()));
+            assert_edge(
+                &graph,
+                "poly_voice",
+                Port::Index(3 * i),
+                &grain,
+                Port::Named("trig".into()),
+            );
+            assert_edge(
+                &graph,
+                "poly_voice",
+                Port::Index(3 * i),
+                &adsr,
+                Port::Named("gate".into()),
+            );
+            assert_edge(
+                &graph,
+                "poly_voice",
+                Port::Index(3 * i + 1),
+                &grain,
+                Port::Named("freq".into()),
+            );
 
             // The interior stereo hop: grain's two outputs (Port::None = all
             // outputs) feed adsr's two signal inputs, ports [1, 2] (input 0 is
@@ -171,24 +193,35 @@ mod grain_example_tests {
 
         // Each voice is stereo. `voice(*)[0]` is output 0 of every voice's sink
         // (adsr), strided into the even mixer inputs; `[1]` into the odd inputs.
-        // Net effect: voice `i` lands on mixer track `i` (inputs 2*i, 2*i + 1).
         for i in 0..3 {
             let adsr = format!("voice.{i}.adsr");
-            assert_edge(&graph, &adsr, Port::Index(0), "track_mixer", Port::Index(2 * i));
-            assert_edge(&graph, &adsr, Port::Index(1), "track_mixer", Port::Index(2 * i + 1));
+            assert_edge(
+                &graph,
+                &adsr,
+                Port::Index(0),
+                "track_mixer",
+                Port::Index(2 * i),
+            );
+            assert_edge(
+                &graph,
+                &adsr,
+                Port::Index(1),
+                "track_mixer",
+                Port::Index(2 * i + 1),
+            );
         }
 
         // No stray edges: 3 voices x (trig + gate + freq + interior) + 6 mixer = 18.
-        assert_eq!(graph.edge_count(), 18, "unexpected extra edges\ngraph:\n{graph}");
+        assert_eq!(
+            graph.edge_count(),
+            18,
+            "unexpected extra edges\ngraph:\n{graph}"
+        );
     }
 
     #[test]
     fn interior_slice_survives_macro_spawn_as_single_edge() {
-        // Focused regression for `grain >> adsr[1..3]`: a single multi-channel
-        // node fanning into a port slice, authored inside a macro spawned x3.
-        // Each spawned copy must keep the slice intact on exactly one edge -- it
-        // must NOT be dropped, duplicated, or pre-split into per-channel indices
-        // (that split is the builder's job, once port counts are known).
+        // Regression test for grain patch, we want to make sure we end up with individual edges after expansion
         let graph = expand(GRAIN_PATCH);
 
         for i in 0..3 {
