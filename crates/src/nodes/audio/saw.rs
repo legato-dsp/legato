@@ -7,6 +7,7 @@ use crate::{
     msg::{NodeMessage, RtValue},
     node::{DynNode, Inputs, Node},
     nodes::audio::sine::simd_scan,
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
     spec::NodeDefinition,
@@ -22,14 +23,16 @@ use crate::{
 pub struct Saw {
     freq: f32,
     phase: f32,
+    sr: f32,
     ports: Ports,
 }
 
 impl Saw {
-    pub fn new(freq: f32, chans: usize) -> Self {
+    pub fn new(freq: f32, chans: usize, sr: f32) -> Self {
         Self {
             freq,
             phase: 0.0,
+            sr,
             ports: PortBuilder::default()
                 .audio_in_named(&["freq"])
                 .audio_out(chans)
@@ -104,6 +107,33 @@ impl Saw {
     }
 }
 
+impl PerSampleNode for Saw {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let freq = in_frame[0].unwrap_or(self.freq);
+        // Multiply by the reciprocal, like the block path, so the phase
+        // increment is bit-identical and does not drift against `process`.
+        let dt = freq * (1.0 / self.sr);
+
+        self.phase = self.phase.fract() + dt;
+        let t = self.phase - self.phase.floor();
+        let naive = 2.0 * t - 1.0;
+        let blep = poly_blep_simd::<1>(Simd::splat(t), Simd::splat(dt)).as_array()[0];
+        let sample = naive - blep;
+
+        for out in out_frame.iter_mut() {
+            *out = sample;
+        }
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
+}
+
 impl Node for Saw {
     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         if let Some(fm_in) = ai[0] {
@@ -151,6 +181,23 @@ fn poly_blep_simd<const LANES: usize>(
     rising_mask.select(rising, zero) + falling_mask.select(falling, zero)
 }
 
+impl Saw {
+    pub fn from_params(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to audio_input");
+
+        let freq = p.get_f32("freq").unwrap_or(440.0);
+
+        let sr = rb.get_config().sample_rate as f32;
+
+        Ok(Self::new(freq, chans, sr))
+    }
+}
+
 impl NodeDefinition for Saw {
     const NAME: &'static str = "saw";
     const DESCRIPTION: &'static str = "Sawtooth wave, PolyBLEP, suitable for synthesis";
@@ -158,15 +205,9 @@ impl NodeDefinition for Saw {
     const OPTIONAL_PARAMS: &'static [&'static str] = &["freq"];
 
     fn create(
-        _rb: &mut ResourceBuilderView,
+        rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
-
-        let freq = p.get_f32("freq").unwrap_or(440.0);
-
-        Ok(Box::new(Self::new(freq, chans)))
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

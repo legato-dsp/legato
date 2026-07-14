@@ -214,15 +214,22 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>>
         .then(extra_padded(scope_or_sink()))
         .delimited_by(extra_padded(just('{')), extra_padded(just('}')));
 
-    // patch must be followed by whitespace
-    just("patch")
-        .then_ignore(text::whitespace().at_least(1))
-        .ignore_then(ident)
+    // The declaration keyword picks the execution model; both must be
+    // followed by whitespace.
+    let keyword = choice((
+        just("patch").to(MacroKind::Patch),
+        just("kernel").to(MacroKind::Kernel),
+    ))
+    .then_ignore(text::whitespace().at_least(1));
+
+    keyword
+        .then(ident)
         .then(extra_padded(default_params))
         .then(patch_body)
         .map(
-            |((name, params), (((vports, decls), conns), sink))| AstMacro {
+            |(((kind, name), params), (((vports, decls), conns), sink))| AstMacro {
                 name,
+                kind,
                 default_params: params,
                 virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
                 declarations: decls,
@@ -845,6 +852,50 @@ mod test {
             .unwrap();
         assert_eq!(audio_conn.sink.node, "env");
         assert_eq!(audio_conn.sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn test_kernel_keyword_sets_kind() {
+        let src = r#"
+            kernel comb(fb = 0.5) {
+                in audio_in
+
+                audio {
+                    tap { delay_length: 20, chans: 1 },
+                    mult { val: $fb }
+                }
+
+                audio_in >> tap
+                tap >> mult
+                mult >> tap
+
+                { mult }
+            }
+
+            patch wrapper() {
+                audio {
+                    gain { val: 0.5 }
+                }
+                { gain }
+            }
+
+            patches {
+                comb: c1 { fb: 0.7 }
+            }
+
+            { c1 }
+        "#;
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        assert_eq!(ast.macros.len(), 2);
+        assert_eq!(ast.macros[0].name, "comb");
+        assert_eq!(ast.macros[0].kind, MacroKind::Kernel);
+        assert_eq!(ast.macros[0].virtual_ports_in.len(), 1);
+        // The feedback edge parses like any other connection.
+        assert_eq!(ast.macros[0].connections.len(), 3);
+
+        assert_eq!(ast.macros[1].name, "wrapper");
+        assert_eq!(ast.macros[1].kind, MacroKind::Patch);
     }
 
     #[test]

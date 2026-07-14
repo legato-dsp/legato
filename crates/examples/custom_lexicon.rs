@@ -162,8 +162,8 @@ impl PerSampleNode for Plate480 {
         &self.ports
     }
 
-    fn tick(&mut self, inp: &[f32], out: &mut [f32]) {
-        let (dry_l, dry_r) = (inp[0], inp[1]);
+    fn tick(&mut self, inp: &[Option<f32>], out: &mut [f32]) {
+        let (dry_l, dry_r) = (inp[0].unwrap_or(0.0), inp[1].unwrap_or(0.0));
         let mono = (dry_l + dry_r) * 0.5;
 
         // predelay + input bandwidth lowpass

@@ -25,6 +25,7 @@ pub mod graph;
 pub mod harness;
 pub mod input;
 pub mod interface;
+pub mod kernel;
 pub mod math;
 pub mod midi;
 pub mod msg;

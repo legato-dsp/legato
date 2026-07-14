@@ -3,6 +3,7 @@ use std::f32::consts::PI;
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
 };
 
@@ -231,22 +232,7 @@ impl Svf {
 
             for c in 0..chans {
                 let sample = inputs[c].unwrap()[n];
-
-                let filter_state = &mut self.filter_state[c];
-                let v3 = sample - filter_state.ic2eq;
-
-                let v1 = self.coefficients.a1 * filter_state.ic1eq + self.coefficients.a2 * v3;
-
-                let v2 = filter_state.ic2eq
-                    + self.coefficients.a2 * filter_state.ic1eq
-                    + self.coefficients.a3 * v3;
-
-                filter_state.ic1eq = 2.0 * v1 - filter_state.ic1eq;
-                filter_state.ic2eq = 2.0 * v2 - filter_state.ic2eq;
-
-                outputs[c][n] = self.coefficients.m0 * sample
-                    + self.coefficients.m1 * v1
-                    + self.coefficients.m2 * v2;
+                outputs[c][n] = self.step(c, sample);
             }
         }
     }
@@ -257,27 +243,69 @@ impl Svf {
         inputs: &Inputs,
         outputs: &mut [&mut [f32]],
     ) {
-        for (c, (in_chan_out, out_chan)) in inputs.iter().zip(outputs.iter_mut()).enumerate() {
-            if let Some(in_chan) = in_chan_out {
-                for (n, sample) in in_chan.iter().enumerate() {
-                    let filter_state = &mut self.filter_state[c];
-
-                    let v0 = sample;
-                    let v3 = v0 - filter_state.ic2eq;
-
-                    let v1 = self.coefficients.a1 * filter_state.ic1eq + self.coefficients.a2 * v3;
-
-                    let v2 = filter_state.ic2eq
-                        + self.coefficients.a2 * filter_state.ic1eq
-                        + self.coefficients.a3 * v3;
-
-                    filter_state.ic1eq = 2.0 * v1 - filter_state.ic1eq;
-                    filter_state.ic2eq = 2.0 * v2 - filter_state.ic2eq;
-
-                    out_chan[n] = self.coefficients.m0 * v0
-                        + self.coefficients.m1 * v1
-                        + self.coefficients.m2 * v2;
+        let chans = self.ports.audio_out.len();
+        for c in 0..chans {
+            if let Some(in_chan) = inputs[c] {
+                for n in 0..in_chan.len() {
+                    outputs[c][n] = self.step(c, in_chan[n]);
                 }
+            }
+        }
+    }
+}
+
+impl Svf {
+    /// The shared TPT integration step for one channel.
+    #[inline(always)]
+    fn step(&mut self, c: usize, sample: f32) -> f32 {
+        let filter_state = &mut self.filter_state[c];
+        let v3 = sample - filter_state.ic2eq;
+
+        let v1 = self.coefficients.a1 * filter_state.ic1eq + self.coefficients.a2 * v3;
+
+        let v2 = filter_state.ic2eq
+            + self.coefficients.a2 * filter_state.ic1eq
+            + self.coefficients.a3 * v3;
+
+        filter_state.ic1eq = 2.0 * v1 - filter_state.ic1eq;
+        filter_state.ic2eq = 2.0 * v2 - filter_state.ic2eq;
+
+        self.coefficients.m0 * sample + self.coefficients.m1 * v1 + self.coefficients.m2 * v2
+    }
+}
+
+impl PerSampleNode for Svf {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let chans = self.ports.audio_out.len();
+
+        let cutoff_in = in_frame[chans];
+        let q_in = in_frame[chans + 1];
+
+        if cutoff_in.is_some() || q_in.is_some() {
+            let new_cutoff =
+                cutoff_in.map_or(self.cutoff, |v| v.clamp(1.0, 0.49 * self.sample_rate));
+            let new_q = q_in.map_or(self.q, |v| v.max(Self::Q_EPSILON));
+
+            let cutoff_moved = (new_cutoff - self.cutoff).abs() > CUTOFF_EPSILON;
+            let q_moved = (new_q - self.q).abs() > Self::Q_EPSILON;
+            if cutoff_moved || q_moved {
+                self.set(
+                    self.filter_type,
+                    self.sample_rate,
+                    new_cutoff,
+                    new_q,
+                    self.gain,
+                );
+            }
+        }
+
+        for c in 0..chans {
+            if let Some(sample) = in_frame[c] {
+                out_frame[c] = self.step(c, sample);
             }
         }
     }
@@ -311,17 +339,11 @@ use crate::{
     spec::NodeDefinition,
 };
 
-impl NodeDefinition for Svf {
-    const NAME: &'static str = "svf";
-    const DESCRIPTION: &'static str =
-        "State variable filter (lowpass, highpass, bandpass, and more)";
-    const REQUIRED_PARAMS: &'static [&'static str] = &[];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["cutoff", "q", "type", "chans", "gain"];
-
-    fn create(
+impl Svf {
+    pub fn from_params(
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
+    ) -> Result<Self, ValidationError> {
         let cutoff = p.get_f32("cutoff").unwrap_or(7500.0);
         let chans = p.get_usize("chans").unwrap_or(2);
         let gain = p.get_f32("gain").unwrap_or(1.0);
@@ -343,6 +365,21 @@ impl NodeDefinition for Svf {
             });
 
         let sr = rb.get_config().sample_rate as f32;
-        Ok(Box::new(Self::new(sr, filter_type, cutoff, gain, q, chans)))
+        Ok(Self::new(sr, filter_type, cutoff, gain, q, chans))
+    }
+}
+
+impl NodeDefinition for Svf {
+    const NAME: &'static str = "svf";
+    const DESCRIPTION: &'static str =
+        "State variable filter (lowpass, highpass, bandpass, and more)";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["cutoff", "q", "type", "chans", "gain"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

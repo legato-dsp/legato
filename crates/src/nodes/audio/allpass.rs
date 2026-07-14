@@ -2,6 +2,7 @@ use crate::{
     context::AudioContext,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
 };
@@ -13,11 +14,18 @@ pub struct Allpass {
     delay_lines: Vec<RingBuffer>,
     capacity: usize,
     chans: usize,
+    sr: f32,
     ports: Ports,
 }
 
 impl Allpass {
-    pub fn new(chans: usize, feedback: f32, delay_length_samples: f32, capacity: usize) -> Self {
+    pub fn new(
+        chans: usize,
+        feedback: f32,
+        delay_length_samples: f32,
+        capacity: usize,
+        sr: f32,
+    ) -> Self {
         let delay_lines = vec![RingBuffer::new(capacity); chans];
 
         Self {
@@ -26,12 +34,45 @@ impl Allpass {
             delay_lines,
             capacity,
             chans,
+            sr,
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_in_named(&["delay_length", "feedback"])
                 .audio_out(chans)
                 .build(),
         }
+    }
+}
+
+impl PerSampleNode for Allpass {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let max_capacity = self.capacity as f32;
+
+        let delay_length_samples = in_frame[self.chans]
+            .map_or(self.delay_length_samples, |ms| self.sr * (ms / 1000.0))
+            .clamp(1.0, max_capacity);
+
+        let feedback = in_frame[self.chans + 1]
+            .map_or(self.feedback, |v| v)
+            .clamp(0.0, 0.98);
+
+        for (c, chan_state) in self.delay_lines.iter_mut().enumerate() {
+            if let Some(input) = in_frame[c] {
+                let delayed = chan_state.get_delay_cubic(delay_length_samples);
+                let write = input + feedback * delayed;
+
+                chan_state.push(write);
+                out_frame[c] = delayed - write * feedback;
+            }
+        }
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
     }
 }
 
@@ -101,16 +142,11 @@ use crate::{
     spec::NodeDefinition,
 };
 
-impl NodeDefinition for Allpass {
-    const NAME: &'static str = "allpass";
-    const DESCRIPTION: &'static str = "Allpass filter with configurable delay length and feedback";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "feedback", "chans"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
-
-    fn create(
+impl Allpass {
+    pub fn from_params(
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
+    ) -> Result<Self, ValidationError> {
         use std::time::Duration;
         let config = rb.get_config();
         let sr = config.sample_rate;
@@ -124,11 +160,26 @@ impl NodeDefinition for Allpass {
         if capacity < (delay_length_samples as usize) {
             capacity = (delay_length_samples as usize) * 2;
         }
-        Ok(Box::new(Self::new(
+        Ok(Self::new(
             chans,
             feedback,
             delay_length_samples,
             capacity,
-        )))
+            sr as f32,
+        ))
+    }
+}
+
+impl NodeDefinition for Allpass {
+    const NAME: &'static str = "allpass";
+    const DESCRIPTION: &'static str = "Allpass filter with configurable delay length and feedback";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "feedback", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

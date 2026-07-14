@@ -2,6 +2,7 @@ use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -61,6 +62,24 @@ impl ApplyOp {
                 let result =
                     (self.apply_op)(Vf32::from_slice(in_chunk), Vf32::from_slice(val_chunk));
                 out_chunk.copy_from_slice(result.as_array());
+            }
+        }
+    }
+}
+
+impl PerSampleNode for ApplyOp {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        // The op fns are typed on the full-width Vf32; splatting one sample
+        // through them keeps tick bit-identical to the block path.
+        let val = Vf32::splat(in_frame[self.chans].unwrap_or(self.val));
+
+        for c in 0..self.chans {
+            if let Some(sample) = in_frame[c] {
+                out_frame[c] = (self.apply_op)(Vf32::splat(sample), val).as_array()[0];
             }
         }
     }

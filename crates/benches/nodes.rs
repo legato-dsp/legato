@@ -14,7 +14,7 @@ use legato::{
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
-    let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0, 48_000.0)));
 
     c.bench_function("Sine", |b| {
         b.iter(|| {
@@ -25,7 +25,7 @@ fn bench_stereo_sine(c: &mut Criterion) {
 }
 
 fn bench_stereo_saw(c: &mut Criterion) {
-    let mut graph = get_node_test_harness_stereo_4096(Box::new(Saw::new(440.0, 2)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Saw::new(440.0, 2, 48_000.0)));
 
     c.bench_function("Saw", |b| {
         b.iter(|| {

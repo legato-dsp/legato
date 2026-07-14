@@ -200,7 +200,7 @@ impl MacroExpansionPass {
             let fqn = format!("{}.{}", instance_alias, node.alias);
 
             let mut params = node.params.clone();
-            Self::substitute_templates(&mut params, resolved_params);
+            substitute_templates(&mut params, resolved_params);
 
             let new_id = graph.add_node(
                 node.kind.clone(),
@@ -222,13 +222,16 @@ impl MacroExpansionPass {
         id_map
     }
 
-    fn substitute_templates(params: &mut Object, lookup: &Object) {
-        for val in params.values_mut() {
-            if let Value::Template(tpl) = val {
-                let key = tpl.trim_start_matches('$');
-                if let Some(replacement) = lookup.get(key) {
-                    *val = replacement.clone();
-                }
+}
+
+/// Replace `$name` template values in `params` with their bindings from
+/// `lookup`. Shared between patch expansion and kernel lowering.
+pub fn substitute_templates(params: &mut Object, lookup: &Object) {
+    for val in params.values_mut() {
+        if let Value::Template(tpl) = val {
+            let key = tpl.trim_start_matches('$');
+            if let Some(replacement) = lookup.get(key) {
+                *val = replacement.clone();
             }
         }
     }

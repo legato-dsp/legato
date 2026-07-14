@@ -1,18 +1,22 @@
 use crate::{context::AudioContext, msg::NodeMessage, node::Node, ports::Ports};
 
-const MAX_FRAME_PORTS: usize = 64;
+pub const MAX_FRAME_PORTS: usize = 64;
 
 /// A node that processes one sample-frame at a time.
 ///
-/// In the future, this might be used for subgraphs that require feedback.
-/// For now, it's useful to block adapt per sample nodes to the block rate.
+/// This is used for subgraphs that require single-sample feedback (see the
+/// kernel DSL declarations), and to block-adapt per sample nodes to the block
+/// rate via [`PerSample`].
 ///
 /// You would need this if you had for instance a tight FDN in a reverb,
 /// per sample FM synth modulation, etc.
 pub trait PerSampleNode: Send {
     fn ports(&self) -> &Ports;
-    // Each item in each frame represents ONE sample in a channel
-    fn tick(&mut self, in_frame: &[f32], out_frame: &mut [f32]);
+    /// Each item in each frame represents ONE sample on one port (audio
+    /// channels first, then named modulation ports — the same layout as
+    /// [`Node`]'s inputs). `None` mirrors an unpatched block-rate input, so
+    /// nodes keep their "fall back to the internal param" behavior.
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]);
     fn handle_msg(&mut self, _msg: NodeMessage) {}
 }
 
@@ -20,7 +24,7 @@ pub trait PerSampleNode: Send {
 /// scratch so the hot path is allocation-free.
 pub struct PerSample<T: PerSampleNode> {
     inner: T,
-    in_frame: Box<[f32]>,
+    in_frame: Box<[Option<f32>]>,
     out_frame: Box<[f32]>,
 }
 
@@ -35,7 +39,7 @@ impl<T: PerSampleNode> PerSample<T> {
         );
 
         Self {
-            in_frame: vec![0.0; n_in].into_boxed_slice(),
+            in_frame: vec![None; n_in].into_boxed_slice(),
             out_frame: vec![0.0; n_out].into_boxed_slice(),
             inner,
         }
@@ -76,7 +80,7 @@ impl<T: PerSampleNode + Clone + 'static> Node for PerSample<T> {
 
         for s in 0..block {
             for i in 0..n_in {
-                self.in_frame[i] = ins[i].map_or(0.0, |b| b[s]);
+                self.in_frame[i] = ins[i].map(|b| b[s]);
             }
 
             self.inner.tick(&self.in_frame, &mut self.out_frame);
@@ -117,8 +121,8 @@ mod tests {
         fn ports(&self) -> &Ports {
             &self.ports
         }
-        fn tick(&mut self, inp: &[f32], out: &mut [f32]) {
-            self.state = (1.0 - self.a) * inp[0] + self.a * self.state;
+        fn tick(&mut self, inp: &[Option<f32>], out: &mut [f32]) {
+            self.state = (1.0 - self.a) * inp[0].unwrap_or(0.0) + self.a * self.state;
             out[0] = self.state;
         }
     }

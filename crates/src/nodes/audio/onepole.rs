@@ -4,6 +4,7 @@ use crate::{
     context::AudioContext,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
 };
 
@@ -61,6 +62,26 @@ impl Node for OnePole {
     }
 }
 
+impl PerSampleNode for OnePole {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        for c in 0..self.chans {
+            if let Some(sample) = in_frame[c] {
+                let val = sample * (1.0 - self.a) + self.state[c] * self.a;
+                self.state[c] = val;
+                out_frame[c] = val;
+            }
+        }
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
+}
+
 fn get_a_from_cutoff(sr: f32, fc: f32) -> f32 {
     let x = TAU * fc / sr;
     let pole = x / (x + 1.0);
@@ -74,6 +95,18 @@ use crate::{
     spec::NodeDefinition,
 };
 
+impl OnePole {
+    pub fn from_params(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let chans = p.get_usize("chans").unwrap_or(2);
+        let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
+        let sr = rb.get_config().sample_rate;
+        Ok(Self::new(cutoff, chans, sr))
+    }
+}
+
 impl NodeDefinition for OnePole {
     const NAME: &'static str = "onepole";
     const DESCRIPTION: &'static str = "Single-pole lowpass filter";
@@ -84,9 +117,6 @@ impl NodeDefinition for OnePole {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p.get_usize("chans").unwrap_or(2);
-        let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
-        let sr = rb.get_config().sample_rate;
-        Ok(Box::new(Self::new(cutoff, chans, sr)))
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

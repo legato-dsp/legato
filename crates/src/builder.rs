@@ -43,6 +43,10 @@ pub enum ValidationError {
     MissingRequiredParameter(String),
     ResourceNotFound(String),
     PipeNotFound(String),
+    /// A node type inside a `kernel` body has no per-sample implementation.
+    NotKernelCapable(String),
+    /// A construct is valid in patches but not (yet) supported inside kernels.
+    UnsupportedInKernel(String),
 }
 
 // Typestates for the builder
@@ -551,6 +555,38 @@ where
 }
 
 impl LegatoBuilder<DslBuilding> {
+    /// Lower a `kernel` instantiation into one block-rate node: the kernel
+    /// engine resolves the (possibly cyclic) interior into a [`KernelGraph`],
+    /// which [`PerSample`] adapts to the block rate. From here on the kernel
+    /// is indistinguishable from any other node.
+    fn _add_kernel_ref_self(&mut self, ir: &crate::dsl::ir::IRGraph, node: &crate::dsl::ir::IRNode) {
+        let ir_macro = ir
+            .macro_registry
+            .get(&node.node_type)
+            .unwrap_or_else(|| panic!("Kernel '{}' not found in registry", node.node_type));
+
+        let mut resource_builder_view = ResourceBuilderView {
+            config: &self.runtime.get_config(),
+            resource_builder: &mut self.resource_builder,
+            external_buffer_keys: &mut self.external_buffer_to_key,
+            delay_keys: &mut self.delay_name_to_key,
+        };
+
+        let kernel_graph =
+            crate::kernel::lower_kernel(ir_macro, &node.params, &mut resource_builder_view)
+                .unwrap_or_else(|e| panic!("Could not build kernel '{}': {:?}", node.alias, e));
+
+        let legato_node = LegatoNode::new(
+            node.alias.clone(),
+            node.node_type.clone(),
+            Box::new(crate::persample::PerSample::new(kernel_graph)),
+        );
+
+        let key = self.runtime.add_node(legato_node);
+        self.working_name_lookup.insert(node.alias.clone(), key);
+        self.last_selection = Some(SelectionKind::Single(key));
+    }
+
     fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
         let ast = legato_parser(content).unwrap();
 
@@ -566,17 +602,22 @@ impl LegatoBuilder<DslBuilding> {
         let mut ir_to_runtime: HashMap<NodeId, NodeKey> = HashMap::new();
 
         for node_id in ir.topological_sort() {
-            let node = ir.get_node(node_id).unwrap();
-            let dsl_params = DSLParams::new(&node.params);
+            let node = ir.get_node(node_id).unwrap().clone();
 
-            // _add_node_ref_self populates working_name_lookup (needed by
-            // pipes) and sets last_selection.
-            self._add_node_ref_self(&node.namespace, &node.node_type, &node.alias, &dsl_params);
+            if node.kind == crate::dsl::ir::IRNodeKind::KernelRef {
+                self._add_kernel_ref_self(&ir, &node);
+            } else {
+                let dsl_params = DSLParams::new(&node.params);
+
+                // _add_node_ref_self populates working_name_lookup (needed by
+                // pipes) and sets last_selection.
+                self._add_node_ref_self(&node.namespace, &node.node_type, &node.alias, &dsl_params);
+            }
 
             let runtime_key = *self
                 .working_name_lookup
                 .get(&node.alias)
-                .expect("alias must be in lookup immediately after _add_node_ref_self");
+                .expect("alias must be in lookup immediately after adding the node");
 
             ir_to_runtime.insert(node_id, runtime_key);
 

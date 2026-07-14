@@ -38,6 +38,7 @@ use crate::{
     context::AudioContext,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -72,24 +73,34 @@ pub struct Sine {
     freq: f32,
     phase: f32,
     quality: Quality,
+    sr: f32,
     ports: Ports,
 }
 
 impl Sine {
-    pub fn new(freq: f32) -> Self {
-        Self::with_quality(freq, Quality::default())
+    pub fn new(freq: f32, sr: f32) -> Self {
+        Self::with_quality(freq, sr, Quality::default())
     }
 
-    pub fn with_quality(freq: f32, quality: Quality) -> Self {
+    pub fn with_quality(freq: f32, sr: f32, quality: Quality) -> Self {
         Self {
             freq,
             phase: 0.0,
             quality,
+            sr,
             ports: PortBuilder::default()
                 .audio_in_named(&["freq"])
                 .audio_out(1)
                 .build(),
         }
+    }
+
+    #[inline(always)]
+    fn tick_inner<const ORDER: usize>(&mut self, freq: f32) -> f32 {
+        // Multiply by the reciprocal, like the block path, so the phase
+        // increment is bit-identical and does not drift against `process`.
+        self.phase = self.phase.fract() + freq * (1.0 / self.sr);
+        sin_turns::<ORDER, 1>(Simd::splat(self.phase)).as_array()[0]
     }
 
     fn process_external_freq<const ORDER: usize>(
@@ -161,6 +172,28 @@ impl Sine {
     }
 }
 
+impl PerSampleNode for Sine {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let freq = in_frame[0].unwrap_or(self.freq);
+        let sample = match self.quality {
+            Quality::High => self.tick_inner::<7>(freq),
+            Quality::Med => self.tick_inner::<5>(freq),
+            Quality::Low => self.tick_inner::<3>(freq),
+        };
+        for out in out_frame.iter_mut() {
+            *out = sample;
+        }
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
+}
+
 impl Node for Sine {
     fn process(&mut self, ctx: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         match (self.quality, ai[0]) {
@@ -195,16 +228,11 @@ use crate::{
     spec::NodeDefinition,
 };
 
-impl NodeDefinition for Sine {
-    const NAME: &'static str = "sine";
-    const DESCRIPTION: &'static str = "Sine wave oscillator with optional FM input";
-    const REQUIRED_PARAMS: &'static [&'static str] = &[];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans", "quality"];
-
-    fn create(
-        _rb: &mut ResourceBuilderView,
+impl Sine {
+    pub fn from_params(
+        rb: &mut ResourceBuilderView,
         p: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
+    ) -> Result<Self, ValidationError> {
         let freq = p.get_f32("freq").unwrap_or(440.0);
         let quality = p
             .get_str("quality")
@@ -217,7 +245,22 @@ impl NodeDefinition for Sine {
             })
             .transpose()?
             .unwrap_or_default();
-        Ok(Box::new(Self::with_quality(freq, quality)))
+        let sr = rb.get_config().sample_rate as f32;
+        Ok(Self::with_quality(freq, sr, quality))
+    }
+}
+
+impl NodeDefinition for Sine {
+    const NAME: &'static str = "sine";
+    const DESCRIPTION: &'static str = "Sine wave oscillator with optional FM input";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans", "quality"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }
 
