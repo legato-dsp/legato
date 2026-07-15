@@ -559,7 +559,11 @@ impl LegatoBuilder<DslBuilding> {
     /// engine resolves the (possibly cyclic) interior into a [`KernelGraph`],
     /// which [`PerSample`] adapts to the block rate. From here on the kernel
     /// is indistinguishable from any other node.
-    fn _add_kernel_ref_self(&mut self, ir: &crate::dsl::ir::IRGraph, node: &crate::dsl::ir::IRNode) {
+    fn _add_kernel_ref_self(
+        &mut self,
+        ir: &crate::dsl::ir::IRGraph,
+        node: &crate::dsl::ir::IRNode,
+    ) {
         let ir_macro = ir
             .macro_registry
             .get(&node.node_type)

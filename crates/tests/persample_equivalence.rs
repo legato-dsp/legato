@@ -11,14 +11,17 @@ use legato::{
     config::{BlockSize, Config},
     harness::build_placeholder_context,
     node::Node,
-    nodes::audio::{
-        allpass::Allpass,
-        onepole::OnePole,
-        ops::{ApplyOpKind, mult_node_factory},
-        saw::Saw,
-        sine::Sine,
-        svf::{FilterType, Svf},
-        tap::DelayTap,
+    nodes::{
+        audio::{
+            allpass::Allpass,
+            onepole::OnePole,
+            ops::{ApplyOpKind, mult_node_factory},
+            saw::Saw,
+            sine::Sine,
+            svf::{FilterType, Svf},
+            tap::DelayTap,
+        },
+        control::map::Map,
     },
     persample::{PerSample, PerSampleNode},
 };
@@ -227,6 +230,18 @@ fn tap_modulated_matches() {
         ],
         0.0,
         "tap modulated",
+    );
+}
+
+// ── Control ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn map_matches() {
+    assert_tick_equivalence(
+        Map::new([-1.0, 1.0], [120.0, 240.0]),
+        &[Some(noise(20))],
+        0.0,
+        "map",
     );
 }
 

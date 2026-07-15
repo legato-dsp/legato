@@ -20,6 +20,7 @@ use crate::{
             onepole::OnePole,
             ops::{AddDef, DivDef, GainDef, MultDef, SubDef},
             pan::Pan,
+            plate::Plate480,
             sampler::Sampler,
             saw::Saw,
             sine::Sine,
@@ -120,6 +121,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<HadamardMixer>();
     registry.register_node::<HouseholderMixer>();
     registry.register_node::<ExternalInput>();
+    registry.register_node::<Plate480>();
     registry
 }
 

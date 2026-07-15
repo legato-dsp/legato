@@ -95,6 +95,13 @@ impl Sine {
         }
     }
 
+    /// Start the oscillator at `phase_turns` (0..1). `0.25` gives the
+    /// quadrature partner of a `0.0` oscillator at the same frequency.
+    pub fn with_start_phase(mut self, phase_turns: f32) -> Self {
+        self.phase = phase_turns;
+        self
+    }
+
     #[inline(always)]
     fn tick_inner<const ORDER: usize>(&mut self, freq: f32) -> f32 {
         // Multiply by the reciprocal, like the block path, so the phase
@@ -246,7 +253,8 @@ impl Sine {
             .transpose()?
             .unwrap_or_default();
         let sr = rb.get_config().sample_rate as f32;
-        Ok(Self::with_quality(freq, sr, quality))
+        let phase = p.get_f32("phase").unwrap_or(0.0);
+        Ok(Self::with_quality(freq, sr, quality).with_start_phase(phase))
     }
 }
 
@@ -254,7 +262,7 @@ impl NodeDefinition for Sine {
     const NAME: &'static str = "sine";
     const DESCRIPTION: &'static str = "Sine wave oscillator with optional FM input";
     const REQUIRED_PARAMS: &'static [&'static str] = &[];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans", "quality"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["freq", "chans", "quality", "phase"];
 
     fn create(
         rb: &mut ResourceBuilderView,

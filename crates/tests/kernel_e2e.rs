@@ -231,6 +231,107 @@ fn feedback_comb_kernel_runs() {
     assert!(out[0].iter().any(|x| x.abs() > 1e-3), "comb was silent");
 }
 
+/// Dogfood check: the plate reverb authored in the kernel DSL
+/// ([`legato::kernel::PLATE_KERNEL`], ~66 primitive nodes with three feedback
+/// cycles) must sound like the handwritten Rust `plate480` node.
+///
+/// Sample-exact comparison is off the table by design: the DSL version's
+/// implicit z⁻¹ placement, ±1-sample allpass skews, and fractional (vs
+/// rounded) delay lengths shift individual samples. What must survive all of
+/// that is the *energy envelope* — same input, same decay, same loudness —
+/// so we drive both with a broadband saw and compare per-window RMS.
+#[test]
+fn plate_kernel_matches_rust_plate_envelope() {
+    let rust_src = r#"
+        audio {
+            saw { chans: 1, freq: 55.0 },
+            mono_fan_out { chans: 2 },
+            plate480: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth: 0.9995, mix: 1.0 }
+        }
+
+        saw >> mono_fan_out
+        mono_fan_out >> verb[0..2]
+
+        { verb }
+    "#;
+
+    let kernel_src = format!(
+        "{}\n{}",
+        legato::kernel::PLATE_KERNEL,
+        r#"
+        patches {
+            plate: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth_a: 0.0005, wet: 1.0, dry: 0.0 }
+        }
+
+        audio {
+            saw { chans: 1, freq: 55.0 },
+            mono_fan_out { chans: 2 },
+        }
+
+        saw >> mono_fan_out
+        mono_fan_out >> verb[0..2]
+
+        { verb }
+    "#
+    );
+
+    let mut rust_app = build(rust_src, 2);
+    let mut kernel_app = build(&kernel_src, 2);
+
+    // ~0.7s: enough for the tanks to fill and reach comparable steady energy.
+    const WINDOW: usize = 2048;
+    const WINDOWS: usize = 16;
+
+    let render_rms = |app: &mut LegatoApp| -> Vec<f32> {
+        let mut rms = Vec::with_capacity(WINDOWS);
+        for _ in 0..WINDOWS {
+            let mut energy = 0.0f64;
+            for _ in 0..WINDOW / BLOCK {
+                let view = app.next_block(None);
+                for c in 0..2 {
+                    for &x in view.channels[c] {
+                        assert!(x.is_finite(), "plate output not finite");
+                        energy += (x as f64) * (x as f64);
+                    }
+                }
+            }
+            rms.push((energy / (WINDOW * 2) as f64).sqrt() as f32);
+        }
+        rms
+    };
+
+    let rust_rms = render_rms(&mut rust_app);
+    let kernel_rms = render_rms(&mut kernel_app);
+
+    eprintln!("rust plate RMS envelope:   {rust_rms:.4?}");
+    eprintln!("kernel plate RMS envelope: {kernel_rms:.4?}");
+
+    // Skip the build-up windows; compare the settled envelope.
+    for (w, (a, b)) in rust_rms.iter().zip(kernel_rms.iter()).enumerate().skip(4) {
+        assert!(
+            *a > 1e-4 && *b > 1e-4,
+            "window {w}: a plate went silent (rust {a}, kernel {b})"
+        );
+        let rel = (a - b).abs() / a.max(*b);
+        // Measured headroom: the two settle within ~0.2% of each other; 5%
+        // leaves room for other SIMD lane widths without hiding regressions.
+        assert!(
+            rel < 0.05,
+            "window {w}: RMS envelopes diverged: rust {a} vs kernel {b} (rel {rel:.3})"
+        );
+    }
+
+    // Aggregate energy over the settled region must agree more tightly than
+    // any individual window.
+    let total = |rms: &[f32]| rms[4..].iter().map(|x| x * x).sum::<f32>().sqrt();
+    let (ta, tb) = (total(&rust_rms), total(&kernel_rms));
+    let rel = (ta - tb).abs() / ta.max(tb);
+    assert!(
+        rel < 0.02,
+        "settled energy diverged: rust {ta} vs kernel {tb} (rel {rel:.3})"
+    );
+}
+
 /// A kernel instantiated *inside* a patch: the KernelRef must survive macro
 /// expansion and lower to a per-sample node with a fully-qualified alias.
 #[test]

@@ -20,6 +20,18 @@ pub trait PerSampleNode: Send {
     fn handle_msg(&mut self, _msg: NodeMessage) {}
 }
 
+impl<T: PerSampleNode + ?Sized> PerSampleNode for Box<T> {
+    fn ports(&self) -> &Ports {
+        (**self).ports()
+    }
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        (**self).tick(in_frame, out_frame)
+    }
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        (**self).handle_msg(msg)
+    }
+}
+
 /// Drives a [`SampleNode`] as a block-rate [`Node`], owning the reusable frame
 /// scratch so the hot path is allocation-free.
 pub struct PerSample<T: PerSampleNode> {

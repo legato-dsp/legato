@@ -18,7 +18,12 @@ pub struct OnePole {
 
 impl OnePole {
     pub fn new(cutoff: f32, chans: usize, sr: usize) -> Self {
-        let a = get_a_from_cutoff(sr as f32, cutoff);
+        Self::from_coefficient(get_a_from_cutoff(sr as f32, cutoff), chans)
+    }
+
+    /// Construct directly from the pole coefficient:
+    /// `y[n] = (1 - a) * x[n] + a * y[n-1]`.
+    pub fn from_coefficient(a: f32, chans: usize) -> Self {
         Self {
             a,
             chans,
@@ -101,17 +106,26 @@ impl OnePole {
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
         let chans = p.get_usize("chans").unwrap_or(2);
-        let cutoff = p.get_f32("cutoff").expect("a not provided to onepass");
-        let sr = rb.get_config().sample_rate;
-        Ok(Self::new(cutoff, chans, sr))
+        // Either a cutoff in Hz, or the pole coefficient `a` directly (handy
+        // when porting designs specified as raw one-pole coefficients).
+        if let Some(a) = p.get_f32("a") {
+            Ok(Self::from_coefficient(a, chans))
+        } else {
+            let cutoff = p
+                .get_f32("cutoff")
+                .expect("onepole requires either `cutoff` (Hz) or `a` (pole coefficient)");
+            let sr = rb.get_config().sample_rate;
+            Ok(Self::new(cutoff, chans, sr))
+        }
     }
 }
 
 impl NodeDefinition for OnePole {
     const NAME: &'static str = "onepole";
-    const DESCRIPTION: &'static str = "Single-pole lowpass filter";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["cutoff"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
+    const DESCRIPTION: &'static str =
+        "Single-pole lowpass filter (specify `cutoff` in Hz, or the pole coefficient `a` directly)";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["cutoff", "a", "chans"];
 
     fn create(
         rb: &mut ResourceBuilderView,

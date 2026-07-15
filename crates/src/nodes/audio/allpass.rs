@@ -29,7 +29,7 @@ impl Allpass {
         let delay_lines = vec![RingBuffer::new(capacity); chans];
 
         Self {
-            feedback: feedback.clamp(0.0, 0.98),
+            feedback: feedback.clamp(-0.98, 0.98),
             delay_length_samples,
             delay_lines,
             capacity,
@@ -58,7 +58,7 @@ impl PerSampleNode for Allpass {
 
         let feedback = in_frame[self.chans + 1]
             .map_or(self.feedback, |v| v)
-            .clamp(0.0, 0.98);
+            .clamp(-0.98, 0.98);
 
         for (c, chan_state) in self.delay_lines.iter_mut().enumerate() {
             if let Some(input) = in_frame[c] {
@@ -104,7 +104,7 @@ impl Node for Allpass {
 
                     let feedback = feedback_port
                         .map_or(self.feedback, |buf| buf[i])
-                        .clamp(0.0, 0.98);
+                        .clamp(-0.98, 0.98);
 
                     let delayed = chan_state.get_delay_cubic(delay_length_samples);
                     let write = input[i] + feedback * delayed;
@@ -121,8 +121,8 @@ impl Node for Allpass {
     fn handle_msg(&mut self, msg: NodeMessage) {
         if let NodeMessage::SetParam(inner) = msg {
             match (inner.param_name, inner.value) {
-                ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(0.0, 0.98),
-                ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(0.0, 0.98),
+                ("feedback", RtValue::F32(val)) => self.feedback = val.clamp(-0.98, 0.98),
+                ("feedback", RtValue::U32(val)) => self.feedback = (val as f32).clamp(-0.98, 0.98),
                 ("delay_length", RtValue::F32(val)) => {
                     self.delay_length_samples = val.clamp(0.0, self.capacity as f32)
                 }
