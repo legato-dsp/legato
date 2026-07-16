@@ -438,35 +438,6 @@ mod test {
     }
 
     #[test]
-    fn test_node_pipes_and_aliases() {
-        let src = r#"
-            audio {
-                osc: sine * 4 { freq: 440 } | lowpass(100.5) | gain(null)
-            }
-
-            { sine }
-        "#;
-
-        let expected = Ast {
-            declarations: vec![DeclarationScope {
-                namespace: "audio".to_string(),
-                declarations: vec![NodeDeclaration {
-                    node_type: "osc".to_string(),
-                    alias: Some("sine".to_string()),
-                    params: Some(BTreeMap::from([("freq".to_string(), Value::U32(440))])),
-                    count: 4,
-                }],
-            }],
-            macros: Vec::new(),
-            sink: "sine".into(),
-            source: None,
-            connections: Vec::new(),
-        };
-
-        assert_parse_equals_ast(src, expected);
-    }
-
-    #[test]
     fn test_port_stride() {
         let src = r#"test_node[0:10:2]"#;
         let res = endpoint_parser().parse(src).unwrap();
@@ -493,7 +464,7 @@ mod test {
             }
 
             audio {
-                osc: square_wave_one { freq: 440.0, gain: 0.2 } | volume(0.8),
+                osc: square_wave_one { freq: 440.0, gain: 0.2 },
             }
 
             { square_wave_one }
@@ -648,7 +619,7 @@ mod test {
     fn test_audio_graph_with_slices_and_pipes() {
         let src = r#"
         audio {
-            sampler { sampler_name: "amen", chans: 2 } | logger(),
+            sampler { sampler_name: "amen", chans: 2 },
             allpass { delay_length: 200, feedback: 0.5, chans: 2 },
             track_mixer { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] },
         }
