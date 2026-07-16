@@ -2,41 +2,30 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
+    kernel::{KARPLUS_KERNEL, PLATE_KERNEL},
     midi::{MidiPortKind, start_midi_thread},
     ports::PortBuilder,
 };
 
 /// A five voice sawtooth example
 fn main() {
-    let graph = String::from(
+    let graph = format!(
+        "{}\n{}\n{}",
+        KARPLUS_KERNEL,
+        PLATE_KERNEL,
         r#"
-        patch voice(
-            attack = 50.0,
-            decay = 30.0,
-            sustain = 0.3,
-            release = 50.0
-        ) {
-            in freq gate
-
-            audio {
-                saw { chans: 1 },
-                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
-            }
-
-            freq >> saw
-            gate >> adsr.gate
-            saw >> adsr[1]
-
-            { adsr }
-        }
-
         patches {
-            voice * 5 { },
+            // decay near 1 = long sustain; lower damping = brighter/longer ring.
+            karplus: voice * 5 { damping: 0.4, decay: 0.996, pluck: 0.99 },
+            plate {}
         }
 
         audio {
-            svf { chans: 2, cutoff: 5400.0, q: 0.4, type: "lowpass" },
-            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            // 5 mono strings summed to one bus, gently rolled off, then spread
+            // to stereo. keep osc_mixer -> svf on port 0 only (>> svf would also
+            // hit svf's cutoff/q mod ports).
+            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.3, 0.3, 0.3, 0.3, 0.3] },
+            svf { chans: 1, cutoff: 6000.0, q: 0.4, type: "lowpass" },
             mono_fan_out { chans: 2 },
         }
 
@@ -44,15 +33,17 @@ fn main() {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
+        // poly_voice emits 3 chans per voice: [gate, freq, vel]. With 5 voices
+        // that is 15 chans, so the strides run to 15 (0,3,6,9,12 / 1,4,7,10,13).
+        poly_voice[0:15:3] >> voice(*).gate
+        poly_voice[1:15:3] >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
-        osc_mixer >> svf[0] // No key tracking
+        osc_mixer >> mono_fan_out // no key tracking
 
-        svf >> mono_fan_out
+        mono_fan_out >> plate
 
-        { mono_fan_out }
+        { plate }
     "#,
     );
 
