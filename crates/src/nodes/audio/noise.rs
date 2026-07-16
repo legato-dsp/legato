@@ -1,10 +1,20 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::{DynNode, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
+
+/// Bumped once per `Noise::new()` so that every generator — every voice of a
+/// polyphonic spawn, every `noise` in a graph — starts from a distinct seed.
+/// A shared seed makes all instances emit the *identical* sequence, which turns
+/// e.g. a Karplus–Strong excitation into the same characterless click on every
+/// note and stacks (in phase) across voices.
+static NOISE_SEED_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone)]
 pub struct Noise {
@@ -20,8 +30,19 @@ impl Default for Noise {
 
 impl Noise {
     pub fn new() -> Self {
+        // Decorrelate instances: mix a per-instance counter into the base seed.
+        // The odd multiplier scrambles adjacent counter values so consecutive
+        // generators don't start in lock-step. `| 1` guarantees a non-zero
+        // state (xorshift is dead at 0).
+        let n = NOISE_SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let state = (0xBAADF00Du32 ^ n.wrapping_mul(0x9E3779B1)) | 1;
+        Self::with_seed(state)
+    }
+
+    /// Construct with an explicit seed (any non-zero value).
+    pub fn with_seed(seed: u32) -> Self {
         Self {
-            state: 0xBAADF00D,
+            state: seed | 1,
             ports: PortBuilder::default().audio_out(1).build(),
         }
     }
@@ -56,6 +77,21 @@ impl Node for Noise {
     ) {
         if let Some(out) = outputs.get_mut(0) {
             out.iter_mut().for_each(|x| *x = self.white())
+        }
+    }
+}
+
+impl PerSampleNode for Noise {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, _in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        // No inputs — the generator ignores its (empty) input frame and
+        // stamps a fresh white sample onto every output port.
+        let sample = self.white();
+        for out in out_frame.iter_mut() {
+            *out = sample;
         }
     }
 }

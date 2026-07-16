@@ -8,6 +8,7 @@ use crate::{
     nodes::{
         audio::{
             allpass::Allpass,
+            noise::Noise,
             onepole::OnePole,
             ops::{ApplyOp, ApplyOpKind, mult_node_factory},
             saw::Saw,
@@ -39,6 +40,7 @@ pub enum KernelNode {
     Tap(DelayTap),
     Op(ApplyOp),
     Map(Map),
+    Noise(Noise),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -53,6 +55,7 @@ macro_rules! dispatch {
             KernelNode::Tap($inner) => $body,
             KernelNode::Op($inner) => $body,
             KernelNode::Map($inner) => $body,
+            KernelNode::Noise($inner) => $body,
         }
     };
 }
@@ -93,6 +96,7 @@ pub fn build_kernel_node(
         "allpass" => KernelNode::Allpass(Allpass::from_params(rb, p)?),
         "tap" => KernelNode::Tap(DelayTap::from_params(rb, p)?),
         "map" => KernelNode::Map(Map::from_params(rb, p)?),
+        "noise" => KernelNode::Noise(Noise::new()),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
@@ -715,6 +719,108 @@ pub const PLATE_KERNEL: &str = r#"
         dry_r >> out[1]
 
         { out }
+    }
+"#;
+
+/// A self-contained Karplus–Strong plucked string authored as a `kernel` DSL
+/// declaration. Two control inputs — `gate` and `freq` — and a mono string out.
+///
+/// The core is a four-node feedback loop:
+///
+/// ```text
+///   exc --> [add mix] --> [tap string] --> [onepole loop_lp] --> [mult fb]
+///              ^                                                     |
+///              +-----------------------------------------------------+
+/// ```
+///
+/// `mix` sums the excitation with the loop's returning tail, `string` is the
+/// delay line whose length sets the pitch, `loop_lp` is the averaging lowpass
+/// that makes the string lose its highs as it rings, and `fb` is the sustain
+/// gain. The `fb -> mix` edge is the cycle the engine breaks with its implicit
+/// z⁻¹, so the total loop delay is `string`'s delay + 1 sample (+ the filter's
+/// ~half-sample phase lag).
+///
+/// **Excitation (`gate` -> noise burst), fully internal.** A `onepole` follows
+/// the gate slowly, and `env = gate - follow` is a transient that spikes on the
+/// rising edge and decays over the follower's time constant (`pluck`). That
+/// transient windows the `noise` generator into a short burst, and a final
+/// `* gate` mask kills the mirror-image transient at note-off so releasing a
+/// key doesn't re-pluck the string. Hold the gate high and the burst still
+/// fades to silence — the string then rings purely on its feedback tail.
+///
+/// **Tuning (`freq` in Hz), fully internal.** The delay line needs its length
+/// in ms (`1000 / freq`), and the kernel DSL has no arithmetic on params — but
+/// it doesn't need any: `sine { freq: 0, phase: 0.25 }` is a constant `1.0`
+/// source, `div` turns that into `1/freq` (seconds), and `mult { val: 1000 }`
+/// scales it to ms, which modulates `string.delay_length` per sample. `tap`'s
+/// cubic interpolation makes the fractional lengths tune cleanly, and because
+/// it's per-sample you can sweep `freq` for glissando/vibrato.
+///
+/// Params:
+/// - `damping` (0..1): loop lowpass pole. Higher = darker, faster high-end
+///   decay (a duller, more muted pluck).
+/// - `decay` (<1): feedback gain. Closer to 1.0 = longer sustain. Keep < 1 for
+///   stability (loop DC gain equals this).
+/// - `pluck` (0..1): the gate-follower pole. Higher = longer/softer excitation
+///   window; lower = shorter/brighter attack.
+///
+/// ```text
+/// // drive gate + freq from a sequencer / MIDI voice, exactly like any other node:
+/// let graph = format!("{KARPLUS_KERNEL} patches {{ karplus: string {{ decay: 0.995 }} }} ...
+///     trig >> string.gate
+///     pitch >> string.freq
+///     { string }");
+/// ```
+pub const KARPLUS_KERNEL: &str = r#"
+    kernel karplus(
+        damping = 0.5,
+        decay = 0.99,
+        pluck = 0.995
+    ) {
+        in gate freq
+
+        audio {
+            // --- excitation: gate edge -> windowed, gate-masked noise burst ---
+            noise: exc_src {},
+            onepole: gate_follow { a: $pluck, chans: 1 },
+            sub: env { val: 0.0, chans: 1 },
+            mult: burst { val: 1.0, chans: 1 },
+            mult: exc { val: 1.0, chans: 1 },
+
+            // --- tuning: freq (Hz) -> 1/freq (s) -> ms -> delay_length ---
+            sine: one { freq: 0.0, phase: 0.25 },
+            div: period_s { val: 220.0 },
+            mult: period_ms { val: 1000.0 },
+
+            // --- the string loop ---
+            add: mix { val: 0.0, chans: 1 },
+            tap: string { delay_length: 4.5, chans: 1, capacity: 48000 },
+            onepole: loop_lp { a: $damping, chans: 1 },
+            mult: fb { val: $decay },
+        }
+
+        // excitation: env = gate - slow_follow(gate); burst = noise * env; exc = burst * gate
+        gate >> gate_follow[0]
+        gate >> env[0]
+        gate_follow >> env[1]
+        exc_src >> burst[0]
+        env >> burst[1]
+        burst >> exc[0]
+        gate >> exc[1]
+
+        // tuning: 1.0 / freq -> * 1000 -> ms into the delay length port
+        one >> period_s[0]
+        freq >> period_s[1]
+        period_s >> period_ms[0]
+        period_ms >> string.delay_length
+
+        // string loop: exc + tail -> delay -> loop lowpass -> feedback gain
+        exc >> mix[0]
+        fb  >> mix[1]
+        mix >> string[0] >> loop_lp[0] >> fb[0]
+
+        // fb >> mix closes the cycle -> the engine's implicit z-1 lives here.
+        { string }
     }
 "#;
 

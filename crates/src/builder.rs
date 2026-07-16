@@ -383,23 +383,12 @@ where
                 source_indicies[0],
                 sink_indicies.as_slice(),
             ),
-            (n, 1) if n >= 1 => {
-                print!("n_to_one path!!");
-
-                dbg!("source: ", self.runtime.get_node(&connection.source));
-                dbg!("sink: ", self.runtime.get_node(&connection.sink));
-
-                dbg!(&connection);
-
-                dbg!(source_arity, sink_arity);
-
-                n_to_one(
-                    &mut self.runtime,
-                    connection,
-                    source_indicies.as_slice(),
-                    sink_indicies[0],
-                )
-            }
+            (n, 1) if n >= 1 => n_to_one(
+                &mut self.runtime,
+                connection,
+                source_indicies.as_slice(),
+                sink_indicies[0],
+            ),
             (n, m) if n == m => n_to_n(
                 &mut self.runtime,
                 connection,

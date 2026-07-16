@@ -32,6 +32,7 @@ rtrb = "0.3.3"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+rustfft = "6"
 
 [[bin]]
 name = "export-docs"
