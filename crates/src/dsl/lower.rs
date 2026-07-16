@@ -53,7 +53,6 @@ fn convert_macro(
                 decl.node_type.clone(),
                 alias.clone(),
                 decl.params.clone().unwrap_or_default(),
-                decl.pipes.clone(),
                 decl.count,
             );
             local_alias_to_id.insert(alias, id);
@@ -161,7 +160,6 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
                 decl.node_type.clone(),
                 alias.clone(),
                 decl.params.clone().unwrap_or_default(),
-                decl.pipes.clone(),
                 decl.count,
             );
             alias_to_id.insert(alias, id);

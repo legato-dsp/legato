@@ -208,7 +208,6 @@ impl MacroExpansionPass {
                 node.node_type.clone(),
                 fqn,
                 params,
-                node.pipes.clone(),
                 node.count,
             );
             id_map.insert(node.id, new_id);
@@ -221,7 +220,6 @@ impl MacroExpansionPass {
 
         id_map
     }
-
 }
 
 /// Replace `$name` template values in `params` with their bindings from

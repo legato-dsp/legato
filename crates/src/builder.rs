@@ -5,7 +5,7 @@ use crate::{
     config::Config,
     context::AudioContext,
     dsl::{
-        ir::{DSLParams, NodeId, Port, Value},
+        ir::{DSLParams, NodeId, Port},
         parse::legato_parser,
         pipeline::Pipeline,
     },
@@ -13,7 +13,6 @@ use crate::{
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
-    pipes::{Pipe, PipeRegistry},
     ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
@@ -60,7 +59,6 @@ pub struct ReadyToBuild;
 pub trait CanRegister {}
 pub trait CanAddNode {}
 pub trait CanConnect {}
-pub trait CanApplyPipe {}
 pub trait CanSetSink {}
 pub trait CanBuild {}
 
@@ -80,8 +78,6 @@ impl CanAddMidiRuntime for ReadyToBuild {}
 impl CanAddNode for Configured {}
 impl CanAddNode for ContainsNodes {}
 
-impl CanApplyPipe for ContainsNodes {}
-
 impl CanConnect for ContainsNodes {}
 impl CanConnect for Connected {}
 
@@ -95,7 +91,6 @@ pub struct DslBuilding;
 impl CanRegister for DslBuilding {}
 impl CanAddNode for DslBuilding {}
 impl CanConnect for DslBuilding {}
-impl CanApplyPipe for DslBuilding {}
 impl CanSetSink for DslBuilding {}
 impl CanBuild for DslBuilding {}
 
@@ -110,7 +105,6 @@ impl<S> LegatoBuilder<S> {
             delay_name_to_key: self.delay_name_to_key,
             resource_builder: self.resource_builder,
             external_buffer_to_key: self.external_buffer_to_key,
-            pipe_lookup: self.pipe_lookup,
             last_selection: self.last_selection,
             midi_runtime_frontend: self.midi_runtime_frontend,
             _state: PhantomData,
@@ -124,8 +118,6 @@ pub struct LegatoBuilder<State> {
     namespaces: HashMap<String, NodeRegistry>,
     // Lookup from string to NodeKey
     working_name_lookup: HashMap<String, NodeKey>,
-    // Lookup from string to Pipe Fn
-    pipe_lookup: PipeRegistry,
     // Resources being built. These can be pased to node factories
     resource_builder: ResourceBuilder,
     // Name to key maps
@@ -181,7 +173,6 @@ impl LegatoBuilder<Unconfigured> {
             delay_name_to_key: HashMap::new(),
             namespaces,
             working_name_lookup: HashMap::new(),
-            pipe_lookup: PipeRegistry::default(),
             last_selection: None,
             midi_runtime_frontend: None,
             _state: std::marker::PhantomData,
@@ -211,11 +202,6 @@ where
             Some(ns) => ns.declare_node(spec),
             None => panic!("Cannot find namespace {}", namespace),
         }
-        self
-    }
-    /// Register a custom pipe for transforming nodes
-    pub fn register_pipe(mut self, name: &'static str, pipe: Box<dyn Pipe>) -> Self {
-        self.pipe_lookup.insert(name.into(), pipe);
         self
     }
     /// Register an AudioInput
@@ -488,37 +474,6 @@ where
 
 impl<S> LegatoBuilder<S>
 where
-    S: CanApplyPipe,
-{
-    pub fn pipe(&mut self, pipe_name: &str, props: Option<Value>) {
-        match self.last_selection {
-            Some(_) => {
-                if let Ok(pipe) = self.pipe_lookup.get(pipe_name) {
-                    if let Some(last_selection) = &self.last_selection {
-                        let mut view = SelectionView {
-                            runtime: &mut self.runtime,
-                            working_name_lookup: &mut self.working_name_lookup,
-                            selection: last_selection.clone(),
-                        };
-                        pipe.pipe(&mut view, props);
-
-                        self.last_selection = Some(view.get_selection_owned());
-                    } else {
-                        panic!(
-                            "Cannot apply pipe when there is no last_selection! Please add a node first and apply a pipe directly after."
-                        )
-                    }
-                } else {
-                    panic!("Pipe not found {}", pipe_name);
-                }
-            }
-            None => panic!("Cannot apply pipe to non-existent node!"),
-        }
-    }
-}
-
-impl<S> LegatoBuilder<S>
-where
     S: CanBuild,
 {
     pub fn build(mut self) -> (LegatoApp, LegatoFrontend) {
@@ -624,12 +579,6 @@ impl LegatoBuilder<DslBuilding> {
                 .expect("alias must be in lookup immediately after adding the node");
 
             ir_to_runtime.insert(node_id, runtime_key);
-
-            // Pipes are applied right after the node they belong to, matching
-            // the original builder contract.
-            for pipe in &node.pipes {
-                self.pipe(&pipe.name, pipe.params.clone());
-            }
         }
 
         // Wire edges using the NodeId -> NodeKey map (no string lookups).

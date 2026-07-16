@@ -1,28 +1,3 @@
-//! The kernel resolution engine and per-sample executor.
-//!
-//! A `kernel` DSL declaration shares the `patch` body grammar, but instead of
-//! being inlined into the block-rate graph it is lowered *whole* into one
-//! [`KernelGraph`]: a flat, enum-dispatched per-sample subgraph. Because the
-//! interior runs one sample at a time, feedback cycles are legal — any edge
-//! that closes a cycle reads the value its source produced on the *previous*
-//! sample (an implicit z⁻¹).
-//!
-//! This module is deliberately separate from the block-rate passes in
-//! [`crate::dsl`]: those assume acyclic graphs and node multiplicity, neither
-//! of which applies inside a kernel.
-//!
-//! # Performance
-//!
-//! Kernels trade speed for usability: every interior node pays an enum
-//! dispatch plus a wiring gather per sample, and nothing vectorizes across
-//! the block. Measured on the `Plate reverb` bench (same DSP both ways), the
-//! ~66-node [`PLATE_KERNEL`] runs ~8× slower than the handwritten
-//! `plate480` node — ~10 ns of overhead per node per sample, ~3% of the
-//! realtime budget for the whole reverb. Prototype topologies as kernels;
-//! graduate a kernel to a custom Rust [`PerSampleNode`] (or block-rate
-//! `Node`) once its topology settles and it is spawned many times or grows
-//! into your budget. See `docs/content/docs/4.kernels.md`.
-
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::{
@@ -132,35 +107,19 @@ pub fn build_kernel_node(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Index newtypes
-// ---------------------------------------------------------------------------
-// Lowering juggles several distinct index spaces. Keeping them as newtypes
-// makes it obvious which space a table is indexed by; they all erase to a
-// plain integer, so the runtime cost is zero.
-
-/// A node's position in kernel-body *declaration* order.
-///
-/// This is the stable space: aliases, port counts, and the `values` slot
-/// layout are all assigned in declaration order, before any reordering.
+/// A node's position in kernel-body declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct DeclIdx(usize);
 
-/// A node's position in the final *execution* order (the reverse postorder
-/// produced by [`execution_order`]). The runtime tables in [`KernelGraph`]
-/// (`nodes`, `layouts`, `port_sources`) live in this space.
+/// A node's position in the final execution order
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ExecIdx(usize);
 
-/// A slot in the persistent `values` table: one per interior *output* port,
-/// laid out node-by-node in declaration order. Slot indices never move when
-/// nodes are reordered, which is what keeps `Src::Internal` valid across the
-/// permute into execution order.
+/// A slot in the persistent `values` table
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ValueSlot(u32);
 
-/// An index into the kernel's exterior input frame — i.e. which `in` virtual
-/// port, in the order they were declared.
+/// An index into the kernel's exterior input frame
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ExternalInput(u32);
 
@@ -178,17 +137,13 @@ enum Src {
     Internal(ValueSlot),
 }
 
-/// Per-node geometry into the flat runtime tables, in execution order.
-///
-/// `u32` keeps the struct at 16 bytes so a whole layout row fits alongside
-/// its neighbors in a cache line.
+/// Per-node indexing into the flat runtime tables, in execution order.
 #[derive(Clone, Copy, Debug)]
 struct NodeLayout {
-    /// First entry in `port_sources` for this node. Its input ports are
-    /// contiguous: port `p` is `port_sources[first_in_port + p]`.
+    /// First entry in `port_sources` for this node
     first_in_port: u32,
     n_in: u32,
-    /// First `values` slot of this node's outputs (declaration-order layout).
+    /// First `values` slot of this node's outputs.
     first_value_slot: u32,
     n_out: u32,
 }
@@ -234,20 +189,10 @@ impl PerSampleNode for KernelGraph {
         for i in 0..self.nodes.len() {
             let layout = self.layouts[i];
 
-            // Gather this node's input frame. Each port sums all of its
-            // contributions, mirroring how the block-rate executor mixes
-            // multiple edges into one input buffer.
             for p in 0..layout.n_in as usize {
                 let (start, len) = self.port_sources[layout.first_in_port as usize + p];
                 let sources = &self.src_pool[start as usize..(start + len) as usize];
 
-                // `patched` distinguishes "no live source this sample"
-                // (-> None) from "sources summed to zero" (-> Some(0.0)).
-                // None must survive so a node can fall back to its internal
-                // param (e.g. svf's stored cutoff), exactly like an
-                // unpatched port at block rate. An empty source list stays
-                // unpatched; an Internal source always patches; an External
-                // source only patches when the kernel's own port is patched.
                 let mut acc = 0.0;
                 let mut patched = false;
                 for src in sources {
@@ -259,13 +204,8 @@ impl PerSampleNode for KernelGraph {
                             }
                         }
                         // This read is where feedback gets its one-sample
-                        // delay. `values` persists across ticks and nodes run
-                        // in `execution_order`: a forward edge's source has
-                        // already ticked this sample, so the slot holds the
-                        // *current* sample; a feedback (back) edge's source
-                        // ticks later, so the slot still holds the *previous*
-                        // sample's output. The ordering is the delay — no
-                        // explicit z⁻¹ element exists.
+                        // delay. This comes from the previous sample, assuming
+                        // we had a cycle and broke it here.
                         Src::Internal(ValueSlot(slot)) => {
                             acc += self.values[slot as usize];
                             patched = true;
@@ -275,10 +215,9 @@ impl PerSampleNode for KernelGraph {
                 self.scratch_in[p] = patched.then_some(acc);
             }
 
-            // Tick straight into this node's value slots so downstream
-            // readers (later in execution order) see the fresh sample.
             let first = layout.first_value_slot as usize;
             let n_out = layout.n_out as usize;
+
             self.nodes[i].tick(
                 &self.scratch_in[..layout.n_in as usize],
                 &mut self.values[first..first + n_out],
@@ -436,12 +375,6 @@ pub fn lower_kernel(
                 ir_node.alias, ir_node.count, ir_macro.name
             )));
         }
-        if !ir_node.pipes.is_empty() {
-            return Err(unsupported(format!(
-                "pipes on '{}' inside kernel '{}'",
-                ir_node.alias, ir_macro.name
-            )));
-        }
 
         let mut params = ir_node.params.clone();
         substitute_templates(&mut params, &resolved_params);
@@ -530,10 +463,10 @@ pub fn lower_kernel(
         }
     }
 
-    // Topological order with cycles broken into z⁻¹ reads.
+    // Topological order with cycles broken.
     let exec_order: Vec<DeclIdx> = execution_order(nodes.len(), &successors);
 
-    // Inverse permutation: where did each declared node end up?
+    // Where did each declared node end up?
     let mut exec_pos_of: Vec<ExecIdx> = vec![ExecIdx(0); nodes.len()];
     for (pos, &decl) in exec_order.iter().enumerate() {
         exec_pos_of[decl.0] = ExecIdx(pos);

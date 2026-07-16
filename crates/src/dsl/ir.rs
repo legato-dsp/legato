@@ -75,7 +75,6 @@ pub struct NodeDeclaration {
     pub node_type: String,
     pub alias: Option<String>,
     pub params: Option<Object>,
-    pub pipes: Vec<ASTPipe>,
     pub count: u32,
 }
 
@@ -221,7 +220,6 @@ pub struct IRNode {
     /// produced by macro expansion (post-expansion).
     pub alias: String,
     pub params: Object,
-    pub pipes: Vec<ASTPipe>,
     /// How many times the node is spawned. After the multi-node pass, this should be 1.
     pub count: u32,
 }
@@ -286,7 +284,6 @@ impl IRGraph {
         node_type: impl Into<String>,
         alias: impl Into<String>,
         params: Object,
-        pipes: Vec<ASTPipe>,
         count: u32,
     ) -> NodeId {
         let id = NodeId(self.next_id);
@@ -299,7 +296,6 @@ impl IRGraph {
             node_type: node_type.into(),
             alias: alias.clone(),
             params,
-            pipes,
             count,
         };
         self.nodes.insert(id, node);
@@ -369,15 +365,7 @@ impl IRGraph {
         params: Object,
     ) -> NodeId {
         let edge = self.edges.remove(edge_index);
-        let new_id = self.add_node(
-            IRNodeKind::Leaf,
-            namespace,
-            node_type,
-            alias,
-            params,
-            vec![],
-            1,
-        );
+        let new_id = self.add_node(IRNodeKind::Leaf, namespace, node_type, alias, params, 1);
         self.edges.push(IREdge {
             source: edge.source,
             source_selector: NodeSelector::Single,
