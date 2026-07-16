@@ -15,7 +15,7 @@ use crate::{
 const NUM_GRAINS: usize = 2;
 
 /// We use this as a constant to scale the incoming stream of freq values
-const MIDDLE_C: f32 = 261.625565;
+const MIDDLE_C: f32 = 261.625_58;
 
 // TODO: Pan, more algorithms, windows, variation
 
@@ -244,11 +244,10 @@ impl Node for Granular {
                     .iter()
                     .any(|x| x.active() && x.window_phase() < 1.0 - x.get_shape());
 
-                if should_spawn_grain {
-                    if let Some(grain) = streams.iter_mut().find(|x| x.ready()) {
+                if should_spawn_grain
+                    && let Some(grain) = streams.iter_mut().find(|x| x.ready()) {
                         grain.spawn(self.sample_pos, grain_len_samples, self.freq, self.shape);
                     }
-                }
             }
 
             for (c, chan) in outputs.iter_mut().enumerate() {
