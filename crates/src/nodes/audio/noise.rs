@@ -8,14 +8,7 @@ use crate::{
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
-
-/// Bumped once per `Noise::new()` so that every generator — every voice of a
-/// polyphonic spawn, every `noise` in a graph — starts from a distinct seed.
-/// A shared seed makes all instances emit the *identical* sequence, which turns
-/// e.g. a Karplus–Strong excitation into the same characterless click on every
-/// note and stacks (in phase) across voices.
 static NOISE_SEED_COUNTER: AtomicU32 = AtomicU32::new(0);
-
 #[derive(Clone)]
 pub struct Noise {
     state: u32,
@@ -30,16 +23,11 @@ impl Default for Noise {
 
 impl Noise {
     pub fn new() -> Self {
-        // Decorrelate instances: mix a per-instance counter into the base seed.
-        // The odd multiplier scrambles adjacent counter values so consecutive
-        // generators don't start in lock-step. `| 1` guarantees a non-zero
-        // state (xorshift is dead at 0).
         let n = NOISE_SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
         let state = (0xBAADF00Du32 ^ n.wrapping_mul(0x9E3779B1)) | 1;
         Self::with_seed(state)
     }
 
-    /// Construct with an explicit seed (any non-zero value).
     pub fn with_seed(seed: u32) -> Self {
         Self {
             state: seed | 1,
@@ -60,7 +48,6 @@ impl Noise {
     pub fn white(&mut self) -> f32 {
         // Map u32 to -1,1
         // TODO: Is there something with less ops?
-        // TODO: Could I get subnormals here?
         (self.next_val() as i32 as f32) * (1.0 / i32::MAX as f32)
     }
 }
