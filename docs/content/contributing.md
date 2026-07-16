@@ -7,7 +7,7 @@ Before contributing, please understand the project's goals and community standar
 
 ### AI Policy
 AI tools may be used for auxiliary tasks (e.g., generating test harnesses, proofreading, refactoring). However:
-* **Low-effort AI:** Pull requests that show clear signs of low-effort AI generation will not be accepted.
+* **Low-effort AI:** Pull requests that show clear signs of low-effort AI generation will not be accepted. You are expected to be able to explain all the decisions in your PR.
 * **Human-Centric Art:** The project **will not** incorporate or promote visuals, art, music, or other creative works that were not made by **humans** on official channels.
 
 ### Community & Licensing
