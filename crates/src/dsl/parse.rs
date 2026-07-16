@@ -145,35 +145,16 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
         .delimited_by(just('{').padded(), just('}').padded())
         .or_not();
 
-    let pipe = just('|')
-        .padded()
-        .ignore_then(ident)
-        .then(
-            value_parser()
-                .padded()
-                .or_not()
-                .delimited_by(just('('), just(')'))
-                .or_not(),
-        )
-        .map(|(name, params)| ASTPipe {
-            name,
-            params: params.flatten(),
-        });
-
     ident
         .then(alias)
         .then(count)
         .then(params)
-        .then(pipe.repeated().collect())
-        .map(
-            |((((node_type, alias), count), params), pipes)| NodeDeclaration {
-                node_type,
-                alias,
-                params,
-                pipes,
-                count: count.unwrap_or(1),
-            },
-        )
+        .map(|(((node_type, alias), count), params)| NodeDeclaration {
+            node_type,
+            alias,
+            params,
+            count: count.unwrap_or(1),
+        })
 }
 
 fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>> {
@@ -214,15 +195,22 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>>
         .then(extra_padded(scope_or_sink()))
         .delimited_by(extra_padded(just('{')), extra_padded(just('}')));
 
-    // patch must be followed by whitespace
-    just("patch")
-        .then_ignore(text::whitespace().at_least(1))
-        .ignore_then(ident)
+    // The declaration keyword picks the execution model; both must be
+    // followed by whitespace.
+    let keyword = choice((
+        just("patch").to(MacroKind::Patch),
+        just("kernel").to(MacroKind::Kernel),
+    ))
+    .then_ignore(text::whitespace().at_least(1));
+
+    keyword
+        .then(ident)
         .then(extra_padded(default_params))
         .then(patch_body)
         .map(
-            |((name, params), (((vports, decls), conns), sink))| AstMacro {
+            |(((kind, name), params), (((vports, decls), conns), sink))| AstMacro {
                 name,
+                kind,
                 default_params: params,
                 virtual_ports_in: vports.unwrap_or_default().into_iter().collect(),
                 declarations: decls,
@@ -466,16 +454,6 @@ mod test {
                     node_type: "osc".to_string(),
                     alias: Some("sine".to_string()),
                     params: Some(BTreeMap::from([("freq".to_string(), Value::U32(440))])),
-                    pipes: vec![
-                        ASTPipe {
-                            name: "lowpass".to_string(),
-                            params: Some(Value::F32(100.5)),
-                        },
-                        ASTPipe {
-                            name: "gain".to_string(),
-                            params: Some(Value::Null),
-                        },
-                    ],
                     count: 4,
                 }],
             }],
@@ -532,13 +510,6 @@ mod test {
             Some("square_wave_one".to_string())
         );
         assert_eq!(ast.declarations[1].declarations[0].node_type, "osc");
-        assert_eq!(
-            ast.declarations[1].declarations[0].pipes,
-            vec![ASTPipe {
-                name: "volume".into(),
-                params: Some(Value::F32(0.8))
-            }]
-        );
     }
 
     #[test]
@@ -700,8 +671,6 @@ mod test {
         let sampler = &scope.declarations[0];
         assert_eq!(sampler.node_type, "sampler");
         assert_eq!(sampler.alias, None);
-        assert_eq!(sampler.pipes.len(), 1);
-        assert_eq!(sampler.pipes[0].name, "logger");
 
         let track_mixer = &scope.declarations[2];
         let gain = track_mixer.params.as_ref().unwrap().get("gain").unwrap();
@@ -845,6 +814,50 @@ mod test {
             .unwrap();
         assert_eq!(audio_conn.sink.node, "env");
         assert_eq!(audio_conn.sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn test_kernel_keyword_sets_kind() {
+        let src = r#"
+            kernel comb(fb = 0.5) {
+                in audio_in
+
+                audio {
+                    tap { delay_length: 20, chans: 1 },
+                    mult { val: $fb }
+                }
+
+                audio_in >> tap
+                tap >> mult
+                mult >> tap
+
+                { mult }
+            }
+
+            patch wrapper() {
+                audio {
+                    gain { val: 0.5 }
+                }
+                { gain }
+            }
+
+            patches {
+                comb: c1 { fb: 0.7 }
+            }
+
+            { c1 }
+        "#;
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+
+        assert_eq!(ast.macros.len(), 2);
+        assert_eq!(ast.macros[0].name, "comb");
+        assert_eq!(ast.macros[0].kind, MacroKind::Kernel);
+        assert_eq!(ast.macros[0].virtual_ports_in.len(), 1);
+        // The feedback edge parses like any other connection.
+        assert_eq!(ast.macros[0].connections.len(), 3);
+
+        assert_eq!(ast.macros[1].name, "wrapper");
+        assert_eq!(ast.macros[1].kind, MacroKind::Patch);
     }
 
     #[test]

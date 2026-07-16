@@ -116,7 +116,7 @@ onUnmounted(() => document.removeEventListener("mousedown", onClickOutside));
       </div>
 
       <div class="w-full min-h-0 flex flex-col items-center overflow-y-auto">
-        <div class="w-full max-w-200">
+        <div class="w-full max-w-200 pb-32">
           <article v-if="data" class="prose">
             <h1>{{ data.title }}</h1>
             <ContentRenderer :value="data" />

@@ -1,5 +1,6 @@
 use crate::{
     node::Node,
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
 };
@@ -63,6 +64,27 @@ impl Node for Map {
     }
 }
 
+impl PerSampleNode for Map {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        if let Some(x) = in_frame[0] {
+            // Splat one sample through the SIMD path so tick is bit-identical
+            // to the block-rate `process`.
+            out_frame[0] = map_range_simd(
+                Vf32::splat(x),
+                self.min,
+                self.max,
+                self.mapped_min,
+                self.mapped_max,
+            )
+            .as_array()[0];
+        }
+    }
+}
+
 fn map_range_simd(x: Vf32, in_min: Vf32, in_max: Vf32, out_min: Vf32, out_max: Vf32) -> Vf32 {
     let original_range = in_max - in_min;
     let new_range = out_max - out_min;
@@ -77,16 +99,11 @@ use crate::{
     spec::NodeDefinition,
 };
 
-impl NodeDefinition for Map {
-    const NAME: &'static str = "map";
-    const DESCRIPTION: &'static str = "Maps one numeric range to another (e.g. -1..1 → 120..240)";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["range", "new_range"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
-
-    fn create(
+impl Map {
+    pub fn from_params(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
+    ) -> Result<Self, ValidationError> {
         let range = p
             .get_array_f32("range")
             .expect("Must pass original range to map");
@@ -99,7 +116,21 @@ impl NodeDefinition for Map {
         let mut r_1 = [0.0; 2];
         r_0.copy_from_slice(&range[..2]);
         r_1.copy_from_slice(&new_range[..2]);
-        Ok(Box::new(Self::new(r_0, r_1)))
+        Ok(Self::new(r_0, r_1))
+    }
+}
+
+impl NodeDefinition for Map {
+    const NAME: &'static str = "map";
+    const DESCRIPTION: &'static str = "Maps one numeric range to another (e.g. -1..1 → 120..240)";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["range", "new_range"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }
 

@@ -75,7 +75,6 @@ pub struct NodeDeclaration {
     pub node_type: String,
     pub alias: Option<String>,
     pub params: Option<Object>,
-    pub pipes: Vec<ASTPipe>,
     pub count: u32,
 }
 
@@ -123,9 +122,24 @@ pub struct Connection {
     pub sink: Endpoint,
 }
 
+/// How a macro-shaped declaration executes.
+///
+/// - `Patch` is inlined into the outer block-rate graph by
+///   [`crate::dsl::expand::MacroExpansionPass`].
+/// - `Kernel` stays a single node: its body is lowered by the kernel
+///   resolution engine into a per-sample [`crate::persample::KernelGraph`],
+///   which allows single-sample feedback cycles inside the body.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MacroKind {
+    #[default]
+    Patch,
+    Kernel,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct AstMacro {
     pub name: String,
+    pub kind: MacroKind,
     pub default_params: Option<Object>,
     pub virtual_ports_in: IndexSet<String>,
     pub declarations: Vec<DeclarationScope>,
@@ -170,6 +184,11 @@ pub enum IRNodeKind {
     /// An unexpanded macro reference.  `node_type` names the macro.
     /// Removed by [`MacroExpansionPass`].
     MacroRef,
+    /// A kernel instantiation. `node_type` names a [`MacroKind::Kernel`]
+    /// macro in the registry. Unlike `MacroRef` it is *never* expanded into
+    /// the outer graph — the builder lowers it into a single per-sample
+    /// node, so it survives every pass like a leaf.
+    KernelRef,
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +220,6 @@ pub struct IRNode {
     /// produced by macro expansion (post-expansion).
     pub alias: String,
     pub params: Object,
-    pub pipes: Vec<ASTPipe>,
     /// How many times the node is spawned. After the multi-node pass, this should be 1.
     pub count: u32,
 }
@@ -211,6 +229,7 @@ pub struct IRNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IRMacro {
     pub name: String,
+    pub kind: MacroKind,
     pub virtual_input_map: IndexMap<String, Vec<(NodeId, NodeSelector, Port)>>,
     pub default_params: Option<Object>,
     pub body: IRGraph,
@@ -265,7 +284,6 @@ impl IRGraph {
         node_type: impl Into<String>,
         alias: impl Into<String>,
         params: Object,
-        pipes: Vec<ASTPipe>,
         count: u32,
     ) -> NodeId {
         let id = NodeId(self.next_id);
@@ -278,7 +296,6 @@ impl IRGraph {
             node_type: node_type.into(),
             alias: alias.clone(),
             params,
-            pipes,
             count,
         };
         self.nodes.insert(id, node);
@@ -348,15 +365,7 @@ impl IRGraph {
         params: Object,
     ) -> NodeId {
         let edge = self.edges.remove(edge_index);
-        let new_id = self.add_node(
-            IRNodeKind::Leaf,
-            namespace,
-            node_type,
-            alias,
-            params,
-            vec![],
-            1,
-        );
+        let new_id = self.add_node(IRNodeKind::Leaf, namespace, node_type, alias, params, 1);
         self.edges.push(IREdge {
             source: edge.source,
             source_selector: NodeSelector::Single,

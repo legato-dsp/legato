@@ -3,6 +3,7 @@ use legato::{
     builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness_stereo_4096,
+    kernel::PLATE_KERNEL,
     nodes::audio::{
         fir::FirFilter,
         saw::Saw,
@@ -14,7 +15,7 @@ use legato::{
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
-    let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Sine::new(440.0, 48_000.0)));
 
     c.bench_function("Sine", |b| {
         b.iter(|| {
@@ -25,7 +26,7 @@ fn bench_stereo_sine(c: &mut Criterion) {
 }
 
 fn bench_stereo_saw(c: &mut Criterion) {
-    let mut graph = get_node_test_harness_stereo_4096(Box::new(Saw::new(440.0, 2)));
+    let mut graph = get_node_test_harness_stereo_4096(Box::new(Saw::new(440.0, 2, 48_000.0)));
 
     c.bench_function("Saw", |b| {
         b.iter(|| {
@@ -150,7 +151,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
             audio {
                 delay_write { delay_name: "a", chans: 2, delay_length: 1000 },
-                delay_read { delay_name: "a", chans: 2, delay_length: [120, 240] }
+                delay_read { delay_name: "a", chans: 2, delay_length: 120 }
             }
 
             { delay_read }
@@ -190,7 +191,7 @@ fn bench_delay_quality(c: &mut Criterion) {
             r#"
                 audio {{
                     delay_write {{ delay_name: "a", chans: 2, delay_length: 1000 }},
-                    delay_read {{ delay_name: "a", chans: 2, delay_length: [120, 240], quality: "{quality}" }}
+                    delay_read {{ delay_name: "a", chans: 2, delay_length: 120, quality: "{quality}" }}
                 }}
 
                 {{ delay_read }}
@@ -327,8 +328,8 @@ fn bench_kitchen_sink(c: &mut Criterion) {
             mono_fan_out { chans: 2 },
 
             delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
-            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
+            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: 938 },
+            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: 459 },
 
             track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
             
@@ -374,6 +375,79 @@ fn bench_kitchen_sink(c: &mut Criterion) {
     });
 }
 
+/// The same plate reverb two ways: the handwritten Rust `PerSampleNode`
+/// (`plate480`) versus the ~66-node kernel DSL declaration (`PLATE_KERNEL`).
+/// This is the "when should I graduate to a custom node?" number — the DSL
+/// kernel pays per-node dispatch + wiring gathers every sample, the Rust node
+/// is one tick with everything inlined.
+fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 48_000,
+        rt_capacity: 0,
+    };
+
+    let build = |graph: &str| {
+        let ports = PortBuilder::default().audio_out(2).build();
+        let (app, _) = LegatoBuilder::new(config, ports).build_dsl(graph);
+        app
+    };
+
+    let rust_graph = r#"
+        audio {
+            saw { chans: 1, freq: 55.0 },
+            mono_fan_out { chans: 2 },
+            plate480: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth: 0.9995, mix: 1.0 }
+        }
+
+        saw >> mono_fan_out
+        mono_fan_out >> verb[0..2]
+
+        { verb }
+    "#;
+
+    let kernel_graph = format!(
+        "{}\n{}",
+        PLATE_KERNEL,
+        r#"
+        patches {
+            plate: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth_a: 0.0005, wet: 1.0, dry: 0.0 }
+        }
+
+        audio {
+            saw { chans: 1, freq: 55.0 },
+            mono_fan_out { chans: 2 },
+        }
+
+        saw >> mono_fan_out
+        mono_fan_out >> verb[0..2]
+
+        { verb }
+    "#
+    );
+
+    let mut group = c.benchmark_group("Plate reverb");
+
+    let mut rust_app = build(rust_graph);
+    group.bench_function("rust node (plate480)", |b| {
+        b.iter(|| {
+            let out = rust_app.next_block(None);
+            black_box(out);
+        })
+    });
+
+    let mut kernel_app = build(&kernel_graph);
+    group.bench_function("kernel DSL (PLATE_KERNEL)", |b| {
+        b.iter(|| {
+            let out = kernel_app.next_block(None);
+            black_box(out);
+        })
+    });
+
+    group.finish();
+}
+
 fn bench_svf(c: &mut Criterion) {
     let mut graph = get_node_test_harness_stereo_4096(Box::new(Svf::new(
         48_000.0,
@@ -409,6 +483,7 @@ criterion_group!(
     bench_delay_quality,
     bench_svf,
     bench_oversampler,
-    bench_kitchen_sink
+    bench_kitchen_sink,
+    bench_plate_rust_vs_kernel
 );
 criterion_main!(benches);

@@ -68,6 +68,52 @@ span:not(pre span):not(code span) {
   @apply font-display text-primary;
 }
 
+/* Point the typography plugin at our app colors (it ships light-theme defaults). */
+.prose {
+  --tw-prose-body: var(--text-paragraph);
+  --tw-prose-headings: var(--text-primary);
+  --tw-prose-bold: var(--text-primary);
+  --tw-prose-quotes: var(--text-secondary);
+  --tw-prose-quote-borders: var(--border);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
+  --tw-prose-code: var(--text-primary);
+}
+
+/* Inline code: drop the plugin's literal backtick glyphs. */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+
+/* Blockquotes: drop the decorative quote glyphs, keep them upright. */
+.prose blockquote {
+  font-style: normal;
+  font-weight: 400;
+}
+
+.prose blockquote p:first-of-type::before,
+.prose blockquote p:last-of-type::after {
+  content: none;
+}
+
+/* Tables: outer border + app-colored surface to match the code blocks. */
+.prose table {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.prose thead th {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+th, td {
+  padding: 4px 6px 4px 6px;
+}
+
 pre.shiki {
   background-color: var(--bg) !important;
   border: 1px solid var(--border);

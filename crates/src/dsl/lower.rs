@@ -35,12 +35,17 @@ fn convert_macro(
         for decl in &scope.declarations {
             let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
 
-            // Classify as MacroRef if it names a known macro
-            let kind = if converted.contains_key(&decl.node_type) {
-                IRNodeKind::MacroRef
-            } else {
-                IRNodeKind::Leaf
-            };
+            // Classify by what the node type names.
+            let kind = classify_node_type(&decl.node_type, converted);
+
+            // Kernel bodies are lowered whole into a single per-sample node,
+            // so they can only contain kernel-capable leaves.
+            if ast_macro.kind == MacroKind::Kernel && kind != IRNodeKind::Leaf {
+                panic!(
+                    "kernel '{}' declares '{}' ({}), but kernels may only contain leaf nodes",
+                    name, alias, decl.node_type
+                );
+            }
 
             let id = body.add_node(
                 kind,
@@ -48,7 +53,6 @@ fn convert_macro(
                 decl.node_type.clone(),
                 alias.clone(),
                 decl.params.clone().unwrap_or_default(),
-                decl.pipes.clone(),
                 decl.count,
             );
             local_alias_to_id.insert(alias, id);
@@ -100,12 +104,23 @@ fn convert_macro(
         name.to_string(),
         IRMacro {
             name: name.to_string(),
+            kind: ast_macro.kind,
             default_params: ast_macro.default_params,
             virtual_input_map,
             body,
             sink: sink_id,
         },
     );
+}
+
+/// Leaf, MacroRef or KernelRef, depending on what `node_type` names in the
+/// (partially built) macro registry.
+fn classify_node_type(node_type: &str, registry: &HashMap<String, IRMacro>) -> IRNodeKind {
+    match registry.get(node_type) {
+        Some(m) if m.kind == MacroKind::Kernel => IRNodeKind::KernelRef,
+        Some(_) => IRNodeKind::MacroRef,
+        None => IRNodeKind::Leaf,
+    }
 }
 
 /// We have a bit of an easier Ast shape that the actual IR, since patches
@@ -137,11 +152,7 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
         for decl in &scope.declarations {
             let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
 
-            let kind = if graph.macro_registry.contains_key(&decl.node_type) {
-                IRNodeKind::MacroRef
-            } else {
-                IRNodeKind::Leaf
-            };
+            let kind = classify_node_type(&decl.node_type, &graph.macro_registry);
 
             let id = graph.add_node(
                 kind,
@@ -149,7 +160,6 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
                 decl.node_type.clone(),
                 alias.clone(),
                 decl.params.clone().unwrap_or_default(),
-                decl.pipes.clone(),
                 decl.count,
             );
             alias_to_id.insert(alias, id);

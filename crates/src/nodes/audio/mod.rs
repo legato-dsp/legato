@@ -12,6 +12,7 @@ pub mod onepole;
 pub mod ops;
 pub mod oversample;
 pub mod pan;
+pub mod plate;
 pub mod sampler;
 pub mod saw;
 pub mod sine;

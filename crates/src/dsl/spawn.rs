@@ -46,7 +46,6 @@ impl SpawnKNodesPass {
                     node.node_type.clone(),
                     alias,
                     node.params.clone(),
-                    node.pipes.clone(),
                     1,
                 );
                 instances.push(new_id);

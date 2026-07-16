@@ -2,6 +2,7 @@ use crate::{
     context::AudioContext,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     resources::{delay::ResourceDelay, window::Window},
 };
@@ -16,11 +17,12 @@ pub struct DelayTap {
     cap: usize,
     delay_length_samples: f32,
     chans: usize,
+    sr: f32,
     ports: Ports,
 }
 
 impl DelayTap {
-    pub fn new(chans: usize, delay_length_samples: f32, cap: usize) -> Self {
+    pub fn new(chans: usize, delay_length_samples: f32, cap: usize, sr: f32) -> Self {
         let cap = cap.next_power_of_two();
         let data = vec![0.0; chans * cap].into_boxed_slice();
         let delays = (0..chans)
@@ -38,12 +40,42 @@ impl DelayTap {
             cap,
             delay_length_samples,
             chans,
+            sr,
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .audio_in_named(&["delay_length"])
                 .audio_out(chans)
                 .build(),
         }
+    }
+}
+
+impl PerSampleNode for DelayTap {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let max_capacity = self.cap as f32;
+
+        let delay_length_samples = in_frame[self.chans]
+            .map_or(self.delay_length_samples, |ms| self.sr * (ms / 1000.0))
+            .clamp(1.0, max_capacity);
+
+        for c in 0..self.chans {
+            if let Some(input) = in_frame[c] {
+                let base = c * self.cap;
+                let chan_data = &mut self.data[base..base + self.cap];
+                let delay = &mut self.delays[c];
+
+                delay.push(chan_data, input);
+                out_frame[c] = delay.get_delay_cubic(chan_data, delay_length_samples);
+            }
+        }
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
     }
 }
 
@@ -97,17 +129,11 @@ use crate::{
     spec::NodeDefinition,
 };
 
-impl NodeDefinition for DelayTap {
-    const NAME: &'static str = "tap";
-    const DESCRIPTION: &'static str =
-        "Single-tap delay line (no feedback) with cubic interpolation and modulatable delay";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
-
-    fn create(
+impl DelayTap {
+    pub fn from_params(
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
-    ) -> Result<Box<dyn DynNode>, ValidationError> {
+    ) -> Result<Self, ValidationError> {
         use std::time::Duration;
         let config = rb.get_config();
         let sr = config.sample_rate;
@@ -120,6 +146,21 @@ impl NodeDefinition for DelayTap {
         if capacity < (delay_length_samples as usize) {
             capacity = (delay_length_samples as usize) * 2;
         }
-        Ok(Box::new(Self::new(chans, delay_length_samples, capacity)))
+        Ok(Self::new(chans, delay_length_samples, capacity, sr as f32))
+    }
+}
+
+impl NodeDefinition for DelayTap {
+    const NAME: &'static str = "tap";
+    const DESCRIPTION: &'static str =
+        "Single-tap delay line (no feedback) with cubic interpolation and modulatable delay";
+    const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length", "chans"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["capacity"];
+
+    fn create(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

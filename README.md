@@ -1,153 +1,91 @@
 <img width="801" height="163" alt="Logo" src="https://github.com/user-attachments/assets/c15ecbbf-604c-450d-843f-d6108f96700a" />
 
-### What is Legato?
+## What is Legato?
 
-Legato is a WIP real time audio graph framework for Rust, that aims to combine the graph based processing of tools like PureData or MaxMSP,
-with the utilities found in more robust frameworks like JUCE.
+Simply put, Legato is an opinionated DX for creative audio applications.
 
-It takes some inspiration from a few DSP libraries, with some requirements changed to make it behave more like existing audio graph solutions.
+It aims to fuse the quick prototyping of tools like MaxMSP/PureData, with the performance and utilities found in frameworks like JUCE or KFR. Rather than providing a UI solution, Legato aims for a minimal DSL for graph orchestration. 
 
-Legato does not aim to be a live coding environment, rather a library to allow developers to create **hardware** or **VSTs**.
+Users can bring their own UI and custom nodes using Rust, avoiding complicated SDKs.
 
-### What Is Planned?
+## Example Patch
 
-Legato will have a CLI and split repo setup, similar to Tauri, where technical users can easily add custom nodes in the Rust layer, while managing the graph with a language server, (similar to PureData, SuperCollider, etc.)
-
-The reason I would prefer something like this, is that I have found the escape hatches with these other toolkits a bit of a hastle to use. I want to easily define and add my own downstream node designs, and use the graph more for orchestration and quickly brainstorming ideas.
-
-My goal is to make it so accesible that technical and non-technical users alike can make a basic synthesizer, a Nix image, and get it on a small machine like a Raspberry Pi.
-
-So, a user might quickly throw together a FDN reverb in the graph, which is absolutely fine, but if they want a specific mixer, the ability to send data to external processes or other threads, etc., they can easily create a custom node to do so, and even have the language server respond.
-
-The license is currently AGPLv3 with an additional clause designed to alleviate the need to distribute source for a number of common usecases.
-
-I would also be really interested in using something like Automerge to make a cooperative DAW-like application once I have the Legato DX to where I want it to be.
-
-### Getting Started
-
-At the moment, Legato is somewhat tightly coupled to Nix, and I would suggest this for development, as it's also going to be the current defacto deployment target (I may look into Zephyr in the future, for now Rt patches?). 
-
-If you use the DSL (WIP), you can construct a graph easily (more in /examples).
-
-This example (examples/poly.rs), shows a custom patch, polyphonic midi setup, feedback delay network, connections, and more:
+Here is a quick example of the DSL. 
 
 ```rust
 patch voice(
-            attack = 200.0,
-            decay = 200.0,
-            sustain = 0.3,
-            release = 200.0
-        ) {
-            in freq gate
+    attack = 1200.0,
+    decay = 300.0,
+    sustain = 0.8,
+    release = 700.0
+) {
+    in freq gate
 
-            audio {
-                sine: mod,
-                sine: carrier,
-                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
-                mult: freq_mult,
-                mult: fm_gain { val: 1000.0 },
-                add: fm_add
-            }
+    audio {
+        sine: lfo { freq: 0.1 },
+        grain { sampler_name: "main", chans: 2, size: 70, shape: 0.5, scan: 0.05 },
+        adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 2 },
+    }
 
-            control {
-                signal: ratio { name: "ratio", min: 1.0, max: 100.0, default: 1.5 }
-            }
+    control { 
+        map { range: [-1.0, 1.0], new_range: [100, 300] }
+    }
 
-            freq >> freq_mult[0]
+    lfo >> map
+    map >> grain.size
 
-            ratio >> freq_mult[1]
+    freq >> grain.freq
+    gate >> grain.trig
 
-            freq_mult >> mod.freq
+    gate >> adsr.gate
+    grain >> adsr[1..3]
 
-            mod >> fm_gain[0]
+    { adsr }
+}
 
+patches {
+    voice * 3 { },
+}
 
-            freq >> fm_add[0]
-            fm_gain >> fm_add[1]
+audio {
+    track_mixer { tracks: 3, chans_per_track: 2 },
+}
 
-            fm_add >> carrier.freq
+midi {
+    poly_voice { chan: 0, voices: 3 }
+}
 
-            gate >> adsr.gate
+patches {
+    plate: verb { predelay: 32.0, decay: 0.4, damping: 0.3, wet: 0.8, dry: 0.2 }
+}
 
-            carrier >> adsr[1]
+poly_voice[0:10:3] >> voice(*).gate
+poly_voice[1:10:3] >> voice(*).freq
 
-            { adsr }
-        }
+voice(*)[0] >> track_mixer[0:6:2]
+voice(*)[1] >> track_mixer[1:6:2]
 
-        patches {
-            voice * 5 { }
-        }
+track_mixer >> verb
 
-        audio {
-            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
-            mono_fan_out { chans: 2 },
-
-            delay_write: dw1 { delay_name: "d_one", delay_length: 2000.0, chans: 2 },
-            delay_read: dr1 { delay_name: "d_one", chans: 2, delay_length: [ 938, 731 ] },
-            delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: [ 459, 643 ] },
-
-            track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
-            
-            track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
-        }
-
-        midi { 
-            poly_voice { chan: 0, voices: 5 }
-        }
-
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
-        voice(*) >> osc_mixer[0..5]
-
-        osc_mixer >> mono_fan_out
-
-        mono_fan_out >> master[0..2]
-        mono_fan_out >> dw1[0..2]
-
-        dr1[0..2] >> master[2..4]
-        dr2[0..2] >> master[4..6]
-
-        // feedback    
-        dr1 >> feedback[0..2]
-        dr2 >> feedback[2..4]
-
-        feedback >> dw1
-
-        { master }
+{ verb }
 ```
 
-There are also some developer utilities like a spectrogram or example FIR filter generation scripts.
+It does NOT aim to be an incredibly feature complete langauge, a la CSound or Super Collider. 
 
-```
-nix run .#apps.x86_64-linux.spectrogram -- --path ./example.wav --out ./example.png
-```
+For more complicated functionality, I encourage users to add their own custom nodes, written in Rust, at application startup.
 
-### A Note On Safety
+Legato is generally block based, but the `kernel` feature can be used for per-sample nodes in the DSL, at the cost of some performance (IMO, strong for prototyping!)
 
-Experimenting with audio software can be dangerous at times. Use at your own risk. 
+## Integrations (TBD)
 
-Exercise extra risk when working with any feedback delay networks, gain, wavefolding, etc. 
+For now, I have a NixOS + PiSound flake that I have really enjoyed working with. That being said, I hope to onboard more hardware, particular SBCs, as well as writing a number of VST examples. Contributions here are more than welcome.
 
-It may be wise to simply use laptop speakers at low volume when developing, and to clamp gain to a specific amount in order to prevent any hardware damage.
+## Additional Tooling
 
-## Roadmap
+The repository comes with a few example scripts that may be helpful for testing aliasing, designing filters, etc. For the time being, I parked the oversampling feature, but the blocks are already here, I am more working on the semantics for the language.
 
-### Planned Features For 0.1.0
+There is a vibecoded Tree Sitter grammar in my personal repository, that I made by basically sticking an agent at my projects Chumsky grammar. It works for quick syntax highlighting via Zed, Helix, NeoVim, etc.
 
-- More nodes (pitch shifter, convolution, iir filters)
-- Matrix mixers
-- Semi-tuned NixOS images, perhaps also Zephyr?
-- WASM bindings?
-- FIR filter creation, windows, etc. 
-- Fancy docs (Nuxt)
-- A number of examples (FM, reverb, some midi stuff)
-- VST, CLAP, etc. support? Likely will look for contributions here, or just use the NIH-Plug repo.
+## License
 
-### Immediate Cleanup
-
-Here are a number of issues to keep an eye on, that need to be cleaned up rather soon.
-
-- Single tap delay node for delay compensation
-- Unify node creation spec and node logic
-- I want to move over/resampling to be graph logic and DSL. So, rather than wrapping a number of nodes, the executor implicitly adds polyphase FIR filters on the boundaries.
-- Transparent build pipeline with `cargo publish`
+Legato is AGPLv3, with additional permissions to remove the source disclosure requirements for most creative applications. You can read more about this in the ADDITIONAL_PERMISSIONS distributed with the repository.
