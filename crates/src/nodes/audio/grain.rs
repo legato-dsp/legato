@@ -244,10 +244,9 @@ impl Node for Granular {
                     .iter()
                     .any(|x| x.active() && x.window_phase() < 1.0 - x.get_shape());
 
-                if should_spawn_grain
-                    && let Some(grain) = streams.iter_mut().find(|x| x.ready()) {
-                        grain.spawn(self.sample_pos, grain_len_samples, self.freq, self.shape);
-                    }
+                if should_spawn_grain && let Some(grain) = streams.iter_mut().find(|x| x.ready()) {
+                    grain.spawn(self.sample_pos, grain_len_samples, self.freq, self.shape);
+                }
             }
 
             for (c, chan) in outputs.iter_mut().enumerate() {

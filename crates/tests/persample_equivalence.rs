@@ -127,12 +127,7 @@ fn saw_internal_freq_matches() {
     // The PolyBLEP correction has slope ~2/dt near the wrap, so ulp-level
     // phase drift between chunked SIMD and scalar accumulation is amplified
     // by a factor of a few hundred right at the discontinuity samples.
-    assert_tick_equivalence(
-        Saw::new(220.0, 2, SR as f32),
-        &[None],
-        1e-2,
-        "saw internal",
-    );
+    assert_tick_equivalence(Saw::new(220.0, 2, SR as f32), &[None], 1e-2, "saw internal");
 }
 
 #[test]
@@ -223,11 +218,7 @@ fn tap_static_matches() {
 fn tap_modulated_matches() {
     assert_tick_equivalence(
         DelayTap::new(2, 480.0, 4096, SR as f32),
-        &[
-            Some(noise(13)),
-            Some(noise(14)),
-            Some(ramp(2.0, 30.0)),
-        ],
+        &[Some(noise(13)), Some(noise(14)), Some(ramp(2.0, 30.0))],
         0.0,
         "tap modulated",
     );
