@@ -545,14 +545,7 @@ pub fn lower_kernel(
     })
 }
 
-/// The Plate480 reverb authored as a `kernel` DSL declaration — the reference
-/// kernel, dogfooding the per-sample engine with a real figure-eight feedback
-/// tank. Prepend it to any graph source and instantiate `plate`:
-///
-/// ```text
-/// let graph = format!("{PLATE_KERNEL} patches {{ plate: verb {{ decay: 0.6 }} }} ... {{ verb }}");
-/// ```
-pub const PLATE_KERNEL: &str = r#"
+pub const EXAMPLE_PLATE_KERNEL_PATCH: &str = r#"
     // mod_range_l/r: LFO excursion of the two modulated tank allpasses, in
     // ms. Whole-array values template fine ($mod_range_l below); only
     // per-element templates inside an array literal do not.
@@ -722,56 +715,7 @@ pub const PLATE_KERNEL: &str = r#"
     }
 "#;
 
-/// A self-contained Karplus–Strong plucked string authored as a `kernel` DSL
-/// declaration. Two control inputs — `gate` and `freq` — and a mono string out.
-///
-/// The core is a four-node feedback loop:
-///
-/// ```text
-///   exc --> [add mix] --> [tap string] --> [onepole loop_lp] --> [mult fb]
-///              ^                                                     |
-///              +-----------------------------------------------------+
-/// ```
-///
-/// `mix` sums the excitation with the loop's returning tail, `string` is the
-/// delay line whose length sets the pitch, `loop_lp` is the averaging lowpass
-/// that makes the string lose its highs as it rings, and `fb` is the sustain
-/// gain. The `fb -> mix` edge is the cycle the engine breaks with its implicit
-/// z⁻¹, so the total loop delay is `string`'s delay + 1 sample (+ the filter's
-/// ~half-sample phase lag).
-///
-/// **Excitation (`gate` -> noise burst), fully internal.** A `onepole` follows
-/// the gate slowly, and `env = gate - follow` is a transient that spikes on the
-/// rising edge and decays over the follower's time constant (`pluck`). That
-/// transient windows the `noise` generator into a short burst, and a final
-/// `* gate` mask kills the mirror-image transient at note-off so releasing a
-/// key doesn't re-pluck the string. Hold the gate high and the burst still
-/// fades to silence — the string then rings purely on its feedback tail.
-///
-/// **Tuning (`freq` in Hz), fully internal.** The delay line needs its length
-/// in ms (`1000 / freq`), and the kernel DSL has no arithmetic on params — but
-/// it doesn't need any: `sine { freq: 0, phase: 0.25 }` is a constant `1.0`
-/// source, `div` turns that into `1/freq` (seconds), and `mult { val: 1000 }`
-/// scales it to ms, which modulates `string.delay_length` per sample. `tap`'s
-/// cubic interpolation makes the fractional lengths tune cleanly, and because
-/// it's per-sample you can sweep `freq` for glissando/vibrato.
-///
-/// Params:
-/// - `damping` (0..1): loop lowpass pole. Higher = darker, faster high-end
-///   decay (a duller, more muted pluck).
-/// - `decay` (<1): feedback gain. Closer to 1.0 = longer sustain. Keep < 1 for
-///   stability (loop DC gain equals this).
-/// - `pluck` (0..1): the gate-follower pole. Higher = longer/softer excitation
-///   window; lower = shorter/brighter attack.
-///
-/// ```text
-/// // drive gate + freq from a sequencer / MIDI voice, exactly like any other node:
-/// let graph = format!("{KARPLUS_KERNEL} patches {{ karplus: string {{ decay: 0.995 }} }} ...
-///     trig >> string.gate
-///     pitch >> string.freq
-///     { string }");
-/// ```
-pub const KARPLUS_KERNEL: &str = r#"
+pub const EXAMPLE_KARPLUS_KERNEL_PATCH: &str = r#"
     kernel karplus(
         damping = 0.5,
         decay = 0.99,
@@ -1001,7 +945,7 @@ mod tests {
     /// cycles broken, and tick without blowing up.
     #[test]
     fn plate_kernel_lowers_and_ticks() {
-        let src = format!("{PLATE_KERNEL} audio {{ sine }} {{ sine }}");
+        let src = format!("{EXAMPLE_PLATE_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
         let def = kernel_def(&src, "plate");
         let mut kg = build(&def, Object::new()).expect("plate kernel should lower");
 

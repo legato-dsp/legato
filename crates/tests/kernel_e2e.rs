@@ -282,7 +282,7 @@ fn plate_kernel_matches_rust_plate_envelope() {
 
     let kernel_src = format!(
         "{}\n{}",
-        legato::kernel::PLATE_KERNEL,
+        legato::kernel::EXAMPLE_PLATE_KERNEL_PATCH,
         r#"
         patches {
             plate: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth_a: 0.0005, wet: 1.0, dry: 0.0 }
@@ -428,7 +428,7 @@ fn karplus_plucks_in_tune() {
     // == 1.0; the gate's rising edge at t0 fires one noise burst.
     let src = format!(
         "{}\n{}",
-        legato::kernel::KARPLUS_KERNEL,
+        legato::kernel::EXAMPLE_KARPLUS_KERNEL_PATCH,
         r#"
         patches {
             karplus: string { decay: 0.99, damping: 0.5, pluck: 0.995 }
@@ -486,7 +486,10 @@ fn karplus_plucks_in_tune() {
     let early = f0_mag(4_000); //  ~0.08 s
     let late = f0_mag(20_000); //  ~0.42 s
     assert!(late < early, "220 Hz bin did not decay");
-    assert!(late > 0.2 * early, "220 Hz bin died out — not a sustained pluck");
+    assert!(
+        late > 0.2 * early,
+        "220 Hz bin died out — not a sustained pluck"
+    );
 }
 
 /// End-to-end regression for the poly.rs "click + echoes" bug. A strided
@@ -499,7 +502,7 @@ fn karplus_plucks_in_tune() {
 fn karplus_polyphony_routes_freq_per_voice() {
     let src = format!(
         "{}\n{}",
-        legato::kernel::KARPLUS_KERNEL,
+        legato::kernel::EXAMPLE_KARPLUS_KERNEL_PATCH,
         r#"
         patches { karplus: voice * 2 { decay: 0.99, damping: 0.5, pluck: 0.995 } }
         audio {
@@ -537,6 +540,12 @@ fn karplus_polyphony_routes_freq_per_voice() {
     // Both fundamentals present, each beating the 500 Hz null. 330 is not a
     // harmonic of 220, so its presence proves voice 1 was tuned to 330 — not
     // that both voices landed on 220.
-    assert!(mag(220.0) > 4.0 * mag(500.0), "voice 0 lost 220 Hz (freq mis-routed)");
-    assert!(mag(330.0) > 4.0 * mag(500.0), "voice 1 lost 330 Hz (freq mis-routed)");
+    assert!(
+        mag(220.0) > 4.0 * mag(500.0),
+        "voice 0 lost 220 Hz (freq mis-routed)"
+    );
+    assert!(
+        mag(330.0) > 4.0 * mag(500.0),
+        "voice 1 lost 330 Hz (freq mis-routed)"
+    );
 }

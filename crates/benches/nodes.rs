@@ -3,7 +3,7 @@ use legato::{
     builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness_stereo_4096,
-    kernel::PLATE_KERNEL,
+    kernel::EXAMPLE_PLATE_KERNEL_PATCH,
     nodes::audio::{
         fir::FirFilter,
         saw::Saw,
@@ -411,7 +411,7 @@ fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
 
     let kernel_graph = format!(
         "{}\n{}",
-        PLATE_KERNEL,
+        EXAMPLE_PLATE_KERNEL_PATCH,
         r#"
         patches {
             plate: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth_a: 0.0005, wet: 1.0, dry: 0.0 }
