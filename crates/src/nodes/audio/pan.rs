@@ -4,6 +4,7 @@ use crate::{
     dsl::ir::DSLParams,
     msg::{NodeMessage, RtValue},
     node::{DynNode, Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
@@ -59,6 +60,35 @@ impl Node for Pan {
     }
 }
 
+impl PerSampleNode for Pan {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let input = in_frame[0].unwrap_or(0.0);
+        let pan = in_frame[1].unwrap_or(self.pan).clamp(0.0, 1.0);
+
+        let angle = pan * std::f32::consts::FRAC_PI_2;
+        out_frame[0] = input * angle.cos();
+        out_frame[1] = input * angle.sin();
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
+}
+
+impl Pan {
+    pub fn from_params(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let pan = p.get_f32("pan").unwrap_or(0.5);
+        Ok(Self::new(pan))
+    }
+}
+
 impl NodeDefinition for Pan {
     const NAME: &'static str = "pan";
     const DESCRIPTION: &'static str = "A mono to stereo panning node. 0.0 is left, 1.0 is right.";
@@ -66,11 +96,9 @@ impl NodeDefinition for Pan {
     const OPTIONAL_PARAMS: &'static [&'static str] = &["pan"];
 
     fn create(
-        _rb: &mut ResourceBuilderView,
+        rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let pan = p.get_f32("freq").unwrap_or(0.5);
-
-        Ok(Box::new(Self::new(pan)))
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

@@ -8,9 +8,12 @@ use crate::{
     nodes::{
         audio::{
             allpass::Allpass,
+            hadamard::HadamardMixer,
+            householder::HouseholderMixer,
             noise::Noise,
             onepole::OnePole,
             ops::{ApplyOp, ApplyOpKind, mult_node_factory},
+            pan::Pan,
             saw::Saw,
             sine::Sine,
             svf::Svf,
@@ -41,6 +44,9 @@ pub enum KernelNode {
     Op(ApplyOp),
     Map(Map),
     Noise(Noise),
+    Householder(HouseholderMixer),
+    Hadamard(HadamardMixer),
+    Pan(Pan),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -56,6 +62,9 @@ macro_rules! dispatch {
             KernelNode::Op($inner) => $body,
             KernelNode::Map($inner) => $body,
             KernelNode::Noise($inner) => $body,
+            KernelNode::Householder($inner) => $body,
+            KernelNode::Hadamard($inner) => $body,
+            KernelNode::Pan($inner) => $body,
         }
     };
 }
@@ -97,6 +106,9 @@ pub fn build_kernel_node(
         "tap" => KernelNode::Tap(DelayTap::from_params(rb, p)?),
         "map" => KernelNode::Map(Map::from_params(rb, p)?),
         "noise" => KernelNode::Noise(Noise::new()),
+        "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
+        "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
+        "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
