@@ -416,16 +416,8 @@ fn kernel_inside_patch_expands() {
     );
 }
 
-/// Basic Karplus–Strong ([`legato::kernel::KARPLUS_KERNEL`]): an internal
-/// `noise` burst gated by `gate`, tuned by `freq` through the in-kernel `1/freq`
-/// reciprocal. Held at a constant 220 Hz the ring must (1) be a real harmonic
-/// tone — the loudest FFT bin is the fundamental, with a 2nd harmonic and a
-/// quiet inter-harmonic null — and (2) persist, decaying but still ringing a
-/// third of a second in (a click would be long gone).
 #[test]
 fn karplus_plucks_in_tune() {
-    // gate and freq are both DC, synthesized as `sine { freq: 0, phase: 0.25 }`
-    // == 1.0; the gate's rising edge at t0 fires one noise burst.
     let src = format!(
         "{}\n{}",
         legato::kernel::EXAMPLE_KARPLUS_KERNEL_PATCH,
@@ -458,17 +450,16 @@ fn karplus_plucks_in_tune() {
         "karplus string blew up"
     );
 
-    // (1) pitch + harmonics, in a window past the noisy attack.
-    const N: usize = 8_192; // bin spacing SR/N ≈ 5.9 Hz
+    const N: usize = 8_192;
     let spec = spectrum(&sig[4_000..4_000 + N]);
 
-    // The loudest bin (ignoring DC) is the fundamental — ~220 Hz. The string
-    // tunes a hair flat: the loop's z⁻¹ + filter phase add ~1.5 samples to the
-    // delay, so allow a bin of slack.
     let peak = (1..spec.len())
         .max_by(|&a, &b| spec[a].partial_cmp(&spec[b]).unwrap())
         .unwrap();
     let peak_hz = peak as f32 * SR / N as f32;
+
+    // Loudest bin should contain our pitch
+
     assert!(
         (peak_hz - 220.0).abs() < 6.0,
         "loudest bin at {peak_hz:.1} Hz, expected ~220"
@@ -492,12 +483,6 @@ fn karplus_plucks_in_tune() {
     );
 }
 
-/// End-to-end regression for the poly.rs "click + echoes" bug. A strided
-/// multi-source (distinct value per port) fanned into `voice(*).freq` must land
-/// one port per voice, so two spawned strings tune to *different*, non-octave
-/// pitches (220 and 330). `pass` is a 4-channel `tap` (unity for DC) standing in
-/// for `poly_voice`'s [gate, freq, gate, freq] layout. Before the spawn-pass fix
-/// every voice received both frequencies summed, so 220 and 330 both collapsed.
 #[test]
 fn karplus_polyphony_routes_freq_per_voice() {
     let src = format!(
