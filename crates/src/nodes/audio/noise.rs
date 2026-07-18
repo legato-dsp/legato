@@ -1,11 +1,14 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::{DynNode, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
-
+static NOISE_SEED_COUNTER: AtomicU32 = AtomicU32::new(0);
 #[derive(Clone)]
 pub struct Noise {
     state: u32,
@@ -20,8 +23,14 @@ impl Default for Noise {
 
 impl Noise {
     pub fn new() -> Self {
+        let n = NOISE_SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let state = (0xBAADF00Du32 ^ n.wrapping_mul(0x9E3779B1)) | 1;
+        Self::with_seed(state)
+    }
+
+    pub fn with_seed(seed: u32) -> Self {
         Self {
-            state: 0xBAADF00D,
+            state: seed | 1,
             ports: PortBuilder::default().audio_out(1).build(),
         }
     }
@@ -39,7 +48,6 @@ impl Noise {
     pub fn white(&mut self) -> f32 {
         // Map u32 to -1,1
         // TODO: Is there something with less ops?
-        // TODO: Could I get subnormals here?
         (self.next_val() as i32 as f32) * (1.0 / i32::MAX as f32)
     }
 }
@@ -56,6 +64,21 @@ impl Node for Noise {
     ) {
         if let Some(out) = outputs.get_mut(0) {
             out.iter_mut().for_each(|x| *x = self.white())
+        }
+    }
+}
+
+impl PerSampleNode for Noise {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, _in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        // No inputs — the generator ignores its (empty) input frame and
+        // stamps a fresh white sample onto every output port.
+        let sample = self.white();
+        for out in out_frame.iter_mut() {
+            *out = sample;
         }
     }
 }

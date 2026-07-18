@@ -4,15 +4,22 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
-    kernel::PLATE_KERNEL,
+    kernel::EXAMPLE_PLATE_KERNEL_PATCH,
     midi::{MidiPortKind, start_midi_thread},
     ports::PortBuilder,
 };
 
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 fn main() {
     let graph = format!(
         "{}\n{}",
-        PLATE_KERNEL,
+        EXAMPLE_PLATE_KERNEL_PATCH,
         r#"
         patch voice(
             attack = 1200.0,
@@ -73,10 +80,10 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 44_100,
-        block_size: 4096,
-        channels: 2,
-        rt_capacity: 0,
+        sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
+        block_size: env_or("LEGATO_BLOCK_SIZE", 256),
+        channels: env_or("LEGATO_CHANNELS", 2),
+        rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
     let ports = PortBuilder::default().audio_out(2).build();

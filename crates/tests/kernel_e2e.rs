@@ -36,6 +36,31 @@ fn render(app: &mut LegatoApp, chans: usize) -> Vec<Vec<f32>> {
     out
 }
 
+const SR: f32 = 48_000.0;
+
+/// Hann-windowed magnitude spectrum via a real FFT. Bin `i` holds the magnitude
+/// at frequency `i * SR / samples.len()` Hz (so bin spacing is `SR / len`). The
+/// Hann window keeps a strong harmonic from leaking into its neighbours.
+fn spectrum(samples: &[f32]) -> Vec<f32> {
+    use rustfft::{FftPlanner, num_complex::Complex};
+    let n = samples.len();
+    let mut buf: Vec<Complex<f32>> = samples
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| {
+            let hann = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / n as f32).cos();
+            Complex::new(x * hann, 0.0)
+        })
+        .collect();
+    FftPlanner::new().plan_fft_forward(n).process(&mut buf);
+    buf[..n / 2].iter().map(|c| c.norm()).collect()
+}
+
+/// The spectrum bin nearest `hz` for a window of length `n`.
+fn bin(hz: f32, n: usize) -> usize {
+    (hz * n as f32 / SR).round() as usize
+}
+
 /// A cycle-free kernel must sound the same as the identical chain written as
 /// block-rate nodes (within the osc SIMD-vs-scalar tolerance).
 #[test]
@@ -257,7 +282,7 @@ fn plate_kernel_matches_rust_plate_envelope() {
 
     let kernel_src = format!(
         "{}\n{}",
-        legato::kernel::PLATE_KERNEL,
+        legato::kernel::EXAMPLE_PLATE_KERNEL_PATCH,
         r#"
         patches {
             plate: verb { predelay: 10.0, decay: 0.5, damping: 0.3, bandwidth_a: 0.0005, wet: 1.0, dry: 0.0 }
@@ -388,5 +413,139 @@ fn kernel_inside_patch_expands() {
     assert!(
         out[0].iter().all(|x| x.abs() <= 0.26),
         "kernel param inside patch was not substituted"
+    );
+}
+
+/// Basic Karplus–Strong ([`legato::kernel::KARPLUS_KERNEL`]): an internal
+/// `noise` burst gated by `gate`, tuned by `freq` through the in-kernel `1/freq`
+/// reciprocal. Held at a constant 220 Hz the ring must (1) be a real harmonic
+/// tone — the loudest FFT bin is the fundamental, with a 2nd harmonic and a
+/// quiet inter-harmonic null — and (2) persist, decaying but still ringing a
+/// third of a second in (a click would be long gone).
+#[test]
+fn karplus_plucks_in_tune() {
+    // gate and freq are both DC, synthesized as `sine { freq: 0, phase: 0.25 }`
+    // == 1.0; the gate's rising edge at t0 fires one noise burst.
+    let src = format!(
+        "{}\n{}",
+        legato::kernel::EXAMPLE_KARPLUS_KERNEL_PATCH,
+        r#"
+        patches {
+            karplus: string { decay: 0.99, damping: 0.5, pluck: 0.995 }
+        }
+
+        audio {
+            sine: g  { freq: 0.0, phase: 0.25 },
+            sine: f0 { freq: 0.0, phase: 0.25 },
+            mult: hz { val: 220.0 },
+        }
+
+        f0 >> hz[0]
+        g  >> string[0]
+        hz >> string[1]
+
+        { string }
+    "#,
+    );
+
+    let mut app = build(&src, 1);
+    let mut sig: Vec<f32> = Vec::with_capacity(30_000);
+    for _ in 0..(30_000 / BLOCK) {
+        sig.extend_from_slice(app.next_block(None).channels[0]);
+    }
+    assert!(
+        sig.iter().all(|x| x.is_finite() && x.abs() < 8.0),
+        "karplus string blew up"
+    );
+
+    // (1) pitch + harmonics, in a window past the noisy attack.
+    const N: usize = 8_192; // bin spacing SR/N ≈ 5.9 Hz
+    let spec = spectrum(&sig[4_000..4_000 + N]);
+
+    // The loudest bin (ignoring DC) is the fundamental — ~220 Hz. The string
+    // tunes a hair flat: the loop's z⁻¹ + filter phase add ~1.5 samples to the
+    // delay, so allow a bin of slack.
+    let peak = (1..spec.len())
+        .max_by(|&a, &b| spec[a].partial_cmp(&spec[b]).unwrap())
+        .unwrap();
+    let peak_hz = peak as f32 * SR / N as f32;
+    assert!(
+        (peak_hz - 220.0).abs() < 6.0,
+        "loudest bin at {peak_hz:.1} Hz, expected ~220"
+    );
+
+    // A real harmonic comb: energy at f0 and 2·f0, but not at the inter-harmonic
+    // null 1.5·f0 (330 Hz).
+    let mag = |hz: f32| spec[bin(hz, N)];
+    assert!(mag(220.0) > 4.0 * mag(330.0), "fundamental not dominant");
+    assert!(mag(440.0) > 2.0 * mag(330.0), "2nd harmonic missing");
+
+    // (2) persistence: the 220 Hz bin decays but is still ringing well after the
+    // attack.
+    let f0_mag = |start: usize| spectrum(&sig[start..start + N])[bin(220.0, N)];
+    let early = f0_mag(4_000); //  ~0.08 s
+    let late = f0_mag(20_000); //  ~0.42 s
+    assert!(late < early, "220 Hz bin did not decay");
+    assert!(
+        late > 0.2 * early,
+        "220 Hz bin died out — not a sustained pluck"
+    );
+}
+
+/// End-to-end regression for the poly.rs "click + echoes" bug. A strided
+/// multi-source (distinct value per port) fanned into `voice(*).freq` must land
+/// one port per voice, so two spawned strings tune to *different*, non-octave
+/// pitches (220 and 330). `pass` is a 4-channel `tap` (unity for DC) standing in
+/// for `poly_voice`'s [gate, freq, gate, freq] layout. Before the spawn-pass fix
+/// every voice received both frequencies summed, so 220 and 330 both collapsed.
+#[test]
+fn karplus_polyphony_routes_freq_per_voice() {
+    let src = format!(
+        "{}\n{}",
+        legato::kernel::EXAMPLE_KARPLUS_KERNEL_PATCH,
+        r#"
+        patches { karplus: voice * 2 { decay: 0.99, damping: 0.5, pluck: 0.995 } }
+        audio {
+            sine: c { freq: 0.0, phase: 0.25 },
+            mult: g220 { val: 220.0 },
+            mult: g330 { val: 330.0 },
+            tap: pass { chans: 4, delay_length: 1.0, capacity: 8000 },
+            track_mixer: mix { tracks: 2, chans_per_track: 1, gain: [0.5, 0.5] },
+        }
+
+        c >> g220[0]
+        c >> g330[0]
+
+        c    >> pass[0]
+        g220 >> pass[1]
+        c    >> pass[2]
+        g330 >> pass[3]
+
+        pass[0:4:2] >> voice(*).gate
+        pass[1:4:2] >> voice(*).freq
+        voice(*) >> mix[0..2]
+        { mix }
+    "#,
+    );
+
+    let mut app = build(&src, 1);
+    let mut sig: Vec<f32> = Vec::with_capacity(16_384);
+    for _ in 0..(16_384 / BLOCK) {
+        sig.extend_from_slice(app.next_block(None).channels[0]);
+    }
+
+    const N: usize = 8_192;
+    let spec = spectrum(&sig[4_000..4_000 + N]);
+    let mag = |hz: f32| spec[bin(hz, N)];
+    // Both fundamentals present, each beating the 500 Hz null. 330 is not a
+    // harmonic of 220, so its presence proves voice 1 was tuned to 330 — not
+    // that both voices landed on 220.
+    assert!(
+        mag(220.0) > 4.0 * mag(500.0),
+        "voice 0 lost 220 Hz (freq mis-routed)"
+    );
+    assert!(
+        mag(330.0) > 4.0 * mag(500.0),
+        "voice 1 lost 330 Hz (freq mis-routed)"
     );
 }

@@ -6,6 +6,7 @@ use legato::{
     ports::PortBuilder,
 };
 
+/// A five voice sawtooth example
 fn main() {
     let graph = String::from(
         r#"

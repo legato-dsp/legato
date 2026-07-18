@@ -123,6 +123,28 @@ impl SpawnKNodesPass {
             return;
         }
 
+        // Dual of the coupled case above: a *single* source addressed by a
+        // strided/sliced source port, fanned across N sink instances — e.g.
+        // `poly_voice[1:15:3] >> voice(*).freq`. The instance index selects the
+        // concrete source port, so `poly_voice[1 + 3i] -> voice#i.freq`. Without
+        // this, node-level broadcast (1:N) hands the *whole* stride to every
+        // instance, and the builder then sums it (fan-in) into each sink port —
+        // e.g. every voice would receive all five voices' frequencies summed.
+        if srcs.len() == 1
+            && snks.len() > 1
+            && matches!(edge.source_port, Port::Stride { .. } | Port::Slice(..))
+        {
+            for (i, &snk) in snks.iter().enumerate() {
+                graph.connect(
+                    srcs[0],
+                    port_for_instance(&edge.source_port, i),
+                    snk,
+                    edge.sink_port.clone(),
+                );
+            }
+            return;
+        }
+
         // All other node-level multiplicity follows the shared broadcasting rule.
         let connect = |graph: &mut IRGraph, src: NodeId, snk: NodeId| {
             graph.connect(src, edge.source_port.clone(), snk, edge.sink_port.clone());
@@ -144,5 +166,48 @@ impl SpawnKNodesPass {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::dsl::{ir::Port, parse::legato_parser, pipeline::Pipeline};
+
+    /// A strided *source* port fanned across `* N` leaf/kernel instances must
+    /// distribute one port per instance (`src[start + i·stride] -> inst#i`), not
+    /// broadcast the whole stride into every instance (which the builder then
+    /// sums as a fan-in). This was the poly.rs "click + echoes" bug: patches
+    /// distribute via `expand.rs`, but leaf/kernel `* N` spawns come through
+    /// this pass, which previously lacked the coupled-distribution rule.
+    #[test]
+    fn strided_source_distributes_across_spawned_instances() {
+        // poly_voice lays out [gate, freq, vel] per voice; `[1:6:3]` selects the
+        // two freq ports (1, 4). Two `onepole` instances stand in for a `* 2`
+        // kernel spawn — both go through this pass as leaf nodes.
+        let src = r#"
+            audio {
+                onepole: v * 2 { cutoff: 500.0 }
+            }
+            midi {
+                poly_voice { chan: 0, voices: 2 }
+            }
+            poly_voice[1:6:3] >> v(*)[0]
+            { v }
+        "#;
+        let ast = legato_parser(src).expect("test source should parse");
+        let graph = Pipeline::default().run_from_ast(ast);
+
+        let source_ports = |snk: &str| -> Vec<Port> {
+            graph
+                .find_edges_between("poly_voice", snk)
+                .into_iter()
+                .map(|e| e.source_port.clone())
+                .collect()
+        };
+
+        // v.0 reads poly_voice[1], v.1 reads poly_voice[4] (1 + 1·3) — one edge
+        // each, not the whole [1, 4] stride summed into both.
+        assert_eq!(source_ports("v.0"), vec![Port::Index(1)]);
+        assert_eq!(source_ports("v.1"), vec![Port::Index(4)]);
     }
 }

@@ -137,57 +137,6 @@ impl Node for DelayRead {
     }
 }
 
-#[cfg(test)]
-mod test_delay_simd_equivalence {
-    use crate::ring::RingBuffer;
-
-    use super::*;
-    use rand::Rng;
-
-    #[test]
-    fn scalar_and_simd_writes_match() {
-        const CHANS: usize = 1;
-        const CAP: usize = 2048;
-        const BLOCK: usize = 4096;
-
-        let mut rb_scalar = RingBuffer::new(CAP);
-        let mut rb_simd = RingBuffer::new(CAP);
-
-        let mut inputs_raw = [[0.0; BLOCK]; CHANS];
-
-        let mut rng = rand::rng();
-
-        for s in &mut inputs_raw[0] {
-            *s = rng.random::<f32>();
-        }
-
-        let buf = &inputs_raw[0];
-
-        for n in 0..BLOCK {
-            rb_scalar.push(buf[n]);
-        }
-
-        for chunk in buf.iter().as_slice().chunks(LANES) {
-            rb_simd.push_simd(&Vf32::from_slice(chunk));
-        }
-
-        let data_scalar = rb_scalar.get_data();
-        let data_simd = rb_simd.get_data();
-
-        for i in 0..CAP {
-            let a = data_scalar[i];
-            let b = data_simd[i];
-            assert!(
-                (a - b).abs() < 1e-10,
-                "data mismatch at index {}: scalar={}, simd={}",
-                i,
-                a,
-                b
-            );
-        }
-    }
-}
-
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,

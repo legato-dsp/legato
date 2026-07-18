@@ -1,20 +1,9 @@
-//! Live external input through the plate reverb authored as a `kernel` DSL
-//! declaration ([`legato::kernel::PLATE_KERNEL`]).
-//!
-//! The Plate480 DSP originally lived in this example as a handwritten Rust
-//! `PerSampleNode`. It now exists twice: as that Rust node
-//! (`crates/src/nodes/audio/plate.rs`, kept for the equivalence test in
-//! `tests/kernel_e2e.rs`) and as the ~66-node kernel DSL declaration used
-//! here — the same figure-eight feedback tank, expressed entirely in
-//! per-sample primitives (`allpass`, `tap`, `onepole`, `mult`, `add`, `sine`,
-//! `map`).
-
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     input::DeviceSelection,
     interface::{AudioInterface, InputSpec},
-    kernel::PLATE_KERNEL,
+    kernel::EXAMPLE_PLATE_KERNEL_PATCH,
     ports::PortBuilder,
 };
 
@@ -25,10 +14,18 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
         .unwrap_or(default)
 }
 
+/// Here is an example of spawning a kernel patch.
+///
+/// These are significantly slower than say a custom node.
+/// I would suggest prototyping with the kernels, and if it becomes
+/// slow, shifting to a custom node.
+///
+/// You can see the example patch below, as well as a custom node
+/// implementation in nodes/plate.rs
 fn main() {
     let graph = format!(
         "{}\n{}",
-        PLATE_KERNEL,
+        EXAMPLE_PLATE_KERNEL_PATCH,
         r#"
         patches {
             plate: verb { predelay: 32.0, decay: 0.8, damping: 0.3, wet: 0.8, dry: 0.2 }

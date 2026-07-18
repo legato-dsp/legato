@@ -8,6 +8,7 @@ use crate::{
     nodes::{
         audio::{
             allpass::Allpass,
+            noise::Noise,
             onepole::OnePole,
             ops::{ApplyOp, ApplyOpKind, mult_node_factory},
             saw::Saw,
@@ -39,6 +40,7 @@ pub enum KernelNode {
     Tap(DelayTap),
     Op(ApplyOp),
     Map(Map),
+    Noise(Noise),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -53,6 +55,7 @@ macro_rules! dispatch {
             KernelNode::Tap($inner) => $body,
             KernelNode::Op($inner) => $body,
             KernelNode::Map($inner) => $body,
+            KernelNode::Noise($inner) => $body,
         }
     };
 }
@@ -93,6 +96,7 @@ pub fn build_kernel_node(
         "allpass" => KernelNode::Allpass(Allpass::from_params(rb, p)?),
         "tap" => KernelNode::Tap(DelayTap::from_params(rb, p)?),
         "map" => KernelNode::Map(Map::from_params(rb, p)?),
+        "noise" => KernelNode::Noise(Noise::new()),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
@@ -541,14 +545,7 @@ pub fn lower_kernel(
     })
 }
 
-/// The Plate480 reverb authored as a `kernel` DSL declaration — the reference
-/// kernel, dogfooding the per-sample engine with a real figure-eight feedback
-/// tank. Prepend it to any graph source and instantiate `plate`:
-///
-/// ```text
-/// let graph = format!("{PLATE_KERNEL} patches {{ plate: verb {{ decay: 0.6 }} }} ... {{ verb }}");
-/// ```
-pub const PLATE_KERNEL: &str = r#"
+pub const EXAMPLE_PLATE_KERNEL_PATCH: &str = r#"
     // mod_range_l/r: LFO excursion of the two modulated tank allpasses, in
     // ms. Whole-array values template fine ($mod_range_l below); only
     // per-element templates inside an array literal do not.
@@ -715,6 +712,59 @@ pub const PLATE_KERNEL: &str = r#"
         dry_r >> out[1]
 
         { out }
+    }
+"#;
+
+pub const EXAMPLE_KARPLUS_KERNEL_PATCH: &str = r#"
+    kernel karplus(
+        damping = 0.5,
+        decay = 0.99,
+        pluck = 0.995
+    ) {
+        in gate freq
+
+        audio {
+            // --- excitation: gate edge -> windowed, gate-masked noise burst ---
+            noise: exc_src {},
+            onepole: gate_follow { a: $pluck, chans: 1 },
+            sub: env { val: 0.0, chans: 1 },
+            mult: burst { val: 1.0, chans: 1 },
+            mult: exc { val: 1.0, chans: 1 },
+
+            // --- tuning: freq (Hz) -> 1/freq (s) -> ms -> delay_length ---
+            sine: one { freq: 0.0, phase: 0.25 },
+            div: period_s { val: 220.0 },
+            mult: period_ms { val: 1000.0 },
+
+            // --- the string loop ---
+            add: mix { val: 0.0, chans: 1 },
+            tap: string { delay_length: 4.5, chans: 1, capacity: 48000 },
+            onepole: loop_lp { a: $damping, chans: 1 },
+            mult: fb { val: $decay },
+        }
+
+        // excitation: env = gate - slow_follow(gate); burst = noise * env; exc = burst * gate
+        gate >> gate_follow[0]
+        gate >> env[0]
+        gate_follow >> env[1]
+        exc_src >> burst[0]
+        env >> burst[1]
+        burst >> exc[0]
+        gate >> exc[1]
+
+        // tuning: 1.0 / freq -> * 1000 -> ms into the delay length port
+        one >> period_s[0]
+        freq >> period_s[1]
+        period_s >> period_ms[0]
+        period_ms >> string.delay_length
+
+        // string loop: exc + tail -> delay -> loop lowpass -> feedback gain
+        exc >> mix[0]
+        fb  >> mix[1]
+        mix >> string[0] >> loop_lp[0] >> fb[0]
+
+        // fb >> mix closes the cycle -> the engine's implicit z-1 lives here.
+        { string }
     }
 "#;
 
@@ -895,7 +945,7 @@ mod tests {
     /// cycles broken, and tick without blowing up.
     #[test]
     fn plate_kernel_lowers_and_ticks() {
-        let src = format!("{PLATE_KERNEL} audio {{ sine }} {{ sine }}");
+        let src = format!("{EXAMPLE_PLATE_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
         let def = kernel_def(&src, "plate");
         let mut kg = build(&def, Object::new()).expect("plate kernel should lower");
 
