@@ -1,0 +1,14 @@
+[package]
+name = "legato-macros"
+version = "0.0.1"
+edition = "2024"
+description = "Compile-time kernel codegen for Legato"
+license = "AGPL-3.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# The macro runs Legato's own parser, plan resolver and emitter at expansion
+# time, so the DSL has exactly one implementation shared with the interpreter.
+legato = { path = ".." }
