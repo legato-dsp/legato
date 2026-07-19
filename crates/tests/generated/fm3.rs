@@ -34,11 +34,12 @@ impl Fm3 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.0f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.25f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dc");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3737471449u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -48,11 +49,12 @@ impl Fm3 {
         let n_b3 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(330.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "b3");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3067352427u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -62,11 +64,12 @@ impl Fm3 {
         let n_op3 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(330.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "op3");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2440254211u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -76,11 +79,12 @@ impl Fm3 {
         let n_i3 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(300.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "i3");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                918095981u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -90,11 +94,12 @@ impl Fm3 {
         let n_fb = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(50.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "fb");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4022985161u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -104,11 +109,12 @@ impl Fm3 {
         let n_b2 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(220.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "b2");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3084130045u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -118,11 +124,12 @@ impl Fm3 {
         let n_op2 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(220.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "op2");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2423476593u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -132,11 +139,12 @@ impl Fm3 {
         let n_i2 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(300.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "i2");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                901318363u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -146,11 +154,12 @@ impl Fm3 {
         let n_b1 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(110.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "b1");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3033797189u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -160,11 +169,12 @@ impl Fm3 {
         let n_op1 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(110.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "op1");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2473809449u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,

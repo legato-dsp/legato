@@ -323,7 +323,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
             delay_read: dr2 { delay_name: "d_one", chans: 2, delay_length: 459 },
 
             track_mixer: master { tracks: 3, chans_per_track: 2, gain: [0.4, 0.5, 0.5] },
-            
+
             track_mixer: feedback { tracks: 2, chans_per_track: 2, gain: [0.5, 0.5] }
         }
 
@@ -337,7 +337,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
         dr1[0..2] >> master[2..4]
         dr2[0..2] >> master[4..6]
 
-        // feedback    
+        // feedback
         dr1 >> feedback[0..2]
         dr2 >> feedback[2..4]
 
@@ -506,6 +506,7 @@ fn bench_fm3_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut resource_builder,
             external_buffer_keys: &mut external,
             delay_keys: &mut delays,
+            instance_alias: "bench",
         };
         generated_fm3::Fm3::new(&mut view).expect("generated fm3 should build")
     };
@@ -552,6 +553,7 @@ fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
 
     let program = format!("{EXAMPLE_MODTAP_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
     let def = ast_to_graph(legato_parser(&program).expect("should parse"))
+        .unwrap()
         .macro_registry
         .get("modtap4")
         .expect("modtap4 in registry")
@@ -578,8 +580,9 @@ fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb1,
             external_buffer_keys: &mut e1,
             delay_keys: &mut d1,
+            instance_alias: "bench",
         };
-        lower_kernel(&def, &params, "modtap4", &mut view).expect("should lower")
+        lower_kernel(&def, &params, &mut view).expect("should lower")
     };
     group.bench_function("interpreted (KernelGraph)", |b| {
         b.iter(|| {
@@ -602,6 +605,7 @@ fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb2,
             external_buffer_keys: &mut e2,
             delay_keys: &mut d2,
+            instance_alias: "bench",
         };
         generated_modtap4::Modtap4::new(&mut view).expect("should build")
     };
@@ -654,6 +658,7 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
 
     let program = format!("{EXAMPLE_PLATE_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
     let def = ast_to_graph(legato_parser(&program).expect("should parse"))
+        .unwrap()
         .macro_registry
         .get("plate")
         .expect("plate in registry")
@@ -680,8 +685,9 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb1,
             external_buffer_keys: &mut e1,
             delay_keys: &mut d1,
+            instance_alias: "bench",
         };
-        lower_kernel(&def, &params, "plate", &mut view).expect("should lower")
+        lower_kernel(&def, &params, &mut view).expect("should lower")
     };
     group.bench_function("interpreted (KernelGraph)", |b| {
         b.iter(|| {
@@ -704,6 +710,7 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb2,
             external_buffer_keys: &mut e2,
             delay_keys: &mut d2,
+            instance_alias: "bench",
         };
         generated_plate::Plate::new(&mut view).expect("should build")
     };

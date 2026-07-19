@@ -45,7 +45,8 @@ fn main() {
 
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .register_node("audio", Modtap4::spec())
-        .build_dsl(graph);
+        .build_dsl(graph)
+        .expect("modtap graph should build");
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("CoreAudio host not available");

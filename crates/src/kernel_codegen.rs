@@ -185,8 +185,9 @@ pub fn fm3_interpreter(sample_rate: u32) -> crate::kernel::KernelGraph {
         resource_builder: &mut resource_builder,
         external_buffer_keys: &mut external,
         delay_keys: &mut delays,
+        instance_alias: "fm3",
     };
-    lower_kernel(&def, &Object::new(), "fm3", &mut view).expect("fm3 kernel should lower")
+    lower_kernel(&def, &Object::new(), &mut view).expect("fm3 kernel should lower")
 }
 
 /// Parse [`FM3_KERNEL_SRC`] and hand back the `fm3` kernel definition.
@@ -198,6 +199,7 @@ fn fm3_definition() -> crate::dsl::ir::IRMacro {
     let src = format!("{FM3_KERNEL_SRC} audio {{ sine }} {{ sine }}");
     let ast = legato_parser(&src).expect("fm3 source should parse");
     ast_to_graph(ast)
+        .expect("fm3 source should lower")
         .macro_registry
         .get("fm3")
         .expect("fm3 kernel missing from registry")

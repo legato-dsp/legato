@@ -44,7 +44,7 @@ use crate::{
         ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
-    ports::{PortMeta, Ports},
+    ports::{PortKind, PortMeta, Ports},
 };
 use std::collections::HashMap;
 
@@ -215,6 +215,7 @@ impl KernelPlan {
                 .map(|(index, name)| PortMeta {
                     name: Box::leak(name.clone().into_boxed_str()),
                     index,
+                    kind: PortKind::Audio,
                 })
                 .collect()
         };
@@ -646,6 +647,7 @@ mod tests {
         let ast = legato_parser(src).expect("kernel test source should parse");
         let graph = ast_to_graph(ast);
         let def = graph
+            .unwrap()
             .macro_registry
             .get(name)
             .unwrap_or_else(|| panic!("kernel '{name}' missing from registry"))
@@ -777,6 +779,7 @@ mod tests {
 
         let ast = legato_parser(src).expect("should parse");
         let def = ast_to_graph(ast)
+            .unwrap()
             .macro_registry
             .get("bad")
             .expect("kernel")
