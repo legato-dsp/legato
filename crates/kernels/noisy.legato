@@ -1,0 +1,13 @@
+kernel noisy(gain = 1.0) {
+    in trig
+
+    audio {
+        noise: n,
+        mult: out { val: $gain, chans: 1 }
+    }
+
+    n >> out[0]
+    trig >> out[0]
+
+    { out }
+}

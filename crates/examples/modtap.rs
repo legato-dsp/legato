@@ -2,9 +2,13 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
-    kernel::EXAMPLE_MODTAP_KERNEL_PATCH,
     ports::PortBuilder,
+    spec::NodeDefinition,
 };
+
+// An example with a code-gen node, typically a nice middle ground between a custom node, and the kernel feature
+
+legato_macros::include_node!("kernels/modtap4.legato", "modtap4");
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -13,30 +17,22 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
         .unwrap_or(default)
 }
 
-/// An 8-tap modulated delay kernel.
+/// A four-tap modulated feedback comb, mono in / stereo out.
 ///
-/// Kernels are generally better for prototyping, and
-/// I would suggest graduating to a custom Rust node
-/// when you start reaching your performance budget,
-/// or are looking for a production deployment
+/// This is using the [`include_node!`] macro, which is generally
+/// faster than the interpreted nodes, albeit still not as fast as a
+/// custom block based node.
 fn main() {
-    let graph = format!(
-        "{}\n{}",
-        EXAMPLE_MODTAP_KERNEL_PATCH,
-        r#"
-        patches {
-            modtap4 { depth: 12.0, rate: 0.05, feedback: 0.6 },
-        }
-
+    let graph = r#"
         audio {
             saw { freq: 110.0, chans: 1 },
+            modtap4,
         }
 
         saw >> modtap4[0]
 
         { modtap4 }
-    "#,
-    );
+    "#;
 
     let config = Config {
         sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
@@ -47,7 +43,9 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        .register_node("audio", Modtap4::spec())
+        .build_dsl(graph);
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("CoreAudio host not available");

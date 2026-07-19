@@ -250,6 +250,7 @@ where
             resource_builder: &mut self.resource_builder,
             external_buffer_keys: &mut self.external_buffer_to_key,
             delay_keys: &mut self.delay_name_to_key,
+            instance_alias: alias,
         };
 
         let node = ns
@@ -518,6 +519,7 @@ impl LegatoBuilder<DslBuilding> {
             resource_builder: &mut self.resource_builder,
             external_buffer_keys: &mut self.external_buffer_to_key,
             delay_keys: &mut self.delay_name_to_key,
+            instance_alias: &node.alias,
         };
 
         let kernel_graph =
@@ -711,6 +713,18 @@ pub struct ResourceBuilderView<'a> {
     pub resource_builder: &'a mut ResourceBuilder,
     pub external_buffer_keys: &'a mut HashMap<String, ExternalBufferKey>,
     pub delay_keys: &'a mut HashMap<String, Vec<DelayLineKey>>,
+    /// Alias of the node currently being constructed, e.g. `verb` or
+    /// `voice.0`.
+    ///
+    /// Spawning already makes this unique per instance, which is what lets a
+    /// node derive per-instance state — RNG seeds above all — without a global
+    /// counter. Construction stays a pure function of its inputs; the identity
+    /// is simply one of them.
+    ///
+    /// Generated kernels read this to seed their `noise` nodes, so two
+    /// instances of the same compiled kernel decorrelate exactly as two
+    /// interpreted instantiations do.
+    pub instance_alias: &'a str,
 }
 
 impl<'a> ResourceBuilderView<'a> {

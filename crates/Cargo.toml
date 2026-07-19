@@ -1,3 +1,6 @@
+[workspace]
+members = ["legato-macros"]
+
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
@@ -31,6 +34,11 @@ cpal = { version = "0.16.0", features = ["jack"] }
 rtrb = "0.3.3"
 
 [dev-dependencies]
+# Cargo permits a dependency cycle through dev-dependencies: legato-macros
+# depends on legato for the parser/resolver/emitter, and legato uses the macro
+# only in examples and tests. This avoids splitting out a `legato-core` crate
+# before the design has settled.
+legato-macros = { path = "legato-macros" }
 criterion = { version = "0.5", features = ["html_reports"] }
 rustfft = "6"
 
