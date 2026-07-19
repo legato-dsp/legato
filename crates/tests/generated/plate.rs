@@ -79,6 +79,22 @@ pub struct Plate {
     z_ap2_l_fb_0: f32,
     /// z⁻¹ for `ap2_r_fb_0` (read across a back edge).
     z_ap2_r_fb_0: f32,
+    /// Current value of the `bandwidth_a` param.
+    p_bandwidth_a: f32,
+    /// Current value of the `damping` param.
+    p_damping: f32,
+    /// Current value of the `decay` param.
+    p_decay: f32,
+    /// Current value of the `dry` param.
+    p_dry: f32,
+    /// Current value of the `mod_range_l` param.
+    p_mod_range_l: f32,
+    /// Current value of the `mod_range_r` param.
+    p_mod_range_r: f32,
+    /// Current value of the `predelay` param.
+    p_predelay: f32,
+    /// Current value of the `wet` param.
+    p_wet: f32,
     ports: legato::ports::Ports,
 }
 
@@ -1204,11 +1220,228 @@ impl Plate {
             z_del_d_0: 0.0,
             z_ap2_l_fb_0: 0.0,
             z_ap2_r_fb_0: 0.0,
+            p_bandwidth_a: 0.0005f32,
+            p_damping: 0.3f32,
+            p_decay: 0.5f32,
+            p_dry: 0f32,
+            p_mod_range_l: 0f32,
+            p_mod_range_r: 0f32,
+            p_predelay: 10f32,
+            p_wet: 1f32,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["in_l", "in_r"])
                 .audio_out(2)
                 .build(),
         })
+    }
+
+    /// Current `bandwidth_a` value.
+    pub fn bandwidth_a(&self) -> f32 {
+        self.p_bandwidth_a
+    }
+
+    /// Set `bandwidth_a`.
+    ///
+    /// Forwards to `bw.a`.
+    pub fn set_bandwidth_a(&mut self, value: f32) {
+        self.p_bandwidth_a = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_bw,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "a",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `damping` value.
+    pub fn damping(&self) -> f32 {
+        self.p_damping
+    }
+
+    /// Set `damping`.
+    ///
+    /// Forwards to `damp_l.a`, `damp_r.a`.
+    pub fn set_damping(&mut self, value: f32) {
+        self.p_damping = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_damp_l,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "a",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_damp_r,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "a",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `decay` value.
+    pub fn decay(&self) -> f32 {
+        self.p_decay
+    }
+
+    /// Set `decay`.
+    ///
+    /// Forwards to `decay_l.val`, `decay_r.val`.
+    pub fn set_decay(&mut self, value: f32) {
+        self.p_decay = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_decay_l,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_decay_r,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `dry` value.
+    pub fn dry(&self) -> f32 {
+        self.p_dry
+    }
+
+    /// Set `dry`.
+    ///
+    /// Forwards to `dry_l.val`, `dry_r.val`.
+    pub fn set_dry(&mut self, value: f32) {
+        self.p_dry = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_dry_l,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_dry_r,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `mod_range_l` value.
+    pub fn mod_range_l(&self) -> f32 {
+        self.p_mod_range_l
+    }
+
+    /// Set `mod_range_l`.
+    ///
+    /// Forwards to `lfo_l_ms.new_range`.
+    pub fn set_mod_range_l(&mut self, value: f32) {
+        self.p_mod_range_l = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo_l_ms,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "new_range",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `mod_range_r` value.
+    pub fn mod_range_r(&self) -> f32 {
+        self.p_mod_range_r
+    }
+
+    /// Set `mod_range_r`.
+    ///
+    /// Forwards to `lfo_r_ms.new_range`.
+    pub fn set_mod_range_r(&mut self, value: f32) {
+        self.p_mod_range_r = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo_r_ms,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "new_range",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `predelay` value.
+    pub fn predelay(&self) -> f32 {
+        self.p_predelay
+    }
+
+    /// Set `predelay`.
+    ///
+    /// Forwards to `pre.delay_length`.
+    pub fn set_predelay(&mut self, value: f32) {
+        self.p_predelay = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_pre,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "delay_length",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `wet` value.
+    pub fn wet(&self) -> f32 {
+        self.p_wet
+    }
+
+    /// Set `wet`.
+    ///
+    /// Forwards to `wet_l.val`, `wet_r.val`.
+    pub fn set_wet(&mut self, value: f32) {
+        self.p_wet = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_wet_l,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_wet_r,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Apply any declared params present in `params`, leaving the rest
+    /// at their defaults.
+    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
+        if let Some(value) = params.get_f32("bandwidth_a") {
+            self.set_bandwidth_a(value);
+        }
+        if let Some(value) = params.get_f32("damping") {
+            self.set_damping(value);
+        }
+        if let Some(value) = params.get_f32("decay") {
+            self.set_decay(value);
+        }
+        if let Some(value) = params.get_f32("dry") {
+            self.set_dry(value);
+        }
+        if let Some(value) = params.get_f32("mod_range_l") {
+            self.set_mod_range_l(value);
+        }
+        if let Some(value) = params.get_f32("mod_range_r") {
+            self.set_mod_range_r(value);
+        }
+        if let Some(value) = params.get_f32("predelay") {
+            self.set_predelay(value);
+        }
+        if let Some(value) = params.get_f32("wet") {
+            self.set_wet(value);
+        }
     }
 }
 
@@ -1563,6 +1796,24 @@ impl legato::persample::PerSampleNode for Plate {
         self.z_ap2_l_fb_0 = v_ap2_l_fb_0;
         self.z_ap2_r_fb_0 = v_ap2_r_fb_0;
     }
+
+    fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
+        if let legato::msg::NodeMessage::SetParam(payload) = msg
+            && let legato::msg::RtValue::F32(value) = payload.value
+        {
+            match payload.param_name {
+                "bandwidth_a" => self.set_bandwidth_a(value),
+                "damping" => self.set_damping(value),
+                "decay" => self.set_decay(value),
+                "dry" => self.set_dry(value),
+                "mod_range_l" => self.set_mod_range_l(value),
+                "mod_range_r" => self.set_mod_range_r(value),
+                "predelay" => self.set_predelay(value),
+                "wet" => self.set_wet(value),
+                _ => {}
+            }
+        }
+    }
 }
 
 impl legato::spec::NodeDefinition for Plate {
@@ -1582,8 +1833,10 @@ impl legato::spec::NodeDefinition for Plate {
 
     fn create(
         rb: &mut legato::builder::ResourceBuilderView,
-        _params: &legato::dsl::ir::DSLParams,
+        params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
-        Ok(Box::new(legato::persample::PerSample::new(Self::new(rb)?)))
+        let mut node = Self::new(rb)?;
+        node.apply_params(params);
+        Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }

@@ -147,6 +147,22 @@ fn value_literal(value: &crate::dsl::ir::Value, krate: &str) -> String {
     }
 }
 
+/// Best-effort numeric value of a declared param default.
+///
+/// Kernel params are numeric knobs; a non-numeric default has no meaningful
+/// runtime representation, so it falls back to zero rather than failing the
+/// build. The baked construction params are unaffected either way — this only
+/// seeds the field a setter later overwrites.
+fn as_f32(value: &crate::dsl::ir::Value) -> f32 {
+    use crate::dsl::ir::Value;
+    match value {
+        Value::F32(v) => *v,
+        Value::U32(v) => *v as f32,
+        Value::I32(v) => *v as f32,
+        _ => 0.0,
+    }
+}
+
 /// Build the expression for one input port, mirroring the interpreter's
 /// accumulate loop exactly. See the module docs for why order and the `0.0`
 /// prime are not negotiable.
@@ -335,13 +351,10 @@ pub fn emit_kernel(plan: &KernelPlan, krate: &str) -> String {
 ///
 /// `PerSample` block-adapts the per-sample `tick` to the graph's block rate.
 ///
-/// # Params are baked at generation time
-///
-/// `create`'s `params` argument is deliberately ignored: everything the kernel
-/// declares is resolved when the plan is built, so `verb { decay: 0.7 }` in a
-/// graph has no effect on a generated node. That is the structural-vs-runtime
-/// param split, still unimplemented — until it lands, the `.legato` file's
-/// declared defaults are the only way to set a generated kernel's values.
+/// Declared params are applied from the instantiation, so `verb { decay: 0.7 }`
+/// in a graph works as it does for an interpreted kernel. Params that fix port
+/// arity or allocation cannot vary this way — resolution rejects a template in
+/// one of those positions outright.
 fn emit_node_definition(out: &mut String, plan: &KernelPlan, struct_name: &str, krate: &str) {
     let _ = writeln!(
         out,
@@ -359,7 +372,11 @@ fn emit_node_definition(out: &mut String, plan: &KernelPlan, struct_name: &str, 
     );
     // Declared so a graph naming them is not rejected, even though generated
     // code cannot yet apply them. See the note above.
-    let declared: Vec<String> = plan.param_names.iter().map(|n| format!("{n:?}")).collect();
+    let declared: Vec<String> = plan
+        .param_names()
+        .iter()
+        .map(|n| format!("{n:?}"))
+        .collect();
     let _ = writeln!(
         out,
         "    const OPTIONAL_PARAMS: &'static [&'static str] = &[{}];",
@@ -367,11 +384,11 @@ fn emit_node_definition(out: &mut String, plan: &KernelPlan, struct_name: &str, 
     );
     let _ = writeln!(
         out,
-        "\n    fn create(\n                 rb: &mut {krate}::builder::ResourceBuilderView,\n                 _params: &{krate}::dsl::ir::DSLParams,\n    )          -> Result<Box<dyn {krate}::node::DynNode>, {krate}::builder::ValidationError> {{"
+        "\n    fn create(\n                 rb: &mut {krate}::builder::ResourceBuilderView,\n                 params: &{krate}::dsl::ir::DSLParams,\n    )          -> Result<Box<dyn {krate}::node::DynNode>, {krate}::builder::ValidationError> {{"
     );
     let _ = writeln!(
         out,
-        "        Ok(Box::new({krate}::persample::PerSample::new(Self::new(rb)?)))"
+        "        let mut node = Self::new(rb)?;\n                 node.apply_params(params);\n                 Ok(Box::new({krate}::persample::PerSample::new(node)))"
     );
     let _ = writeln!(out, "    }}");
     let _ = writeln!(out, "}}");
@@ -418,6 +435,10 @@ fn emit_struct(
             slot_names[slot]
         );
         let _ = writeln!(out, "    z_{}: f32,", slot_names[slot]);
+    }
+    for param in &plan.params {
+        let _ = writeln!(out, "    /// Current value of the `{}` param.", param.name);
+        let _ = writeln!(out, "    p_{}: f32,", sanitize(&param.name));
     }
     let _ = writeln!(out, "    ports: {krate}::ports::Ports,");
     let _ = writeln!(out, "}}\n");
@@ -489,6 +510,14 @@ fn emit_new(
     for slot in delayed_slots {
         let _ = writeln!(out, "            z_{}: 0.0,", slot_names[slot]);
     }
+    for param in &plan.params {
+        let _ = writeln!(
+            out,
+            "            p_{}: {}f32,",
+            sanitize(&param.name),
+            as_f32(&param.default)
+        );
+    }
     let _ = writeln!(
         out,
         "            ports: {krate}::ports::PortBuilder::default()"
@@ -509,7 +538,79 @@ fn emit_new(
     );
     let _ = writeln!(out, "        }})");
     let _ = writeln!(out, "    }}");
+    emit_setters(out, plan, krate);
     let _ = writeln!(out, "}}\n");
+}
+
+/// Emit one setter per declared param, forwarding to every interior node the
+/// param feeds.
+///
+/// A kernel param can drive several interior params at once (`$rate` shared by
+/// four LFOs), so each setter fans out. Values are pushed as
+/// [`SetParam`](crate::msg::NodeMessage) messages rather than by touching node
+/// fields directly, because that is the same path the runtime uses — one
+/// mechanism, already implemented per node, rather than a second way in.
+fn emit_setters(out: &mut String, plan: &KernelPlan, krate: &str) {
+    for param in &plan.params {
+        let field = sanitize(&param.name);
+
+        let _ = writeln!(out, "\n    /// Current `{}` value.", param.name);
+        let _ = writeln!(
+            out,
+            "    pub fn {field}(&self) -> f32 {{\n        self.p_{field}\n    }}"
+        );
+
+        let _ = writeln!(out, "\n    /// Set `{}`.", param.name);
+        if param.targets.is_empty() {
+            let _ = writeln!(
+                out,
+                "    ///\n    /// Declared but unused by this kernel's body, so this only records \n    /// the value."
+            );
+        } else {
+            let targets: Vec<String> = param
+                .targets
+                .iter()
+                .map(|t| format!("`{}.{}`", t.node_alias, t.node_param))
+                .collect();
+            let _ = writeln!(out, "    ///\n    /// Forwards to {}.", targets.join(", "));
+        }
+        let _ = writeln!(out, "    pub fn set_{field}(&mut self, value: f32) {{");
+        let _ = writeln!(out, "        self.p_{field} = value;");
+        for target in &param.targets {
+            let _ = writeln!(
+                out,
+                "        {krate}::node::Node::handle_msg(\n                             &mut self.n_{},\n                             {krate}::msg::NodeMessage::SetParam({krate}::msg::ParamPayload {{\n                                 param_name: {:?},\n                                 value: {krate}::msg::RtValue::F32(value),\n                             }}),\n        );",
+                sanitize(&target.node_alias),
+                target.node_param
+            );
+        }
+        let _ = writeln!(out, "    }}");
+    }
+
+    // Applied by `create` so an instantiation like `verb { decay: 0.7 }` takes
+    // effect, and by `handle_msg` so the same names work at runtime.
+    let _ = writeln!(
+        out,
+        "\n    /// Apply any declared params present in `params`, leaving the rest\n             /// at their defaults."
+    );
+    let _ = writeln!(
+        out,
+        "    pub fn apply_params(&mut self, params: &{krate}::dsl::ir::DSLParams) {{"
+    );
+    if plan.params.is_empty() {
+        // Emitted even with nothing to apply so `create` can call it
+        // unconditionally rather than the emitter branching on arity.
+        let _ = writeln!(out, "        let _ = params;");
+    }
+    for param in &plan.params {
+        let _ = writeln!(
+            out,
+            "        if let Some(value) = params.get_f32({:?}) {{\n                         self.set_{}(value);\n        }}",
+            param.name,
+            sanitize(&param.name)
+        );
+    }
+    let _ = writeln!(out, "    }}");
 }
 
 fn emit_tick(
@@ -580,6 +681,37 @@ fn emit_tick(
         }
     }
 
+    let _ = writeln!(out, "    }}");
+
+    // Routing by declared name is what makes a generated kernel reachable from
+    // the existing frontend and UI layer, which send messages rather than
+    // calling methods. Unknown names are ignored: these arrive from user input
+    // on the audio thread, so a bad name must not take down the stream.
+    let _ = writeln!(
+        out,
+        "\n    fn handle_msg(&mut self, msg: {krate}::msg::NodeMessage) {{"
+    );
+    if plan.params.is_empty() {
+        let _ = writeln!(out, "        let _ = msg;");
+    } else {
+        let _ = writeln!(
+            out,
+            "        if let {krate}::msg::NodeMessage::SetParam(payload) = msg\n            \
+             && let {krate}::msg::RtValue::F32(value) = payload.value\n        {{"
+        );
+        let _ = writeln!(out, "            match payload.param_name {{");
+        for param in &plan.params {
+            let _ = writeln!(
+                out,
+                "                {:?} => self.set_{}(value),",
+                param.name,
+                sanitize(&param.name)
+            );
+        }
+        let _ = writeln!(out, "                _ => {{}}");
+        let _ = writeln!(out, "            }}");
+        let _ = writeln!(out, "        }}");
+    }
     let _ = writeln!(out, "    }}");
     let _ = writeln!(out, "}}");
 }
