@@ -127,3 +127,137 @@ fn macro_generated_node_matches_interpreter() {
         );
     }
 }
+
+/// Declared params must be settable three ways, and all three must reach the
+/// interior nodes rather than merely updating a field.
+///
+/// The check is behavioural, not a getter round-trip: a setter that recorded
+/// the value but never forwarded the message would pass any assertion on
+/// `feedback()` while changing nothing about the audio. So this drives an
+/// impulse through and measures the tail, which only grows if the interior
+/// `mult: fb` nodes actually saw the new gain.
+#[test]
+fn declared_params_reach_interior_nodes() {
+    fn tail_energy(feedback: f32) -> f32 {
+        let config = Config::new(48_000, BlockSize::Block64, 1, 0);
+        let mut resource_builder = ResourceBuilder::default();
+        let mut external = HashMap::new();
+        let mut delays = HashMap::new();
+        let mut view = ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut resource_builder,
+            external_buffer_keys: &mut external,
+            delay_keys: &mut delays,
+        };
+
+        let mut node = Modtap4::new(&mut view).expect("should build");
+        node.set_feedback(feedback);
+        assert_eq!(node.feedback(), feedback);
+
+        let mut out = [0.0f32; 2];
+        let mut energy = 0.0f32;
+
+        // Past the longest tap (241 ms), only recirculated signal remains.
+        for n in 0..48_000 {
+            let x = if n == 0 { Some(1.0) } else { Some(0.0) };
+            node.tick(&[x], &mut out);
+            if n > 24_000 {
+                energy += out[0] * out[0] + out[1] * out[1];
+            }
+        }
+        energy
+    }
+
+    let quiet = tail_energy(0.0);
+    let loud = tail_energy(0.9);
+
+    assert!(
+        loud > quiet * 10.0,
+        "feedback should recirculate: {quiet:e} at 0.0 vs {loud:e} at 0.9"
+    );
+}
+
+/// The same param must be reachable by message, which is the path the frontend
+/// and UI layer actually use — they send `NodeMessage`, they do not call
+/// methods. An unknown name must be ignored, not panic: these arrive from user
+/// input on the audio thread.
+#[test]
+fn params_route_through_node_messages() {
+    use legato::msg::{NodeMessage, ParamPayload, RtValue};
+
+    let config = Config::new(48_000, BlockSize::Block64, 1, 0);
+    let mut resource_builder = ResourceBuilder::default();
+    let mut external = HashMap::new();
+    let mut delays = HashMap::new();
+    let mut view = ResourceBuilderView {
+        config: &config,
+        resource_builder: &mut resource_builder,
+        external_buffer_keys: &mut external,
+        delay_keys: &mut delays,
+    };
+
+    let mut node = Modtap4::new(&mut view).expect("should build");
+
+    node.handle_msg(NodeMessage::SetParam(ParamPayload {
+        param_name: "feedback",
+        value: RtValue::F32(0.42),
+    }));
+    assert_eq!(node.feedback(), 0.42);
+
+    // Unknown params are dropped rather than taking down the audio thread.
+    node.handle_msg(NodeMessage::SetParam(ParamPayload {
+        param_name: "not_a_param",
+        value: RtValue::F32(1.0),
+    }));
+    assert_eq!(node.feedback(), 0.42);
+}
+
+/// Params set on the instantiation in a graph must apply — the silent no-op
+/// this work existed to remove. Two graphs differing only in `feedback` must
+/// render differently.
+#[test]
+fn instantiation_params_apply_through_the_graph() {
+    fn render(feedback: f32) -> f32 {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: 512,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let ports = PortBuilder::default().audio_out(2).build();
+        let graph = format!(
+            r#"
+            audio {{
+                saw {{ freq: 110.0, chans: 1 }},
+                modtap4 {{ feedback: {feedback} }},
+            }}
+
+            saw >> modtap4[0]
+
+            {{ modtap4 }}
+        "#
+        );
+
+        let (mut app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+            .register_node("audio", Modtap4::spec())
+            .build_dsl(&graph);
+
+        let mut energy = 0.0f32;
+        for _ in 0..40 {
+            let out = app.next_block(None);
+            for &sample in *out.channels.first().expect("output") {
+                energy += sample * sample;
+            }
+        }
+        energy
+    }
+
+    let low = render(0.0);
+    let high = render(0.9);
+
+    assert!(low.is_finite() && high.is_finite());
+    assert!(
+        (low - high).abs() / low.max(high) > 0.05,
+        "instantiation params should change the render: {low:e} vs {high:e}"
+    );
+}

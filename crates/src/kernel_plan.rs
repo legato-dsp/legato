@@ -41,7 +41,7 @@ use crate::{
     builder::ValidationError,
     dsl::{
         expand::substitute_templates,
-        ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port},
+        ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
     ports::{PortMeta, Ports},
@@ -106,6 +106,39 @@ pub fn identity_seed(salt: &str, alias: &str) -> u32 {
     hash | 1
 }
 
+/// One interior node param fed by a kernel-level param.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamTarget {
+    /// Alias of the interior node, e.g. `fb`.
+    pub node_alias: String,
+    /// The node's own param name, e.g. `val` or `freq` — what a
+    /// [`SetParam`](crate::msg::NodeMessage::SetParam) message must carry.
+    pub node_param: String,
+}
+
+/// A param the kernel declares in its signature, and everywhere it lands.
+///
+/// The kernel signature is the natural boundary for the structural-vs-runtime
+/// split: `kernel modtap4(depth = 12.0, ...)` is precisely the set of knobs the
+/// author chose to expose, so declared params become settable at runtime while
+/// interior literals stay baked.
+#[derive(Clone, Debug)]
+pub struct PlanParam {
+    /// Name as declared, e.g. `depth`.
+    pub name: String,
+    /// Declared default, used when an instantiation does not override it.
+    pub default: Value,
+    /// Every interior node param this feeds. One kernel param can drive
+    /// several (a `$rate` shared by four LFOs, say), which is why routing has
+    /// to fan out rather than assume a single destination.
+    pub targets: Vec<ParamTarget>,
+}
+
+/// Params that determine a node's *shape* rather than its value, and so cannot
+/// vary at runtime: they fix port arity and buffer allocation, which the
+/// generated struct bakes in at compile time.
+const STRUCTURAL_PARAMS: &[&str] = &["chans", "capacity"];
+
 /// One node in a resolved plan.
 #[derive(Clone, Debug)]
 pub struct PlanNode {
@@ -159,15 +192,12 @@ pub struct KernelPlan {
     pub output_names: Vec<String>,
     /// Total number of value slots — the size of the value table.
     pub total_slots: usize,
-    /// Names of the params the kernel declares in its signature, e.g.
-    /// `kernel modtap4(depth = 3.0, ...)`.
+    /// Params the kernel declares, with every interior node param each feeds.
     ///
-    /// These are exactly the knobs the kernel author chose to expose, which is
-    /// what makes them the natural boundary for the structural-vs-runtime param
-    /// split: interior literals get baked, declared params become settable.
-    /// Recorded here so codegen can surface them even while their values are
-    /// still resolved at generation time.
-    pub param_names: Vec<String>,
+    /// Resolution normally substitutes `$templates` and discards where they
+    /// came from; this preserves that provenance so codegen can emit setters
+    /// and message routing. Empty for kernels that declare no params.
+    pub params: Vec<PlanParam>,
 }
 
 impl KernelPlan {
@@ -193,6 +223,11 @@ impl KernelPlan {
             audio_in: meta(&self.input_names),
             audio_out: meta(&self.output_names),
         }
+    }
+
+    /// Names of the declared params, in declaration order.
+    pub fn param_names(&self) -> Vec<&str> {
+        self.params.iter().map(|p| p.name.as_str()).collect()
     }
 
     /// Widest input-port count across all nodes — the interpreter's scratch
@@ -366,6 +401,7 @@ pub fn resolve_plan(
     let mut plan_nodes: Vec<PlanNode> = Vec::with_capacity(ir_macro.body.node_count());
     let mut node_ports: Vec<Ports> = Vec::with_capacity(ir_macro.body.node_count());
     let mut decl_idx_of: HashMap<NodeId, DeclIdx> = HashMap::new();
+    let mut template_bindings: Vec<(String, ParamTarget)> = Vec::new();
 
     for ir_node in ir_macro.body.nodes() {
         if ir_node.kind != IRNodeKind::Leaf {
@@ -382,6 +418,34 @@ pub fn resolve_plan(
         }
 
         let mut params = ir_node.params.clone();
+
+        // Record where each `$template` lands *before* substitution erases it.
+        // This provenance is what lets codegen emit a setter that reaches the
+        // right interior node param.
+        for (node_param, value) in &params {
+            let Value::Template(template) = value else {
+                continue;
+            };
+            let kernel_param = template.trim_start_matches('$').to_string();
+
+            if STRUCTURAL_PARAMS.contains(&node_param.as_str()) {
+                return Err(unsupported(format!(
+                    "kernel '{}': param '{node_param}' on '{}' fixes port arity or \
+                     allocation, so it must be a literal, not the template \
+                     '${kernel_param}'",
+                    ir_macro.name, ir_node.alias
+                )));
+            }
+
+            template_bindings.push((
+                kernel_param,
+                ParamTarget {
+                    node_alias: ir_node.alias.clone(),
+                    node_param: node_param.clone(),
+                },
+            ));
+        }
+
         substitute_templates(&mut params, &resolved_params);
 
         let ports = oracle.ports_for(&ir_node.node_type, &DSLParams::new(&params))?;
@@ -523,13 +587,39 @@ pub fn resolve_plan(
         .map(|&decl| pool[decl.0].take().expect("each node moved exactly once"))
         .collect();
 
+    // Group provenance by declared param, keeping declaration order. A param
+    // declared but never referenced still appears, with no targets — setting it
+    // is a no-op rather than an error, matching how the interpreter treats an
+    // unused default.
+    let params: Vec<PlanParam> = ir_macro
+        .default_params
+        .as_ref()
+        .map(|declared| {
+            declared
+                .iter()
+                .map(|(name, declared_default)| PlanParam {
+                    name: name.clone(),
+                    // The *resolved* value, not the declared default: an
+                    // instantiation may override it, and construction already
+                    // used the override. A field seeded from the declared
+                    // default would misreport the node's actual state.
+                    default: resolved_params
+                        .get(name)
+                        .unwrap_or(declared_default)
+                        .clone(),
+                    targets: template_bindings
+                        .iter()
+                        .filter(|(param, _)| param == name)
+                        .map(|(_, target)| target.clone())
+                        .collect(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok(KernelPlan {
         name: ir_macro.name.clone(),
-        param_names: ir_macro
-            .default_params
-            .as_ref()
-            .map(|p| p.keys().cloned().collect())
-            .unwrap_or_default(),
+        params,
         nodes,
         input_names,
         output_slots,
@@ -661,6 +751,86 @@ mod tests {
             .flatten()
             .any(|src| matches!(src, PlanSrc::Interior { delayed: true, .. }));
         assert!(!any_delayed, "feed-forward kernel should have no z⁻¹");
+    }
+
+    /// A param that fixes port arity cannot be a runtime knob: the generated
+    /// struct bakes arity in at compile time, so a template there has to be
+    /// rejected at resolution rather than silently producing a node whose
+    /// channel count disagrees with its wiring.
+    #[test]
+    fn structural_params_reject_templates() {
+        let src = r#"
+            kernel bad(n = 4.0) {
+                in audio_in
+
+                audio {
+                    mult: wide { val: 1.0, chans: $n }
+                }
+
+                audio_in >> wide[0]
+
+                { wide }
+            }
+            audio { sine }
+            { sine }
+        "#;
+
+        let ast = legato_parser(src).expect("should parse");
+        let def = ast_to_graph(ast)
+            .macro_registry
+            .get("bad")
+            .expect("kernel")
+            .clone();
+        let config = Config::new(48_000, BlockSize::Block64, 1, 0);
+
+        match resolve_plan(&def, &Object::new(), "bad", &mut ProbeOracle::new(&config)) {
+            Err(ValidationError::UnsupportedInKernel(msg)) => assert!(
+                msg.contains("chans") && msg.contains("$n"),
+                "error should name the param and the template: {msg}"
+            ),
+            other => panic!("expected UnsupportedInKernel, got {other:?}"),
+        }
+    }
+
+    /// Provenance must survive substitution, and must fan out: one kernel param
+    /// commonly drives several interior nodes, and a setter that reached only
+    /// the first would leave the rest stale.
+    #[test]
+    fn declared_params_record_every_target() {
+        let src = r#"
+            kernel shared(rate = 2.0) {
+                in audio_in
+
+                audio {
+                    sine: a { freq: $rate },
+                    sine: b { freq: $rate },
+                    add: mix { val: 0.0 }
+                }
+
+                audio_in >> mix[0]
+                a >> mix[0]
+                b >> mix[0]
+
+                { mix }
+            }
+            audio { sine }
+            { sine }
+        "#;
+
+        let plan = plan_of(src, "shared", "inst");
+
+        assert_eq!(plan.params.len(), 1);
+        let rate = &plan.params[0];
+        assert_eq!(rate.name, "rate");
+
+        let mut targets: Vec<(&str, &str)> = rate
+            .targets
+            .iter()
+            .map(|t| (t.node_alias.as_str(), t.node_param.as_str()))
+            .collect();
+        targets.sort_unstable();
+
+        assert_eq!(targets, vec![("a", "freq"), ("b", "freq")]);
     }
 
     const NOISE_SRC: &str = r#"

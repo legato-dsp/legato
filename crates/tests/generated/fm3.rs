@@ -190,6 +190,12 @@ impl Fm3 {
                 .build(),
         })
     }
+
+    /// Apply any declared params present in `params`, leaving the rest
+    /// at their defaults.
+    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
+        let _ = params;
+    }
 }
 
 impl legato::persample::PerSampleNode for Fm3 {
@@ -254,6 +260,10 @@ impl legato::persample::PerSampleNode for Fm3 {
         // Commit the one-sample delays for the next tick.
         self.z_fb_0 = v_fb_0;
     }
+
+    fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
+        let _ = msg;
+    }
 }
 
 impl legato::spec::NodeDefinition for Fm3 {
@@ -264,8 +274,10 @@ impl legato::spec::NodeDefinition for Fm3 {
 
     fn create(
         rb: &mut legato::builder::ResourceBuilderView,
-        _params: &legato::dsl::ir::DSLParams,
+        params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
-        Ok(Box::new(legato::persample::PerSample::new(Self::new(rb)?)))
+        let mut node = Self::new(rb)?;
+        node.apply_params(params);
+        Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }

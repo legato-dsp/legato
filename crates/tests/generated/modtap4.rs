@@ -42,6 +42,12 @@ pub struct Modtap4 {
     z_d4_0: f32,
     /// z⁻¹ for `fb_0` (read across a back edge).
     z_fb_0: f32,
+    /// Current value of the `depth` param.
+    p_depth: f32,
+    /// Current value of the `feedback` param.
+    p_feedback: f32,
+    /// Current value of the `rate` param.
+    p_rate: f32,
     ports: legato::ports::Ports,
 }
 
@@ -473,11 +479,106 @@ impl Modtap4 {
             z_d3_0: 0.0,
             z_d4_0: 0.0,
             z_fb_0: 0.0,
+            p_depth: 12f32,
+            p_feedback: 0.6f32,
+            p_rate: 0.05f32,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["in"])
                 .audio_out(2)
                 .build(),
         })
+    }
+
+    /// Current `depth` value.
+    pub fn depth(&self) -> f32 {
+        self.p_depth
+    }
+
+    /// Set `depth`.
+    ///
+    /// Forwards to `depth.val`.
+    pub fn set_depth(&mut self, value: f32) {
+        self.p_depth = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_depth,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `feedback` value.
+    pub fn feedback(&self) -> f32 {
+        self.p_feedback
+    }
+
+    /// Set `feedback`.
+    ///
+    /// Forwards to `fb.val`.
+    pub fn set_feedback(&mut self, value: f32) {
+        self.p_feedback = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_fb,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "val",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Current `rate` value.
+    pub fn rate(&self) -> f32 {
+        self.p_rate
+    }
+
+    /// Set `rate`.
+    ///
+    /// Forwards to `lfo1.freq`, `lfo2.freq`, `lfo3.freq`, `lfo4.freq`.
+    pub fn set_rate(&mut self, value: f32) {
+        self.p_rate = value;
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo1,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "freq",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo2,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "freq",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo3,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "freq",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+        legato::node::Node::handle_msg(
+            &mut self.n_lfo4,
+            legato::msg::NodeMessage::SetParam(legato::msg::ParamPayload {
+                param_name: "freq",
+                value: legato::msg::RtValue::F32(value),
+            }),
+        );
+    }
+
+    /// Apply any declared params present in `params`, leaving the rest
+    /// at their defaults.
+    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
+        if let Some(value) = params.get_f32("depth") {
+            self.set_depth(value);
+        }
+        if let Some(value) = params.get_f32("feedback") {
+            self.set_feedback(value);
+        }
+        if let Some(value) = params.get_f32("rate") {
+            self.set_rate(value);
+        }
     }
 }
 
@@ -729,6 +830,19 @@ impl legato::persample::PerSampleNode for Modtap4 {
         self.z_d4_0 = v_d4_0;
         self.z_fb_0 = v_fb_0;
     }
+
+    fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
+        if let legato::msg::NodeMessage::SetParam(payload) = msg
+            && let legato::msg::RtValue::F32(value) = payload.value
+        {
+            match payload.param_name {
+                "depth" => self.set_depth(value),
+                "feedback" => self.set_feedback(value),
+                "rate" => self.set_rate(value),
+                _ => {}
+            }
+        }
+    }
 }
 
 impl legato::spec::NodeDefinition for Modtap4 {
@@ -739,8 +853,10 @@ impl legato::spec::NodeDefinition for Modtap4 {
 
     fn create(
         rb: &mut legato::builder::ResourceBuilderView,
-        _params: &legato::dsl::ir::DSLParams,
+        params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
-        Ok(Box::new(legato::persample::PerSample::new(Self::new(rb)?)))
+        let mut node = Self::new(rb)?;
+        node.apply_params(params);
+        Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }
