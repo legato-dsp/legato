@@ -520,9 +520,16 @@ impl LegatoBuilder<DslBuilding> {
             delay_keys: &mut self.delay_name_to_key,
         };
 
-        let kernel_graph =
-            crate::kernel::lower_kernel(ir_macro, &node.params, &mut resource_builder_view)
-                .unwrap_or_else(|e| panic!("Could not build kernel '{}': {:?}", node.alias, e));
+        // The instantiating node's alias is the salt: spawning already makes it
+        // unique per instance (`voice.0`, `voice.1`), which is what keeps poly
+        // voices from sharing noise seeds.
+        let kernel_graph = crate::kernel::lower_kernel(
+            ir_macro,
+            &node.params,
+            &node.alias,
+            &mut resource_builder_view,
+        )
+        .unwrap_or_else(|e| panic!("Could not build kernel '{}': {:?}", node.alias, e));
 
         let legato_node = LegatoNode::new(
             node.alias.clone(),

@@ -1,15 +1,30 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+
+// The emitter's checked-in output lives under `tests/` so it is verified
+// through the public API and stays out of the published library. Pulled in
+// here by path so the benchmark can measure the code the generator actually
+// produces, not just the hand-written shape it targets.
+#[path = "../tests/generated/fm3.rs"]
+mod generated_fm3;
+
+#[path = "../tests/generated/modtap4.rs"]
+mod generated_modtap4;
+
+#[path = "../tests/generated/plate.rs"]
+mod generated_plate;
 use legato::{
     builder::LegatoBuilder,
     config::Config,
     harness::get_node_test_harness_stereo_4096,
     kernel::EXAMPLE_PLATE_KERNEL_PATCH,
+    kernel_codegen::{Fm3, fm3_interpreter},
     nodes::audio::{
         fir::FirFilter,
         saw::Saw,
         sine::Sine,
         svf::{FilterType, Svf},
     },
+    persample::PerSampleNode,
     ports::PortBuilder,
     runtime::MAX_INPUTS,
 };
@@ -476,8 +491,283 @@ fn bench_svf(c: &mut Criterion) {
     });
 }
 
+/// Measures the ceiling for the kernel codegen backend: the same 10-node FM
+/// voice as a hand-written straight-line struct ([`Fm3`]) versus the
+/// interpreted [`KernelGraph`] it is verified bit-identical to.
+///
+/// Driven at [`PerSampleNode::tick`] rather than through the block graph, so
+/// the number isolates what codegen actually removes — enum dispatch, the
+/// `port_sources`/`src_pool` gather, the `Option` scratch frame, and the value
+/// table — with no block adapter or fan-in gains in between.
+///
+/// This is the number that decides whether emitting `tick` calls is enough, or
+/// whether inlining the primitives' DSP math is worth its duplication cost.
+fn bench_fm3_codegen_vs_interpreter(c: &mut Criterion) {
+    const BLOCK: usize = 4096;
+    const SR: u32 = 48_000;
+
+    let mut group = c.benchmark_group("FM3 kernel (per-sample tick)");
+    group.throughput(criterion::Throughput::Elements(BLOCK as u64));
+
+    let mut interp = fm3_interpreter(SR);
+    group.bench_function("interpreted (KernelGraph)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32];
+            for _ in 0..BLOCK {
+                interp.tick(black_box(&[None]), &mut out);
+                black_box(out[0]);
+            }
+        })
+    });
+
+    let mut hand = Fm3::new(SR as f32);
+    group.bench_function("hand-written (target shape)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32];
+            for _ in 0..BLOCK {
+                hand.tick(black_box(&[None]), &mut out);
+                black_box(out[0]);
+            }
+        })
+    });
+
+    // The emitter's actual output. Benched next to the hand-written form so any
+    // cost the generator adds over the target shape — the `0.0` accumulator
+    // primes, the `o[..n]` reslicing — shows up as a gap rather than hiding.
+    let config = Config {
+        block_size: 64,
+        channels: 1,
+        sample_rate: SR as usize,
+        rt_capacity: 0,
+    };
+    let mut resource_builder = legato::resources::ResourceBuilder::default();
+    let mut external = std::collections::HashMap::new();
+    let mut delays = std::collections::HashMap::new();
+    let mut generated = {
+        let mut view = legato::builder::ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut resource_builder,
+            external_buffer_keys: &mut external,
+            delay_keys: &mut delays,
+        };
+        generated_fm3::Fm3::new(&mut view).expect("generated fm3 should build")
+    };
+    group.bench_function("generated (emitter output)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32];
+            for _ in 0..BLOCK {
+                generated.tick(black_box(&[None]), &mut out);
+                black_box(out[0]);
+            }
+        })
+    });
+
+    group.finish();
+}
+
+/// The delay-heavy counterpart to the FM3 measurement.
+///
+/// `modtap4` is 25 nodes with four modulated `tap` delay lines, 4-channel
+/// `mult` nodes and four feedback loops — a very different work mix from FM3's
+/// oscillators, and much closer in shape to the plate. Worth measuring
+/// separately: codegen removes a fixed per-node overhead, so the speedup
+/// depends on how much real DSP work each node does, and a cubic-interpolated
+/// delay read does considerably more than a sine.
+fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
+    use legato::{
+        builder::ResourceBuilderView,
+        dsl::{
+            ir::{Object, Value},
+            lower::ast_to_graph,
+            parse::legato_parser,
+        },
+        kernel::{EXAMPLE_MODTAP_KERNEL_PATCH, lower_kernel},
+        resources::ResourceBuilder,
+    };
+
+    const BLOCK: usize = 4096;
+    const SR: u32 = 48_000;
+
+    let mut params = Object::new();
+    params.insert("depth".into(), Value::F32(12.0));
+    params.insert("rate".into(), Value::F32(0.05));
+    params.insert("feedback".into(), Value::F32(0.6));
+
+    let program = format!("{EXAMPLE_MODTAP_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
+    let def = ast_to_graph(legato_parser(&program).expect("should parse"))
+        .macro_registry
+        .get("modtap4")
+        .expect("modtap4 in registry")
+        .clone();
+
+    let config = Config {
+        block_size: 64,
+        channels: 1,
+        sample_rate: SR as usize,
+        rt_capacity: 0,
+    };
+
+    let mut group = c.benchmark_group("modtap4 kernel (per-sample tick)");
+    group.throughput(criterion::Throughput::Elements(BLOCK as u64));
+
+    let mut rb1 = ResourceBuilder::default();
+    let (mut e1, mut d1) = (
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let mut interp = {
+        let mut view = ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut rb1,
+            external_buffer_keys: &mut e1,
+            delay_keys: &mut d1,
+        };
+        lower_kernel(&def, &params, "modtap4", &mut view).expect("should lower")
+    };
+    group.bench_function("interpreted (KernelGraph)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32; 2];
+            for _ in 0..BLOCK {
+                interp.tick(black_box(&[Some(0.01)]), &mut out);
+                black_box(out);
+            }
+        })
+    });
+
+    let mut rb2 = ResourceBuilder::default();
+    let (mut e2, mut d2) = (
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let mut generated = {
+        let mut view = ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut rb2,
+            external_buffer_keys: &mut e2,
+            delay_keys: &mut d2,
+        };
+        generated_modtap4::Modtap4::new(&mut view).expect("should build")
+    };
+    group.bench_function("generated (emitter output)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32; 2];
+            for _ in 0..BLOCK {
+                generated.tick(black_box(&[Some(0.01)]), &mut out);
+                black_box(out);
+            }
+        })
+    });
+
+    group.finish();
+}
+
+/// The decision-grade measurement: a 64-node plate reverb as an interpreted
+/// kernel, as generated code, and as the hand-written Rust `plate480` node.
+///
+/// The first two are measured at `tick` level; `plate480` is included as the
+/// standing reference for what "graduating to Rust" buys, taken from the
+/// existing `Plate reverb` group. This is the shape of kernel people actually
+/// ship, so it is the honest input to a keep-or-scrap call.
+fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
+    use legato::{
+        builder::ResourceBuilderView,
+        dsl::{
+            ir::{Object, Value},
+            lower::ast_to_graph,
+            parse::legato_parser,
+        },
+        kernel::{EXAMPLE_PLATE_KERNEL_PATCH, lower_kernel},
+        resources::ResourceBuilder,
+    };
+
+    const BLOCK: usize = 4096;
+    const SR: u32 = 48_000;
+
+    let mut params = Object::new();
+    for (key, value) in [
+        ("predelay", 10.0f32),
+        ("decay", 0.5),
+        ("damping", 0.3),
+        ("bandwidth_a", 0.0005),
+        ("wet", 1.0),
+        ("dry", 0.0),
+    ] {
+        params.insert(key.into(), Value::F32(value));
+    }
+
+    let program = format!("{EXAMPLE_PLATE_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
+    let def = ast_to_graph(legato_parser(&program).expect("should parse"))
+        .macro_registry
+        .get("plate")
+        .expect("plate in registry")
+        .clone();
+
+    let config = Config {
+        block_size: 64,
+        channels: 2,
+        sample_rate: SR as usize,
+        rt_capacity: 0,
+    };
+
+    let mut group = c.benchmark_group("plate kernel (per-sample tick)");
+    group.throughput(criterion::Throughput::Elements(BLOCK as u64));
+
+    let mut rb1 = ResourceBuilder::default();
+    let (mut e1, mut d1) = (
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let mut interp = {
+        let mut view = ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut rb1,
+            external_buffer_keys: &mut e1,
+            delay_keys: &mut d1,
+        };
+        lower_kernel(&def, &params, "plate", &mut view).expect("should lower")
+    };
+    group.bench_function("interpreted (KernelGraph)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32; 2];
+            for _ in 0..BLOCK {
+                interp.tick(black_box(&[Some(0.01), Some(0.01)]), &mut out);
+                black_box(out);
+            }
+        })
+    });
+
+    let mut rb2 = ResourceBuilder::default();
+    let (mut e2, mut d2) = (
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let mut generated = {
+        let mut view = ResourceBuilderView {
+            config: &config,
+            resource_builder: &mut rb2,
+            external_buffer_keys: &mut e2,
+            delay_keys: &mut d2,
+        };
+        generated_plate::Plate::new(&mut view).expect("should build")
+    };
+    group.bench_function("generated (emitter output)", |b| {
+        b.iter(|| {
+            let mut out = [0.0f32; 2];
+            for _ in 0..BLOCK {
+                generated.tick(black_box(&[Some(0.01), Some(0.01)]), &mut out);
+                black_box(out);
+            }
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_fm3_codegen_vs_interpreter,
+    bench_plate_codegen_vs_interpreter,
+    bench_modtap_codegen_vs_interpreter,
     bench_stereo_sine,
     bench_stereo_saw,
     bench_fir,

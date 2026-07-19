@@ -690,6 +690,7 @@ dependencies = [
  "halfband",
  "hound",
  "indexmap",
+ "legato-macros",
  "midir",
  "portable-atomic",
  "rand",
@@ -698,6 +699,13 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
+]
+
+[[package]]
+name = "legato-macros"
+version = "0.0.1"
+dependencies = [
+ "legato",
 ]
 
 [[package]]

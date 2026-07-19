@@ -1,9 +1,8 @@
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
-    dsl::{
-        expand::substitute_templates,
-        ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port},
-    },
+    config::Config,
+    dsl::ir::{DSLParams, IRMacro, Object},
+    kernel_plan::{KernelPlan, PlanSrc, PortOracle, ValueSlot, resolve_plan},
     msg::NodeMessage,
     nodes::{
         audio::{
@@ -21,8 +20,9 @@ use crate::{
         },
         control::map::Map,
     },
-    persample::{MAX_FRAME_PORTS, PerSampleNode},
-    ports::{PortMeta, Ports},
+    persample::PerSampleNode,
+    ports::Ports,
+    resources::ResourceBuilder,
 };
 use std::collections::HashMap;
 
@@ -84,10 +84,16 @@ impl PerSampleNode for KernelNode {
 }
 
 /// Build a node from kernels that process one sample at a time.
+///
+/// `seed` is the node's stable identity seed from its [`PlanNode`], used by
+/// nodes carrying random state. It is passed in rather than drawn from a
+/// global counter so that construction is a pure function of its arguments —
+/// see [`PlanNode::identity_seed`] for why that matters.
 pub fn build_kernel_node(
     node_type: &str,
     rb: &mut ResourceBuilderView,
     p: &DSLParams,
+    seed: u32,
 ) -> Result<KernelNode, ValidationError> {
     let op = |kind: ApplyOpKind, default: f32, chans: usize, p: &DSLParams| {
         mult_node_factory(
@@ -105,7 +111,10 @@ pub fn build_kernel_node(
         "allpass" => KernelNode::Allpass(Allpass::from_params(rb, p)?),
         "tap" => KernelNode::Tap(DelayTap::from_params(rb, p)?),
         "map" => KernelNode::Map(Map::from_params(rb, p)?),
-        "noise" => KernelNode::Noise(Noise::new()),
+        // An explicit `seed:` pins the stream; otherwise it comes from the
+        // node's plan identity, so it is stable across builds but still
+        // distinct per node and per kernel instantiation.
+        "noise" => KernelNode::Noise(Noise::with_seed(p.get_u32("seed").unwrap_or(seed))),
         "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
         "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
         "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
@@ -123,33 +132,19 @@ pub fn build_kernel_node(
     })
 }
 
-/// A node's position in kernel-body declaration order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct DeclIdx(usize);
-
-/// A node's position in the final execution order
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ExecIdx(usize);
-
-/// A slot in the persistent `values` table
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ValueSlot(u32);
-
-/// An index into the kernel's exterior input frame
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ExternalInput(u32);
-
 /// Where one summed contribution to an interior input port comes from.
 ///
-/// In english: we are modeling feedback using a one sample delay.
-/// so the source for each node is either an external input, or
-/// from the table we have constructed.
+/// This is the interpreter's packed form of [`PlanSrc`]. The plan's `delayed`
+/// flag is deliberately dropped here: this backend gets previous-sample
+/// semantics for free from the persistent `values` table, since a back edge's
+/// source has not yet run this tick. Codegen, which has no such table, is the
+/// consumer that needs the flag.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Src {
     /// The kernel's exterior input frame (a virtual port).
-    External(ExternalInput),
+    External(u32),
     /// A slot in the persistent output table.
-    /// If it has the last sample, that is our one sample delay.
+    /// If it holds the last sample, that is our one sample delay.
     Internal(ValueSlot),
 }
 
@@ -213,7 +208,7 @@ impl PerSampleNode for KernelGraph {
                 let mut patched = false;
                 for src in sources {
                     match *src {
-                        Src::External(ExternalInput(e)) => {
+                        Src::External(e) => {
                             if let Some(v) = in_frame[e as usize] {
                                 acc += v;
                                 patched = true;
@@ -246,315 +241,124 @@ impl PerSampleNode for KernelGraph {
     }
 }
 
-fn unsupported(what: impl Into<String>) -> ValidationError {
-    ValidationError::UnsupportedInKernel(what.into())
+/// A [`PortOracle`] that answers by constructing the node and reading its
+/// `ports()`, so port-arity rules live only in the node implementations.
+///
+/// The probe builds against a **scratch** [`ResourceBuilder`], never the real
+/// one. `tap` allocates a delay line on construction ([`ResourceBuilder::add_delay_line`]),
+/// so probing against the caller's builder would allocate every delay line
+/// twice — once to look at, once to keep. The scratch builder is dropped with
+/// its throwaway allocations when the probe finishes.
+///
+/// `config` is only needed because constructors take a sample rate; no node's
+/// port count depends on it.
+pub struct ProbeOracle<'a> {
+    config: &'a Config,
 }
 
-fn resolve_port(
-    port: &Port,
-    ports: &[PortMeta],
-    node_alias: &str,
-) -> Result<Vec<usize>, ValidationError> {
-    match port {
-        Port::None => Ok((0..ports.len()).collect()),
-        Port::Index(i) => {
-            if *i >= ports.len() {
-                return Err(ValidationError::InvalidParameter(format!(
-                    "kernel: port index {i} out of range for '{node_alias}' ({} ports)",
-                    ports.len()
-                )));
-            }
-            Ok(vec![*i])
-        }
-        Port::Named(name) => ports
-            .iter()
-            .find(|p| p.name == name)
-            .map(|p| vec![p.index])
-            .ok_or_else(|| {
-                ValidationError::InvalidParameter(format!(
-                    "kernel: no port named '{name}' on '{node_alias}'"
-                ))
-            }),
-        Port::Slice(..) | Port::Stride { .. } => Err(unsupported(format!(
-            "port slices/strides on '{node_alias}'"
-        ))),
+impl<'a> ProbeOracle<'a> {
+    pub fn new(config: &'a Config) -> Self {
+        Self { config }
     }
 }
 
-/// DFS visit state, i.e. the classic three "colors" of an edge-classifying
-/// depth-first search (white / gray / black in CLRS §22.3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum VisitState {
-    /// Not reached yet ("white").
-    Unvisited,
-    /// Currently on the DFS path — an ancestor of the node being explored
-    /// ("gray"). An edge pointing *into* an `OnPath` node closes a cycle:
-    /// that is a **back edge**.
-    OnPath,
-    /// Fully explored, all descendants finished ("black").
-    Finished,
+impl PortOracle for ProbeOracle<'_> {
+    fn ports_for(&mut self, node_type: &str, params: &DSLParams) -> Result<Ports, ValidationError> {
+        let mut scratch = ResourceBuilder::default();
+        let mut external_buffer_keys = HashMap::new();
+        let mut delay_keys = HashMap::new();
+        let mut view = ResourceBuilderView {
+            config: self.config,
+            resource_builder: &mut scratch,
+            external_buffer_keys: &mut external_buffer_keys,
+            delay_keys: &mut delay_keys,
+        };
+
+        // Seed is irrelevant to port shape; construction is pure, so this
+        // probe has no effect the caller could observe.
+        Ok(build_kernel_node(node_type, &mut view, params, 0)?
+            .ports()
+            .clone())
+    }
 }
 
-/// Compute an execution order for a possibly-cyclic kernel body.
-///
-/// **Algorithm: DFS edge classification + reverse postorder** — the standard
-/// DFS-based topological sort (CLRS §22.4), generalized to cyclic graphs by
-/// simply *not descending* through back edges. During the search, every edge
-/// `from -> to` is classified by `to`'s [`VisitState`]:
-///
-/// - `Unvisited` → *tree edge*: descend into `to`.
-/// - `OnPath`    → *back edge*: `to` is an ancestor still on the DFS path,
-///   so this edge closes a cycle. We skip it, which is equivalent to
-///   deleting it from the graph (the set of skipped back edges is a
-///   feedback arc set — removing them leaves a DAG).
-/// - `Finished`  → *forward/cross edge*: already handled, skip.
-///
-/// Listing nodes in **reverse finishing order** then yields a topological
-/// order of that DAG: for every non-back edge `from -> to`, `to` finishes
-/// first and therefore sorts *after* `from`.
-///
-/// Runtime meaning of a back edge: its reader executes before its source
-/// each tick, so the reader sees the source's value-table slot from the
-/// *previous* tick — the implicit z⁻¹ that makes feedback loops legal.
-/// DFS roots are tried in declaration order, so *which* edge of a cycle
-/// becomes the delayed one follows the order nodes appear in the kernel
-/// body.
-fn execution_order(node_count: usize, successors: &[Vec<DeclIdx>]) -> Vec<DeclIdx> {
-    let mut state = vec![VisitState::Unvisited; node_count];
-    let mut finish_order: Vec<DeclIdx> = Vec::with_capacity(node_count);
+impl KernelGraph {
+    /// Pack a resolved [`KernelPlan`] into the interpreter's flat runtime
+    /// tables and construct the DSP state for each node.
+    ///
+    /// The plan lists nodes in execution order with value slots still in
+    /// declaration order, which is exactly the layout the tick loop wants: the
+    /// wiring tables are walked front to back, while `Src::Internal` slot
+    /// references stay valid across the reorder.
+    pub fn from_plan(
+        plan: &KernelPlan,
+        rb: &mut ResourceBuilderView,
+    ) -> Result<Self, ValidationError> {
+        let mut nodes: Vec<KernelNode> = Vec::with_capacity(plan.nodes.len());
+        let mut layouts: Vec<NodeLayout> = Vec::with_capacity(plan.nodes.len());
+        let mut port_sources: Vec<(u32, u32)> = Vec::new();
+        let mut src_pool: Vec<Src> = Vec::new();
 
-    for root in 0..node_count {
-        if state[root] != VisitState::Unvisited {
-            continue;
-        }
+        for node in &plan.nodes {
+            nodes.push(build_kernel_node(
+                &node.node_type,
+                rb,
+                &DSLParams::new(&node.params),
+                node.identity_seed,
+            )?);
 
-        // Iterative DFS. Each frame is (node, index of the next successor to
-        // classify); a frame is finished once every successor is classified.
-        let mut path: Vec<(DeclIdx, usize)> = vec![(DeclIdx(root), 0)];
-        state[root] = VisitState::OnPath;
+            layouts.push(NodeLayout {
+                first_in_port: port_sources.len() as u32,
+                n_in: node.n_in() as u32,
+                first_value_slot: node.slot_base.0,
+                n_out: node.n_out as u32,
+            });
 
-        while let Some(&mut (node, ref mut next_successor)) = path.last_mut() {
-            if let Some(&target) = successors[node.0].get(*next_successor) {
-                *next_successor += 1;
-                if state[target.0] == VisitState::Unvisited {
-                    // Tree edge: descend.
-                    state[target.0] = VisitState::OnPath;
-                    path.push((target, 0));
-                }
-                // OnPath: back edge — the cycle breaks here (z⁻¹ read).
-                // Finished: forward/cross edge — nothing to do.
-            } else {
-                // All successors classified: this node is finished.
-                state[node.0] = VisitState::Finished;
-                finish_order.push(node);
-                path.pop();
+            for port in &node.inputs {
+                port_sources.push((src_pool.len() as u32, port.len() as u32));
+                src_pool.extend(port.iter().map(|src| match *src {
+                    PlanSrc::Exterior(i) => Src::External(i),
+                    // `delayed` is intentionally discarded — see `Src`.
+                    PlanSrc::Interior { slot, .. } => Src::Internal(slot),
+                }));
             }
         }
-    }
 
-    finish_order.reverse();
-    finish_order
+        Ok(KernelGraph {
+            nodes,
+            layouts: layouts.into_boxed_slice(),
+            port_sources: port_sources.into_boxed_slice(),
+            src_pool: src_pool.into_boxed_slice(),
+            values: vec![0.0; plan.total_slots].into_boxed_slice(),
+            out_slots: plan.output_slots.clone().into_boxed_slice(),
+            scratch_in: vec![None; plan.max_node_inputs()].into_boxed_slice(),
+            ports: plan.ports(),
+        })
+    }
 }
 
 /// Lower a kernel definition plus one instantiation's params into an
 /// executable [`KernelGraph`].
+///
+/// Two stages: [`resolve_plan`] works out the topology with no DSP state
+/// involved, then [`KernelGraph::from_plan`] builds the state and packs the
+/// runtime tables. The codegen backend replaces only the second stage.
+///
+/// `instance_salt` should be the alias of the node instantiating this kernel;
+/// it keeps sibling instantiations (poly voices) from sharing RNG seeds.
 pub fn lower_kernel(
     ir_macro: &IRMacro,
     instance_params: &Object,
+    instance_salt: &str,
     rb: &mut ResourceBuilderView,
 ) -> Result<KernelGraph, ValidationError> {
-    // Resolve default parameters
-    let mut resolved_params = ir_macro.default_params.clone().unwrap_or_default();
-    for (k, v) in instance_params {
-        resolved_params.insert(k.clone(), v.clone());
-    }
-
-    // Spawn interior nodes in declaration order. Everything below that is
-    // indexed by `DeclIdx` (aliases, port counts, value slots) is laid out
-    // in this order and never moves; only at the very end do we permute the
-    // runtime tables into execution order.
-    let mut nodes: Vec<KernelNode> = Vec::with_capacity(ir_macro.body.node_count());
-    let mut decl_idx_of: HashMap<NodeId, DeclIdx> = HashMap::new();
-    let mut aliases: Vec<String> = Vec::with_capacity(ir_macro.body.node_count());
-
-    // Ensure that we only allow single kernels for the time being, perhaps multi in the future
-    for ir_node in ir_macro.body.nodes() {
-        if ir_node.kind != IRNodeKind::Leaf {
-            return Err(unsupported(format!(
-                "nested patch/kernel '{}' inside kernel '{}'",
-                ir_node.alias, ir_macro.name
-            )));
-        }
-        if ir_node.count != 1 {
-            return Err(unsupported(format!(
-                "multi-spawn '{} * {}' inside kernel '{}'",
-                ir_node.alias, ir_node.count, ir_macro.name
-            )));
-        }
-
-        let mut params = ir_node.params.clone();
-        substitute_templates(&mut params, &resolved_params);
-
-        let node = build_kernel_node(&ir_node.node_type, rb, &DSLParams::new(&params))?;
-
-        decl_idx_of.insert(ir_node.id, DeclIdx(nodes.len()));
-        aliases.push(ir_node.alias.clone());
-        nodes.push(node);
-    }
-
-    // Find port counts for correct size work buffer
-    let in_counts: Vec<usize> = nodes.iter().map(|n| n.ports().audio_in.len()).collect();
-    let out_counts: Vec<usize> = nodes.iter().map(|n| n.ports().audio_out.len()).collect();
-
-    // Assign `values` slots node-by-node in declaration order. This layout
-    // is final: reordering nodes later moves the *tables*, never the slots,
-    // so `Src::Internal` references stay valid.
-    let mut first_value_slot: Vec<ValueSlot> = Vec::with_capacity(nodes.len());
-    let mut total_out = 0usize;
-    for &c in &out_counts {
-        first_value_slot.push(ValueSlot(total_out as u32));
-        total_out += c;
-    }
-    let value_slot =
-        |decl: DeclIdx, port: usize| ValueSlot(first_value_slot[decl.0].0 + port as u32);
-
-    // Source lists are built nested per (node, port) — that is the easy shape
-    // during resolution — and flattened into the runtime tables at the end.
-    let mut sources_by_decl: Vec<Vec<Vec<Src>>> =
-        in_counts.iter().map(|&c| vec![Vec::new(); c]).collect();
-
-    // Interior edges
-    let mut successors: Vec<Vec<DeclIdx>> = vec![Vec::new(); nodes.len()];
-
-    for edge in ir_macro.body.edges() {
-        if edge.source_selector != NodeSelector::Single
-            || edge.sink_selector != NodeSelector::Single
-        {
-            return Err(unsupported("node selectors inside kernels".to_string()));
-        }
-
-        let src = decl_idx_of[&edge.source];
-        let snk = decl_idx_of[&edge.sink];
-
-        let src_ports = resolve_port(
-            &edge.source_port,
-            &nodes[src.0].ports().audio_out,
-            &aliases[src.0],
-        )?;
-        let snk_ports = resolve_port(
-            &edge.sink_port,
-            &nodes[snk.0].ports().audio_in,
-            &aliases[snk.0],
-        )?;
-
-        // broadcast, mirroring the block-rate builder.
-        // zip when equal, replicate one source, or sum many sources into one port.
-        let pairs: Vec<(usize, usize)> = match (src_ports.len(), snk_ports.len()) {
-            (a, b) if a == b => src_ports.into_iter().zip(snk_ports).collect(),
-            (1, _) => snk_ports.into_iter().map(|t| (src_ports[0], t)).collect(),
-            (_, 1) => src_ports.into_iter().map(|s| (s, snk_ports[0])).collect(),
-            (a, b) => {
-                return Err(ValidationError::InvalidParameter(format!(
-                    "kernel '{}': cannot match port arity {a}:{b} between '{}' and '{}'",
-                    ir_macro.name, aliases[src.0], aliases[snk.0]
-                )));
-            }
-        };
-
-        for (src_port, snk_port) in pairs {
-            sources_by_decl[snk.0][snk_port].push(Src::Internal(value_slot(src, src_port)));
-        }
-        successors[src.0].push(snk);
-    }
-
-    // Wire up the virtual inputs (these come from external nodes)
-    for (ext_idx, (_name, targets)) in ir_macro.virtual_input_map.iter().enumerate() {
-        for (node_id, _selector, port) in targets {
-            let decl = decl_idx_of[node_id];
-            let target_ports =
-                resolve_port(port, &nodes[decl.0].ports().audio_in, &aliases[decl.0])?;
-            for tp in target_ports {
-                sources_by_decl[decl.0][tp].push(Src::External(ExternalInput(ext_idx as u32)));
-            }
-        }
-    }
-
-    // Topological order with cycles broken.
-    let exec_order: Vec<DeclIdx> = execution_order(nodes.len(), &successors);
-
-    // Where did each declared node end up?
-    let mut exec_pos_of: Vec<ExecIdx> = vec![ExecIdx(0); nodes.len()];
-    for (pos, &decl) in exec_order.iter().enumerate() {
-        exec_pos_of[decl.0] = ExecIdx(pos);
-    }
-
-    // Flatten the nested source lists into the runtime tables, walking nodes
-    // in execution order so a tick reads `port_sources`/`src_pool` front to
-    // back with no pointer chasing.
-    let mut layouts: Vec<NodeLayout> = Vec::with_capacity(nodes.len());
-    let mut port_sources: Vec<(u32, u32)> = Vec::new();
-    let mut src_pool: Vec<Src> = Vec::new();
-
-    for &decl in &exec_order {
-        layouts.push(NodeLayout {
-            first_in_port: port_sources.len() as u32,
-            n_in: in_counts[decl.0] as u32,
-            first_value_slot: first_value_slot[decl.0].0,
-            n_out: out_counts[decl.0] as u32,
-        });
-        for port_srcs in &sources_by_decl[decl.0] {
-            port_sources.push((src_pool.len() as u32, port_srcs.len() as u32));
-            src_pool.extend_from_slice(port_srcs);
-        }
-    }
-
-    let mut node_pool: Vec<Option<KernelNode>> = nodes.into_iter().map(Some).collect();
-    let nodes: Vec<KernelNode> = exec_order
-        .iter()
-        .map(|&decl| node_pool[decl.0].take().unwrap())
-        .collect();
-
-    let sink = decl_idx_of[&ir_macro.sink];
-
-    let n_exterior_in = ir_macro.virtual_input_map.len();
-    if n_exterior_in > MAX_FRAME_PORTS || out_counts[sink.0] > MAX_FRAME_PORTS {
-        return Err(unsupported(format!(
-            "kernel '{}' exceeds {MAX_FRAME_PORTS} exterior ports",
-            ir_macro.name
-        )));
-    }
-
-    // Just leak here for the time being, we may want to refactor this later and use owned Strings.
-    let audio_in: Vec<PortMeta> = ir_macro
-        .virtual_input_map
-        .keys()
-        .enumerate()
-        .map(|(i, name)| PortMeta {
-            name: Box::leak(name.clone().into_boxed_str()),
-            index: i,
-        })
-        .collect();
-
-    let sink_out_ports = nodes[exec_pos_of[sink.0].0].ports().audio_out.clone();
-    let out_slots: Vec<ValueSlot> = (0..out_counts[sink.0])
-        .map(|p| value_slot(sink, p))
-        .collect();
-
-    let max_in = in_counts.iter().copied().max().unwrap_or(0);
-
-    Ok(KernelGraph {
-        nodes,
-        layouts: layouts.into_boxed_slice(),
-        port_sources: port_sources.into_boxed_slice(),
-        src_pool: src_pool.into_boxed_slice(),
-        values: vec![0.0; total_out].into_boxed_slice(),
-        out_slots: out_slots.into_boxed_slice(),
-        scratch_in: vec![None; max_in].into_boxed_slice(),
-        ports: Ports {
-            audio_in,
-            audio_out: sink_out_ports,
-        },
-    })
+    let plan = resolve_plan(
+        ir_macro,
+        instance_params,
+        instance_salt,
+        &mut ProbeOracle::new(rb.config),
+    )?;
+    KernelGraph::from_plan(&plan, rb)
 }
 
 pub const EXAMPLE_PLATE_KERNEL_PATCH: &str = r#"
@@ -942,7 +746,7 @@ mod tests {
             external_buffer_keys: &mut external,
             delay_keys: &mut delays,
         };
-        lower_kernel(def, &params, &mut view)
+        lower_kernel(def, &params, "test", &mut view)
     }
 
     /// y[n] = x[n] + fb * y[n-1], built from `add` + `mult` with a feedback
