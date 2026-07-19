@@ -79,6 +79,7 @@ fn with_resources<R>(sample_rate: u32, f: impl FnOnce(&mut ResourceBuilderView) 
         resource_builder: &mut resource_builder,
         external_buffer_keys: &mut external,
         delay_keys: &mut delays,
+        instance_alias: "test",
     };
     f(&mut view)
 }
@@ -112,7 +113,7 @@ fn modtap_plan(sample_rate: u32) -> KernelPlan {
 fn modtap_interpreter(sample_rate: u32) -> KernelGraph {
     let def = kernel_definition(EXAMPLE_MODTAP_KERNEL_PATCH, "modtap4");
     with_resources(sample_rate, |rb| {
-        lower_kernel(&def, &modtap_params(), MODTAP_SALT, rb).expect("modtap4 should lower")
+        lower_kernel(&def, &modtap_params(), rb).expect("modtap4 should lower")
     })
 }
 
@@ -192,7 +193,7 @@ fn plate_plan(sample_rate: u32) -> KernelPlan {
 fn plate_interpreter(sample_rate: u32) -> KernelGraph {
     let def = kernel_definition(EXAMPLE_PLATE_KERNEL_PATCH, "plate");
     with_resources(sample_rate, |rb| {
-        lower_kernel(&def, &plate_params(), PLATE_SALT, rb).expect("plate should lower")
+        lower_kernel(&def, &plate_params(), rb).expect("plate should lower")
     })
 }
 

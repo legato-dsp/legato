@@ -549,6 +549,7 @@ fn bench_fm3_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut resource_builder,
             external_buffer_keys: &mut external,
             delay_keys: &mut delays,
+            instance_alias: "bench",
         };
         generated_fm3::Fm3::new(&mut view).expect("generated fm3 should build")
     };
@@ -621,8 +622,9 @@ fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb1,
             external_buffer_keys: &mut e1,
             delay_keys: &mut d1,
+            instance_alias: "bench",
         };
-        lower_kernel(&def, &params, "modtap4", &mut view).expect("should lower")
+        lower_kernel(&def, &params, &mut view).expect("should lower")
     };
     group.bench_function("interpreted (KernelGraph)", |b| {
         b.iter(|| {
@@ -645,6 +647,7 @@ fn bench_modtap_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb2,
             external_buffer_keys: &mut e2,
             delay_keys: &mut d2,
+            instance_alias: "bench",
         };
         generated_modtap4::Modtap4::new(&mut view).expect("should build")
     };
@@ -723,8 +726,9 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb1,
             external_buffer_keys: &mut e1,
             delay_keys: &mut d1,
+            instance_alias: "bench",
         };
-        lower_kernel(&def, &params, "plate", &mut view).expect("should lower")
+        lower_kernel(&def, &params, &mut view).expect("should lower")
     };
     group.bench_function("interpreted (KernelGraph)", |b| {
         b.iter(|| {
@@ -747,6 +751,7 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
             resource_builder: &mut rb2,
             external_buffer_keys: &mut e2,
             delay_keys: &mut d2,
+            instance_alias: "bench",
         };
         generated_plate::Plate::new(&mut view).expect("should build")
     };

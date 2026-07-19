@@ -272,6 +272,7 @@ impl PortOracle for ProbeOracle<'_> {
             resource_builder: &mut scratch,
             external_buffer_keys: &mut external_buffer_keys,
             delay_keys: &mut delay_keys,
+            instance_alias: "probe",
         };
 
         // Seed is irrelevant to port shape; construction is pure, so this
@@ -344,18 +345,21 @@ impl KernelGraph {
 /// involved, then [`KernelGraph::from_plan`] builds the state and packs the
 /// runtime tables. The codegen backend replaces only the second stage.
 ///
-/// `instance_salt` should be the alias of the node instantiating this kernel;
-/// it keeps sibling instantiations (poly voices) from sharing RNG seeds.
+/// The instance salt comes from `rb.instance_alias`, which spawning already
+/// makes unique per instance — that is what keeps sibling instantiations (poly
+/// voices) from sharing RNG seeds. Taking it from the view rather than as a
+/// separate argument means the interpreter and generated code cannot be handed
+/// different salts for the same node, which would quietly make the equivalence
+/// oracle compare two things that were never meant to match.
 pub fn lower_kernel(
     ir_macro: &IRMacro,
     instance_params: &Object,
-    instance_salt: &str,
     rb: &mut ResourceBuilderView,
 ) -> Result<KernelGraph, ValidationError> {
     let plan = resolve_plan(
         ir_macro,
         instance_params,
-        instance_salt,
+        rb.instance_alias,
         &mut ProbeOracle::new(rb.config),
     )?;
     KernelGraph::from_plan(&plan, rb)
@@ -745,8 +749,9 @@ mod tests {
             resource_builder: &mut resource_builder,
             external_buffer_keys: &mut external,
             delay_keys: &mut delays,
+            instance_alias: "probe",
         };
-        lower_kernel(def, &params, "test", &mut view)
+        lower_kernel(def, &params, &mut view)
     }
 
     /// y[n] = x[n] + fb * y[n-1], built from `add` + `mult` with a feedback

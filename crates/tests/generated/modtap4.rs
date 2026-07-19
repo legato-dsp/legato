@@ -61,11 +61,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.05f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.75f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo4");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2488942473u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -76,11 +77,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.05f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo3");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2505720093u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -91,11 +93,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.05f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.25f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo2");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2522497711u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -106,11 +109,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.05f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo1");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2539275331u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -121,11 +125,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(4));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(12.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "depth");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2811718337u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -136,11 +141,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(241.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dt4");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3960043409u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -151,11 +157,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(173.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dt3");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4077486741u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -166,11 +173,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(113.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dt2");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4060709123u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -181,11 +189,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(71.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dt1");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4043931503u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -196,11 +205,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "m1");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3391872647u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -215,11 +225,12 @@ impl Modtap4 {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(71.0f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "t1");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1449464699u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -230,11 +241,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "d1");
             let built = legato::kernel::build_kernel_node(
                 "sub",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3594336907u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -245,11 +257,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(4));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "fb");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                792871893u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -260,11 +273,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "m4");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3475760741u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -279,11 +293,12 @@ impl Modtap4 {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(241.0f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "t4");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1499797557u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -294,11 +309,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "d4");
             let built = legato::kernel::build_kernel_node(
                 "sub",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3644669765u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -309,11 +325,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "m3");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3358317409u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -328,11 +345,12 @@ impl Modtap4 {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(173.0f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "t3");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1483019937u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -343,11 +361,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.35f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "out_l");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3537535299u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -358,11 +377,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "d3");
             let built = legato::kernel::build_kernel_node(
                 "sub",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3627892145u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -373,11 +393,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "m2");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3375095027u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -392,11 +413,12 @@ impl Modtap4 {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(113.0f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "t2");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1466242319u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -407,11 +429,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.35f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "out_r");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3503980061u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -422,11 +445,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(2));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "out");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                182903409u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -437,11 +461,12 @@ impl Modtap4 {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "d2");
             let built = legato::kernel::build_kernel_node(
                 "sub",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3611114527u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,

@@ -107,11 +107,12 @@ impl Plate {
         let n_dry_r = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dry_r");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1424654809u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -121,11 +122,12 @@ impl Plate {
         let n_dry_l = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "dry_l");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1860872903u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -136,11 +138,12 @@ impl Plate {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.7f32));
             params.insert("phase".to_string(), legato::dsl::ir::Value::F32(0.25f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo_r");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3115581207u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -163,11 +166,12 @@ impl Plate {
                     legato::dsl::ir::Value::F32(1.0f32),
                 ]),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo_r_ms");
             let built = legato::kernel::build_kernel_node(
                 "map",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2291393301u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Map(inner) => inner,
@@ -177,11 +181,12 @@ impl Plate {
         let n_lfo_l = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("freq".to_string(), legato::dsl::ir::Value::F32(0.7f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo_l");
             let built = legato::kernel::build_kernel_node(
                 "sine",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3216246921u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Sine(inner) => inner,
@@ -204,11 +209,12 @@ impl Plate {
                     legato::dsl::ir::Value::F32(1.0f32),
                 ]),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "lfo_l_ms");
             let built = legato::kernel::build_kernel_node(
                 "map",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3462596651u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Map(inner) => inner,
@@ -218,11 +224,12 @@ impl Plate {
         let n_mono = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "mono");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3702318773u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -236,11 +243,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(10.0f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "pre");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4231867453u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -251,11 +259,12 @@ impl Plate {
             let mut params = std::collections::BTreeMap::new();
             params.insert("a".to_string(), legato::dsl::ir::Value::F32(0.0005f32));
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "bw");
             let built = legato::kernel::build_kernel_node(
                 "onepole",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1283208701u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::OnePole(inner) => inner,
@@ -270,11 +279,12 @@ impl Plate {
                 legato::dsl::ir::Value::F32(4.7713f32),
             );
             params.insert("feedback".to_string(), legato::dsl::ir::Value::F32(0.75f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "diff1");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3021819251u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -289,11 +299,12 @@ impl Plate {
                 legato::dsl::ir::Value::F32(3.5953f32),
             );
             params.insert("feedback".to_string(), legato::dsl::ir::Value::F32(0.75f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "diff2");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3038596871u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -311,11 +322,12 @@ impl Plate {
                 "feedback".to_string(),
                 legato::dsl::ir::Value::F32(0.625f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "diff3");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3055374489u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -333,11 +345,12 @@ impl Plate {
                 "feedback".to_string(),
                 legato::dsl::ir::Value::F32(0.625f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "diff4");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3072152109u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -352,11 +365,12 @@ impl Plate {
                 legato::dsl::ir::Value::F32(22.5799f32),
             );
             params.insert("feedback".to_string(), legato::dsl::ir::Value::F32(-0.7f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "tank_ap_l");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4172525715u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -370,11 +384,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(121.8708f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr2");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                729956675u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -384,11 +399,12 @@ impl Plate {
         let n_gr2 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr2");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4123784521u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -402,11 +418,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(11.8612f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr1");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                713179055u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -416,11 +433,12 @@ impl Plate {
         let n_gr1 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr1");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4174117377u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -434,11 +452,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(66.866f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl5");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2861596857u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -448,11 +467,12 @@ impl Plate {
         let n_gl5 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl5");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1758537599u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -466,11 +486,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(149.6254f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "del_a");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3969147825u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -481,11 +502,12 @@ impl Plate {
             let mut params = std::collections::BTreeMap::new();
             params.insert("a".to_string(), legato::dsl::ir::Value::F32(0.3f32));
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "damp_l");
             let built = legato::kernel::build_kernel_node(
                 "onepole",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4152166123u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::OnePole(inner) => inner,
@@ -495,11 +517,12 @@ impl Plate {
         let n_decay_l = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "decay_l");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3617378585u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -509,11 +532,12 @@ impl Plate {
         let n_ap2_l_w = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_l_w");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4102251721u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -527,11 +551,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(41.2621f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr3");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                746734293u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -541,11 +566,12 @@ impl Plate {
         let n_gr3 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr3");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4140562139u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -559,11 +585,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(6.2834f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl6");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2811264001u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -573,11 +600,12 @@ impl Plate {
         let n_gl6 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl6");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1775315219u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -587,11 +615,12 @@ impl Plate {
         let n_ap2_l_ff = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_l_ff");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2276332833u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -605,11 +634,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(60.4818f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_l_d");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3783476961u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -619,11 +649,12 @@ impl Plate {
         let n_ap2_l_out = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_l_out");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3463988713u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -637,11 +668,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(89.8156f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr4");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                629290961u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -651,11 +683,12 @@ impl Plate {
         let n_gr4 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr4");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4224450235u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -669,11 +702,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(35.8187f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl7");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2828041619u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -683,11 +717,12 @@ impl Plate {
         let n_gl7 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl7");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1792092837u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -701,11 +736,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(124.9958f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "del_b");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4019480681u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -720,11 +756,12 @@ impl Plate {
                 legato::dsl::ir::Value::F32(30.5096f32),
             );
             params.insert("feedback".to_string(), legato::dsl::ir::Value::F32(-0.7f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "tank_ap_r");
             let built = legato::kernel::build_kernel_node(
                 "allpass",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                179555561u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Allpass(inner) => inner,
@@ -738,11 +775,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(70.9318f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr5");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                646068579u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -752,11 +790,12 @@ impl Plate {
         let n_gr5 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr5");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4241227853u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -770,11 +809,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(99.9295f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl2");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2878374477u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -784,11 +824,12 @@ impl Plate {
         let n_gl2 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl2");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1708204743u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -802,11 +843,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(8.9379f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl1");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2928707333u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -816,11 +858,12 @@ impl Plate {
         let n_gl1 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl1");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1691427123u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -834,11 +877,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(141.6955f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "del_c");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4002703063u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -849,11 +893,12 @@ impl Plate {
             let mut params = std::collections::BTreeMap::new();
             params.insert("a".to_string(), legato::dsl::ir::Value::F32(0.3f32));
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(1));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "damp_r");
             let built = legato::kernel::build_kernel_node(
                 "onepole",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4185721361u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::OnePole(inner) => inner,
@@ -863,11 +908,12 @@ impl Plate {
         let n_decay_r = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "decay_r");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3852265251u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -877,11 +923,12 @@ impl Plate {
         let n_ap2_r_w = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_r_w");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3102129043u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -895,11 +942,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(11.2563f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr6");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                662846199u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -909,11 +957,12 @@ impl Plate {
         let n_gr6 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr6");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4190894997u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -927,11 +976,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(64.2788f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl3");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2895152095u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -941,11 +991,12 @@ impl Plate {
         let n_gl3 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl3");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1724982361u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -955,11 +1006,12 @@ impl Plate {
         let n_ap2_r_ff = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_r_ff");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                106868835u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -973,11 +1025,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(89.2444f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_r_d");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                3387348567u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -987,11 +1040,12 @@ impl Plate {
         let n_ap2_r_out = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_r_out");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                6148155u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1005,11 +1059,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(4.0657f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yr7");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                679623817u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -1019,11 +1074,12 @@ impl Plate {
         let n_gr7 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(-0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gr7");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4207672615u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1033,11 +1089,12 @@ impl Plate {
         let n_wet_r = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(1.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "wet_r");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1142904557u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1051,11 +1108,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(67.0676f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "yl4");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2844819239u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -1065,11 +1123,12 @@ impl Plate {
         let n_gl4 = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.6f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "gl4");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1741759981u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1079,11 +1138,12 @@ impl Plate {
         let n_wet_l = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(1.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "wet_l");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                1512012175u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1094,11 +1154,12 @@ impl Plate {
             let mut params = std::collections::BTreeMap::new();
             params.insert("chans".to_string(), legato::dsl::ir::Value::U32(2));
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.0f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "out");
             let built = legato::kernel::build_kernel_node(
                 "add",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2488690789u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1112,11 +1173,12 @@ impl Plate {
                 "delay_length".to_string(),
                 legato::dsl::ir::Value::F32(106.28f32),
             );
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "del_d");
             let built = legato::kernel::build_kernel_node(
                 "tap",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                4053035919u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Tap(inner) => inner,
@@ -1126,11 +1188,12 @@ impl Plate {
         let n_ap2_r_fb = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_r_fb");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                39758359u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,
@@ -1140,11 +1203,12 @@ impl Plate {
         let n_ap2_l_fb = {
             let mut params = std::collections::BTreeMap::new();
             params.insert("val".to_string(), legato::dsl::ir::Value::F32(0.5f32));
+            let seed = legato::kernel_plan::identity_seed(rb.instance_alias, "ap2_l_fb");
             let built = legato::kernel::build_kernel_node(
                 "mult",
                 rb,
                 &legato::dsl::ir::DSLParams::new(&params),
-                2343443309u32,
+                seed,
             )?;
             match built {
                 legato::kernel::KernelNode::Op(inner) => inner,

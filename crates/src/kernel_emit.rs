@@ -483,11 +483,21 @@ fn emit_new(
         // Construction goes through the shared builder so param handling is
         // never reimplemented here; the enum is unwrapped immediately so the
         // hot path holds a concrete type.
+        // Seed is derived at construction time from the *instance* alias
+        // rather than baked, so two instances of the same compiled kernel
+        // decorrelate — a generated polyphonic voice must not excite every
+        // note with an identical noise stream. This is the same function and
+        // the same inputs the interpreter uses, so seeds agree exactly.
+        let _ = writeln!(
+            out,
+            "            let seed = {krate}::kernel_plan::identity_seed(rb.instance_alias, {:?});",
+            node.alias
+        );
         let _ = writeln!(
             out,
             "            let built = {krate}::kernel::build_kernel_node({:?}, rb, \
-             &{krate}::dsl::ir::DSLParams::new(&params), {}u32)?;",
-            node.node_type, node.identity_seed
+             &{krate}::dsl::ir::DSLParams::new(&params), seed)?;",
+            node.node_type
         );
         let _ = writeln!(
             out,
