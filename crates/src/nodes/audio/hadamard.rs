@@ -1,6 +1,7 @@
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
 };
 
@@ -77,12 +78,40 @@ impl Node for HadamardMixer {
     }
 }
 
+impl PerSampleNode for HadamardMixer {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        for c in 0..self.chans {
+            self.vertical_slice[c] = in_frame[c].unwrap_or(0.0);
+        }
+        Self::fht(&mut self.vertical_slice); // apply transform
+        for c in 0..self.chans {
+            out_frame[c] = self.vertical_slice[c];
+        }
+    }
+}
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::DynNode,
     spec::NodeDefinition,
 };
+
+impl HadamardMixer {
+    pub fn from_params(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to hadamard");
+        Ok(Self::new(chans))
+    }
+}
 
 impl NodeDefinition for HadamardMixer {
     const NAME: &'static str = "hadamard";
@@ -91,12 +120,9 @@ impl NodeDefinition for HadamardMixer {
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
     fn create(
-        _rb: &mut ResourceBuilderView,
+        rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
-        Ok(Box::new(Self::new(chans)))
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }

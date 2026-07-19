@@ -8,9 +8,12 @@ use crate::{
     nodes::{
         audio::{
             allpass::Allpass,
+            hadamard::HadamardMixer,
+            householder::HouseholderMixer,
             noise::Noise,
             onepole::OnePole,
             ops::{ApplyOp, ApplyOpKind, mult_node_factory},
+            pan::Pan,
             saw::Saw,
             sine::Sine,
             svf::Svf,
@@ -41,6 +44,9 @@ pub enum KernelNode {
     Op(ApplyOp),
     Map(Map),
     Noise(Noise),
+    Householder(HouseholderMixer),
+    Hadamard(HadamardMixer),
+    Pan(Pan),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -56,6 +62,9 @@ macro_rules! dispatch {
             KernelNode::Op($inner) => $body,
             KernelNode::Map($inner) => $body,
             KernelNode::Noise($inner) => $body,
+            KernelNode::Householder($inner) => $body,
+            KernelNode::Hadamard($inner) => $body,
+            KernelNode::Pan($inner) => $body,
         }
     };
 }
@@ -97,6 +106,9 @@ pub fn build_kernel_node(
         "tap" => KernelNode::Tap(DelayTap::from_params(rb, p)?),
         "map" => KernelNode::Map(Map::from_params(rb, p)?),
         "noise" => KernelNode::Noise(Noise::new()),
+        "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
+        "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
+        "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
@@ -768,6 +780,137 @@ pub const EXAMPLE_KARPLUS_KERNEL_PATCH: &str = r#"
     }
 "#;
 
+pub const EXAMPLE_MODTAP_KERNEL_PATCH: &str = r#"
+    // Four modulated normalized-feedback comb taps -> stereo (mono in, 2 out).
+    // Odd taps pan left, even taps pan right; distinct delays + independent LFO
+    // phases decorrelate the two sides for width.
+    //
+    // Each tap is its OWN feedback loop, written as a crossfade comb:
+    //     m_i = (1 - feedback) * in + feedback * t_i
+    //         = in + feedback * (t_i - in)
+    // The second form is what the graph builds (feed the feedback gain the
+    // DIFFERENCE t_i - in, via a `sub`, so no param arithmetic is needed). Its
+    // DC gain is exactly 1 for ANY feedback, so turning feedback up makes the
+    // echoes denser without making the output louder -- energy-conserving, like
+    // a real delay. That keeps the LINEAR 1/4 output near full scale at all
+    // settings (no soft-clip / saturation needed), while feedback is still
+    // per-tap so the loop gain is exactly `feedback` with no shared-feedback
+    // coherent-mode trap and no mixing matrix.
+    //
+    //   depth    - modulation excursion in ms (one shared 4-chan mult)
+    //   rate     - LFO frequency in Hz (sine.freq)
+    //   feedback - per-tap loop gain 0..~0.95 (regeneration / echo density)
+    kernel modtap4(
+        depth = 3.0,
+        rate = 0.35,
+        feedback = 0.7
+    ) {
+        in in
+
+        audio {
+            // per-tap input mix: dry input + this tap's feedback contribution
+            // feedback*(t_i - in). (both fan into port [0] and sum.)
+            add: m1 { val: 0.0, chans: 1 },
+            add: m2 { val: 0.0, chans: 1 },
+            add: m3 { val: 0.0, chans: 1 },
+            add: m4 { val: 0.0, chans: 1 },
+
+            // phase-staggered LFOs, one shared per-channel depth scale.
+            sine: lfo1 { freq: $rate, phase: 0.0 },
+            sine: lfo2 { freq: $rate, phase: 0.25 },
+            sine: lfo3 { freq: $rate, phase: 0.5 },
+            sine: lfo4 { freq: $rate, phase: 0.75 },
+            mult: depth { val: $depth, chans: 4 },
+
+            // base delay per tap (ms), mutually incommensurate. modulated time
+            // = base +/- depth ms.
+            add: dt1 { val: 71.0, chans: 1 },
+            add: dt2 { val: 113.0, chans: 1 },
+            add: dt3 { val: 173.0, chans: 1 },
+            add: dt4 { val: 241.0, chans: 1 },
+
+            // the four delay lines (capacity covers longest tap + mod, 1s @ 48k)
+            tap: t1 { delay_length: 71.0, chans: 1, capacity: 48000 },
+            tap: t2 { delay_length: 113.0, chans: 1, capacity: 48000 },
+            tap: t3 { delay_length: 173.0, chans: 1, capacity: 48000 },
+            tap: t4 { delay_length: 241.0, chans: 1, capacity: 48000 },
+
+            // per-tap difference t_i - in, so the feedback gain crossfades
+            // (normalizes) the comb instead of just adding regeneration.
+            sub: d1 { val: 0.0, chans: 1 },
+            sub: d2 { val: 0.0, chans: 1 },
+            sub: d3 { val: 0.0, chans: 1 },
+            sub: d4 { val: 0.0, chans: 1 },
+
+            // one shared per-tap feedback gain (4 independent channels).
+            mult: fb { val: $feedback, chans: 4 },
+
+            // stereo wet output: odd taps (t1,t3) -> left, even taps (t2,t4) ->
+            // right. each side scales its 2-tap sum by 0.35 -- lower than a
+            // naive 1/2 because summing only two normalized combs lets their
+            // echo trains align transiently (a 2-tap side has a higher crest
+            // factor than the mono 4, and it grows with feedback), so 0.35
+            // keeps the peak <= ~0.96 even at feedback 0.95. the taps have
+            // distinct delays and independent LFO phases, so L/R are
+            // decorrelated -> real width. `out` is a 2-channel collector.
+            mult: out_l { val: 0.35, chans: 1 },
+            mult: out_r { val: 0.35, chans: 1 },
+            add: out { val: 0.0, chans: 2 },
+        }
+
+        // shared modulation: LFO -> * depth (per channel) -> + base -> delay_length
+        lfo1 >> depth[0]
+        lfo2 >> depth[1]
+        lfo3 >> depth[2]
+        lfo4 >> depth[3]
+
+        depth[0] >> dt1[0] >> t1.delay_length
+        depth[1] >> dt2[0] >> t2.delay_length
+        depth[2] >> dt3[0] >> t3.delay_length
+        depth[3] >> dt4[0] >> t4.delay_length
+
+        // input fans into every tap's mix node (port [0], summed with feedback)
+        in >> m1[0]
+        in >> m2[0]
+        in >> m3[0]
+        in >> m4[0]
+
+        // tap input mix -> delay line
+        m1 >> t1[0]
+        m2 >> t2[0]
+        m3 >> t3[0]
+        m4 >> t4[0]
+
+        // normalized per-tap feedback: d_i = t_i - in; then
+        // m_i = in + feedback * d_i = (1-feedback)*in + feedback*t_i.
+        // the d_i -> fb -> m_i edges close the four loops (implicit z-1 here).
+        t1 >> d1[0]
+        t2 >> d2[0]
+        t3 >> d3[0]
+        t4 >> d4[0]
+        in >> d1[1]
+        in >> d2[1]
+        in >> d3[1]
+        in >> d4[1]
+
+        d1 >> fb[0] >> m1[0]
+        d2 >> fb[1] >> m2[0]
+        d3 >> fb[2] >> m3[0]
+        d4 >> fb[3] >> m4[0]
+
+        // stereo split: odd taps left, even taps right (each a 1/2 unity sum),
+        // into the 2-channel collector.
+        t1 >> out_l[0]
+        t3 >> out_l[0]
+        t2 >> out_r[0]
+        t4 >> out_r[0]
+        out_l >> out[0]
+        out_r >> out[1]
+
+        { out }
+    }
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -966,6 +1109,90 @@ mod tests {
             energy += out[0] * out[0] + out[1] * out[1];
         }
         assert!(energy > 1e-4, "plate tail was silent");
+    }
+
+    /// The modulated comb bank must lower (cycles broken on the feedback
+    /// edges), tick without blowing up, and produce a wet stereo tail from a
+    /// single input impulse (mono in, 2 out).
+    #[test]
+    fn modtap_kernel_lowers_and_ticks() {
+        let src = format!("{EXAMPLE_MODTAP_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
+        let def = kernel_def(&src, "modtap4");
+        let mut kg = build(&def, Object::new()).expect("modtap kernel should lower");
+
+        assert_eq!(PerSampleNode::ports(&kg).audio_in.len(), 1);
+        assert_eq!(PerSampleNode::ports(&kg).audio_out.len(), 2);
+
+        let mut out = [0.0f32; 2];
+        let mut energy = 0.0f32;
+        for n in 0..48_000 {
+            let x = if n == 0 { 1.0 } else { 0.0 };
+            kg.tick(&[Some(x)], &mut out);
+            assert!(
+                out[0].is_finite() && out[1].is_finite(),
+                "modtap blew up at sample {n}"
+            );
+            energy += out[0] * out[0] + out[1] * out[1];
+        }
+        assert!(energy > 1e-4, "modtap produced no wet signal");
+    }
+
+    /// Feedback must actually recirculate. Fire a single impulse, then run
+    /// silence, and measure the *late* tail (well past the longest 241 ms tap,
+    /// so with zero feedback it should be near silent — every first-pass tap
+    /// has already fired). Higher feedback has to leave more energy in that
+    /// late window — if the implicit z⁻¹ on the per-tap `d -> fb -> m` cycle
+    /// edges were dropped, the loops wouldn't sustain and the late tail would
+    /// not grow with feedback.
+    #[test]
+    fn modtap_feedback_recirculates() {
+        let src = format!("{EXAMPLE_MODTAP_KERNEL_PATCH} audio {{ sine }} {{ sine }}");
+        let def = kernel_def(&src, "modtap4");
+
+        // Late window starts at 700 ms @ 48k — ~3x the longest (241 ms) tap, so
+        // any energy there arrived via the feedback loop, not a first pass.
+        let late_start = (0.700 * 48_000.0) as usize;
+        let total = 3 * 48_000; // 3 s tail
+
+        let late_energy = |feedback: f32| -> f32 {
+            let mut kg = build(&def, crate::object! { "feedback" => feedback })
+                .expect("modtap should lower");
+            let mut out = [0.0f32; 2];
+            let mut e = 0.0f32;
+            for n in 0..total {
+                let x = if n == 0 { 1.0 } else { 0.0 };
+                kg.tick(&[Some(x)], &mut out);
+                assert!(
+                    out[0].is_finite() && out[1].is_finite(),
+                    "diverged at {n} (fb={feedback})"
+                );
+                if n >= late_start {
+                    e += out[0] * out[0] + out[1] * out[1];
+                }
+            }
+            e
+        };
+
+        let e_none = late_energy(0.0);
+        let e_mid = late_energy(0.5);
+        let e_high = late_energy(0.85);
+
+        eprintln!("late-tail energy: fb0={e_none:e} fb0.5={e_mid:e} fb0.85={e_high:e}");
+
+        // With no feedback the late window is essentially silent...
+        assert!(
+            e_none < 1e-6,
+            "expected near-silence past 700ms with no feedback, got {e_none:e}"
+        );
+        // ...and feedback monotonically fills that late tail.
+        assert!(
+            e_mid > 100.0 * e_none.max(1e-30),
+            "feedback 0.5 did not add a recirculating tail (fb0={e_none:e}, fb0.5={e_mid:e})"
+        );
+        assert!(
+            e_high > e_mid,
+            "more feedback must sustain longer (fb0.5={e_mid:e}, fb0.85={e_high:e})"
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
 };
 
@@ -45,12 +46,39 @@ impl Node for HouseholderMixer {
     }
 }
 
+impl PerSampleNode for HouseholderMixer {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
+
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        let multiplier = 2.0 / self.chans as f32;
+        let sum: f32 = (0..self.chans).map(|c| in_frame[c].unwrap_or(0.0)).sum();
+        for c in 0..self.chans {
+            let x = in_frame[c].unwrap_or(0.0);
+            out_frame[c] = x - multiplier * sum;
+        }
+    }
+}
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::DynNode,
     spec::NodeDefinition,
 };
+
+impl HouseholderMixer {
+    pub fn from_params(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let chans = p
+            .get_usize("chans")
+            .expect("Must provide chans to householder");
+        Ok(Self::new(chans))
+    }
+}
 
 impl NodeDefinition for HouseholderMixer {
     const NAME: &'static str = "householder";
@@ -59,12 +87,9 @@ impl NodeDefinition for HouseholderMixer {
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
     fn create(
-        _rb: &mut ResourceBuilderView,
+        rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
-        Ok(Box::new(Self::new(chans)))
+        Ok(Box::new(Self::from_params(rb, p)?))
     }
 }
