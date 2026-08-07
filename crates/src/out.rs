@@ -23,7 +23,7 @@ pub fn render(mut app: LegatoApp, path: &Path, time: Duration) -> Result<(), hou
     let mut count = 0_usize;
 
     while count < dur_in_samples {
-        let block_view = app.next_block(None);
+        let block_view = app.next_block();
         let block = &block_view.channels[0..block_view.chans];
 
         for n in 0..block_size {

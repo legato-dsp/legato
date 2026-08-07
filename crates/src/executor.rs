@@ -1,7 +1,7 @@
 use crate::{
+    builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
-    node::Inputs,
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
@@ -32,8 +32,6 @@ pub struct Executor {
     scratch: Box<[f32]>,
     pub graph: AudioGraph,
     node_offsets: SecondaryMap<NodeKey, usize>,
-    // Keys for inputs/output nodes
-    source_key: Option<NodeKey>,
     sink_key: Option<NodeKey>,
     state: ExecutorState,
 }
@@ -50,19 +48,30 @@ impl Executor {
         }
     }
 
-    /// Set the source key for the runtime
-    pub fn set_source(&mut self, key: NodeKey) -> Result<(), GraphError> {
-        match self.graph.exists(key) {
-            true => {
-                self.source_key = Some(key);
-                Ok(())
-            }
-            false => Err(GraphError::NodeDoesNotExist),
-        }
-    }
-
     pub fn sink(&self) -> &Option<NodeKey> {
         &self.sink_key
+    }
+
+    /// Reject nodes wider than [`MAX_ARITY`].
+    pub fn validate_arity(&self) -> Result<(), ValidationError> {
+        for node in self.graph.nodes() {
+            let ports = node.get_node().ports();
+
+            for (count, dir) in [
+                (ports.audio_in.len(), "input"),
+                (ports.audio_out.len(), "output"),
+            ] {
+                if count > MAX_ARITY {
+                    return Err(ValidationError::ArityExceeded(format!(
+                        "node '{}' ({}) has {} audio {} ports, but the executor supports \
+                         at most {} per side",
+                        node.name, node.node_kind, count, dir, MAX_ARITY
+                    )));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Prepare the flat buffer allocation for the graph, as well as the node offsets.
@@ -110,11 +119,7 @@ impl Executor {
     }
 
     #[inline(always)]
-    pub fn process(
-        &mut self,
-        ctx: &mut AudioContext,
-        external_inputs: Option<&Inputs>,
-    ) -> OutputView<'_> {
+    pub fn process(&mut self, ctx: &mut AudioContext) -> OutputView<'_> {
         assert!(self.state == ExecutorState::Prepared);
 
         let block_size = ctx.get_config().block_size;
@@ -134,48 +139,30 @@ impl Executor {
 
             let mut has_inputs: [bool; MAX_ARITY] = [false; MAX_ARITY];
 
-            // Check and see if we have external inputs
-            let valid_external_inputs = self.source_key.is_some()
-                && self.source_key.unwrap() == *node_key
-                && external_inputs.as_ref().is_some();
+            let incoming = incoming
+                .get(*node_key)
+                .expect("Invalid connection in executor!");
 
-            if valid_external_inputs {
-                let ai = external_inputs.unwrap();
+            for conn in incoming {
+                let base_offset = self
+                    .node_offsets
+                    .get(conn.source.node_key)
+                    .expect("Could not find offset for node!");
 
-                for (c, chan) in ai.iter().flat_map(|x| *x).enumerate() {
-                    let start = c * block_size;
-                    let end = start + block_size;
+                let offset = (conn.source.port_index * block_size) + base_offset;
+                let end = offset + block_size;
 
-                    assert_eq!(chan.len(), block_size);
+                let buffer = &self.data[offset..end];
 
-                    self.scratch[start..end].copy_from_slice(chan);
-                }
-            } else {
-                let incoming = incoming
-                    .get(*node_key)
-                    .expect("Invalid connection in executor!");
+                has_inputs[conn.sink.port_index] = true;
 
-                for conn in incoming {
-                    let base_offset = self
-                        .node_offsets
-                        .get(conn.source.node_key)
-                        .expect("Could not find offset for node!");
+                let scratch_start = conn.sink.port_index * block_size;
+                let scratch_end = scratch_start + block_size;
 
-                    let offset = (conn.source.port_index * block_size) + base_offset;
-                    let end = offset + block_size;
-
-                    let buffer = &self.data[offset..end];
-
-                    has_inputs[conn.sink.port_index] = true;
-
-                    let scratch_start = conn.sink.port_index * block_size;
-                    let scratch_end = scratch_start + block_size;
-
-                    self.scratch[scratch_start..scratch_end]
-                        .iter_mut()
-                        .zip(buffer.iter())
-                        .for_each(|(dst, src)| *dst += src);
-                }
+                self.scratch[scratch_start..scratch_end]
+                    .iter_mut()
+                    .zip(buffer.iter())
+                    .for_each(|(dst, src)| *dst += src);
             }
 
             for i in 0..audio_inputs_size {

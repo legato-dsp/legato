@@ -28,7 +28,7 @@ fn build(src: &str, out_chans: usize) -> LegatoApp {
 fn render(app: &mut LegatoApp, chans: usize) -> Vec<Vec<f32>> {
     let mut out = vec![Vec::with_capacity(BLOCK * BLOCKS); chans];
     for _ in 0..BLOCKS {
-        let view = app.next_block(None);
+        let view = app.next_block();
         for (c, chan) in out.iter_mut().enumerate() {
             chan.extend_from_slice(view.channels[c]);
         }
@@ -312,7 +312,7 @@ fn plate_kernel_matches_rust_plate_envelope() {
         for _ in 0..WINDOWS {
             let mut energy = 0.0f64;
             for _ in 0..WINDOW / BLOCK {
-                let view = app.next_block(None);
+                let view = app.next_block();
                 for c in 0..2 {
                     for &x in view.channels[c] {
                         assert!(x.is_finite(), "plate output not finite");
@@ -443,7 +443,7 @@ fn karplus_plucks_in_tune() {
     let mut app = build(&src, 1);
     let mut sig: Vec<f32> = Vec::with_capacity(30_000);
     for _ in 0..(30_000 / BLOCK) {
-        sig.extend_from_slice(app.next_block(None).channels[0]);
+        sig.extend_from_slice(app.next_block().channels[0]);
     }
     assert!(
         sig.iter().all(|x| x.is_finite() && x.abs() < 8.0),
@@ -516,7 +516,7 @@ fn karplus_polyphony_routes_freq_per_voice() {
     let mut app = build(&src, 1);
     let mut sig: Vec<f32> = Vec::with_capacity(16_384);
     for _ in 0..(16_384 / BLOCK) {
-        sig.extend_from_slice(app.next_block(None).channels[0]);
+        sig.extend_from_slice(app.next_block().channels[0]);
     }
 
     const N: usize = 8_192;

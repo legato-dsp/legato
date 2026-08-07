@@ -1,18 +1,16 @@
+use crate::builder::ValidationError;
 use crate::config::Config;
 use crate::context::AudioContext;
 use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
 use crate::msg::LegatoMsg;
-use crate::node::{Inputs, LegatoNode};
+use crate::node::LegatoNode;
 use crate::ports::Ports;
 use crate::resources::buffer::{AudioSampleError, decode_with_ffmpeg};
 use crate::resources::params::{ParamError, ParamKey};
 use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
 use std::fmt::Debug;
-
-// Arbitrary max init. inputs
-pub const MAX_INPUTS: usize = 32;
 
 new_key_type! {
     /// A slotmap key corresponding to a particular node.
@@ -54,8 +52,8 @@ impl Runtime {
     pub fn set_sink_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
         self.executor.set_sink(key)
     }
-    pub fn set_source_key(&mut self, key: NodeKey) -> Result<(), GraphError> {
-        self.executor.set_source(key)
+    pub fn validate_arity(&self) -> Result<(), ValidationError> {
+        self.executor.validate_arity()
     }
     pub fn set_resources(&mut self, resources: Resources) {
         self.context.set_resources(resources);
@@ -113,8 +111,8 @@ impl Runtime {
     }
 
     // Execute the audio plan and return the next block
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
-        self.executor.process(&mut self.context, external_inputs)
+    pub fn next_block(&mut self) -> OutputView<'_> {
+        self.executor.process(&mut self.context)
     }
 }
 
