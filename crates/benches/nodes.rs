@@ -118,7 +118,6 @@ fn bench_fir(c: &mut Criterion) {
 
     let mut graph = get_node_test_harness_stereo_4096(Box::new(FirFilter::new(coeffs, 2)));
 
-
     c.bench_function("fir", |b| {
         b.iter(|| {
             let out = graph.next_block();
@@ -151,7 +150,6 @@ fn bench_stereo_delay(c: &mut Criterion) {
     ));
 
     c.bench_function("Basic stereo delay", |b| {
-
         b.iter(|| {
             let out = app.next_block();
             black_box(out);
@@ -182,7 +180,6 @@ fn bench_delay_quality(c: &mut Criterion) {
         let (app, _) = LegatoBuilder::new(config, ports).build_dsl(&graph);
         app
     };
-
 
     let mut group = c.benchmark_group("Delay interpolation quality");
 
@@ -332,7 +329,6 @@ fn bench_kitchen_sink(c: &mut Criterion) {
     ));
 
     c.bench_function("Kitchen Sink", |b| {
-
         b.iter(|| {
             let out = app.next_block();
             black_box(out);
@@ -422,7 +418,6 @@ fn bench_svf(c: &mut Criterion) {
         0.6,
         2,
     )));
-
 
     c.bench_function("SVF", |b| {
         b.iter(|| {
