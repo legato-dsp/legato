@@ -46,6 +46,8 @@ pub enum ValidationError {
     NotKernelCapable(String),
     /// A construct is valid in patches but not (yet) supported inside kernels.
     UnsupportedInKernel(String),
+    /// A node has more audio ports on input/output side than [`crate::executor::MAX_ARITY`].
+    ArityExceeded(String),
 }
 
 // Typestates for the builder
@@ -455,18 +457,20 @@ where
         self.runtime.set_sink_key(key).expect("Sink key not found");
         self.into_state()
     }
-    pub fn set_source(mut self, key: NodeKey) -> LegatoBuilder<ReadyToBuild> {
-        self.runtime.set_sink_key(key).expect("Sink key not found");
-        self.into_state()
-    }
 }
 
 impl<S> LegatoBuilder<S>
 where
     S: CanBuild,
 {
-    pub fn build(mut self) -> (LegatoApp, LegatoFrontend) {
+    pub fn build(self) -> (LegatoApp, LegatoFrontend) {
+        self.try_build().expect("Could not build Legato app")
+    }
+
+    pub fn try_build(mut self) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
         let mut runtime = self.runtime;
+
+        runtime.validate_arity()?;
 
         let cfg = runtime.get_config();
 
@@ -494,7 +498,7 @@ where
 
         let frontend = LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup);
 
-        (app, frontend)
+        Ok((app, frontend))
     }
 }
 
@@ -580,19 +584,12 @@ impl LegatoBuilder<DslBuilding> {
             });
         }
 
-        // Resolve sink / source.
         let sink_id = ir
             .sink
             .expect("IRGraph has no sink — check the DSL for a `sink:` declaration");
         self.runtime
             .set_sink_key(ir_to_runtime[&sink_id])
             .expect("Could not set sink");
-
-        if let Some(source_id) = ir.source {
-            self.runtime
-                .set_source_key(ir_to_runtime[&source_id])
-                .expect("Could not set runtime source");
-        }
 
         self.build()
     }

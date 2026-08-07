@@ -7,7 +7,6 @@ use crate::{
     config::Config,
     executor::OutputView,
     msg::{LegatoMsg, NodeMessage},
-    node::Inputs,
     resources::{
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
@@ -69,7 +68,7 @@ impl LegatoApp {
     /// This is useful for tests, or compatability with different audio backends.
     ///
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
-    pub fn next_block(&mut self, external_inputs: Option<&Inputs>) -> OutputView<'_> {
+    pub fn next_block(&mut self) -> OutputView<'_> {
         let ctx = self.runtime.get_context_mut();
         ctx.update_midi();
 
@@ -81,7 +80,7 @@ impl LegatoApp {
             self.runtime.handle_msg(msg);
         }
 
-        self.runtime.next_block(external_inputs)
+        self.runtime.next_block()
     }
 
     pub fn get_config(&self) -> Config {

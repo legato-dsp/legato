@@ -11,7 +11,6 @@ use legato::{
         svf::{FilterType, Svf},
     },
     ports::PortBuilder,
-    runtime::MAX_INPUTS,
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
@@ -19,7 +18,7 @@ fn bench_stereo_sine(c: &mut Criterion) {
 
     c.bench_function("Sine", |b| {
         b.iter(|| {
-            let out = graph.next_block(None);
+            let out = graph.next_block();
             black_box(out);
         })
     });
@@ -30,7 +29,7 @@ fn bench_stereo_saw(c: &mut Criterion) {
 
     c.bench_function("Saw", |b| {
         b.iter(|| {
-            let out = graph.next_block(None);
+            let out = graph.next_block();
             black_box(out);
         })
     });
@@ -119,17 +118,10 @@ fn bench_fir(c: &mut Criterion) {
 
     let mut graph = get_node_test_harness_stereo_4096(Box::new(FirFilter::new(coeffs, 2)));
 
-    let ai: &[Box<[f32]>] = &[vec![1.0; 4096].into(), vec![1.0; 4096].into()];
-
-    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-
-    for (i, x) in ai.iter().enumerate() {
-        inputs[i] = Some(&x)
-    }
 
     c.bench_function("fir", |b| {
         b.iter(|| {
-            let out = graph.next_block(Some(black_box(&inputs)));
+            let out = graph.next_block();
             black_box(out);
         })
     });
@@ -159,19 +151,9 @@ fn bench_stereo_delay(c: &mut Criterion) {
     ));
 
     c.bench_function("Basic stereo delay", |b| {
-        let ai: &[Box<[f32]>] = &[
-            vec![0.0; config.block_size].into(),
-            vec![0.0; config.block_size].into(),
-        ];
-
-        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-
-        for (i, x) in ai.iter().enumerate() {
-            inputs[i] = Some(&x)
-        }
 
         b.iter(|| {
-            let out = app.next_block(Some(black_box(&inputs)));
+            let out = app.next_block();
             black_box(out);
         });
     });
@@ -201,22 +183,13 @@ fn bench_delay_quality(c: &mut Criterion) {
         app
     };
 
-    let ai: &[Box<[f32]>] = &[
-        vec![0.0; config.block_size].into(),
-        vec![0.0; config.block_size].into(),
-    ];
-
-    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-    for (i, x) in ai.iter().enumerate() {
-        inputs[i] = Some(&x)
-    }
 
     let mut group = c.benchmark_group("Delay interpolation quality");
 
     let mut linear = build("linear");
     group.bench_function("linear", |b| {
         b.iter(|| {
-            let out = linear.next_block(Some(black_box(&inputs)));
+            let out = linear.next_block();
             black_box(out);
         });
     });
@@ -224,7 +197,7 @@ fn bench_delay_quality(c: &mut Criterion) {
     let mut cubic = build("cubic");
     group.bench_function("cubic", |b| {
         b.iter(|| {
-            let out = cubic.next_block(Some(black_box(&inputs)));
+            let out = cubic.next_block();
             black_box(out);
         });
     });
@@ -267,7 +240,7 @@ fn bench_delay_quality(c: &mut Criterion) {
 //         }
 
 //         b.iter(|| {
-//             let out = app.next_block(black_box(Some(&inputs)));
+//             let out = app.next_block();
 //             black_box(out);
 //         });
 //     });
@@ -359,19 +332,9 @@ fn bench_kitchen_sink(c: &mut Criterion) {
     ));
 
     c.bench_function("Kitchen Sink", |b| {
-        let ai: &[Box<[f32]>] = &[
-            vec![0.0; config.block_size].into(),
-            vec![0.0; config.block_size].into(),
-        ];
-
-        let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-
-        for (i, x) in ai.iter().enumerate() {
-            inputs[i] = Some(&x)
-        }
 
         b.iter(|| {
-            let out = app.next_block(black_box(Some(&inputs)));
+            let out = app.next_block();
             black_box(out);
         });
     });
@@ -434,7 +397,7 @@ fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
     let mut rust_app = build(rust_graph);
     group.bench_function("rust node (plate480)", |b| {
         b.iter(|| {
-            let out = rust_app.next_block(None);
+            let out = rust_app.next_block();
             black_box(out);
         })
     });
@@ -442,7 +405,7 @@ fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
     let mut kernel_app = build(&kernel_graph);
     group.bench_function("kernel DSL (PLATE_KERNEL)", |b| {
         b.iter(|| {
-            let out = kernel_app.next_block(None);
+            let out = kernel_app.next_block();
             black_box(out);
         })
     });
@@ -460,17 +423,10 @@ fn bench_svf(c: &mut Criterion) {
         2,
     )));
 
-    let ai: &[Box<[f32]>] = &[vec![0.0; 4096].into(), vec![0.0; 4096].into()];
-
-    let mut inputs: [Option<&[f32]>; MAX_INPUTS] = [None; MAX_INPUTS];
-
-    for (i, x) in ai.iter().enumerate() {
-        inputs[i] = Some(&x)
-    }
 
     c.bench_function("SVF", |b| {
         b.iter(|| {
-            let out = graph.next_block(black_box(Some(&inputs)));
+            let out = graph.next_block();
             black_box(out);
         })
     });

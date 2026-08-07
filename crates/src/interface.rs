@@ -188,7 +188,7 @@ fn write_block<T>(
 ) where
     T: SizedSample + FromSample<f64>,
 {
-    let next_block_view = app.next_block(None);
+    let next_block_view = app.next_block();
     let next_block = &next_block_view.channels[0..next_block_view.chans];
     let chans = config.channels as usize;
 
