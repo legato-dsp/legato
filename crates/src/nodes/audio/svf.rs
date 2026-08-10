@@ -70,7 +70,7 @@ impl Svf {
             coefficients: SvfCoefficients::default(),
             ports: PortBuilder::default()
                 .audio_in(chans)
-                .audio_in_named(&["cutoff", "q"])
+                .control_in_named(&["cutoff", "q"])
                 .audio_out(chans)
                 .build(),
         };

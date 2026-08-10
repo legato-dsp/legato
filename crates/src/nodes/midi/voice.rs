@@ -19,7 +19,7 @@ impl Voice {
         Self {
             midi_channel,
             ports: PortBuilder::default()
-                .audio_out_named(&["gate", "freq", "velocity"])
+                .control_out_named(&["gate", "freq", "velocity"])
                 .build(),
             cur_freq: 0.0,
             cur_gate: 0.0,
@@ -216,7 +216,7 @@ impl PolyVoice {
             last_index_buffers: vec![0_usize; voices].into(),
             midi_channel,
             ports: PortBuilder::default()
-                .audio_out(voices * PER_VOICE_CHANS)
+                .control_out(voices * PER_VOICE_CHANS)
                 .build(),
         }
     }

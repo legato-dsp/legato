@@ -1,3 +1,4 @@
+pub mod lfo;
 pub mod map;
 pub mod phasor;
 pub mod sequencer;

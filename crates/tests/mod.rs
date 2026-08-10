@@ -1181,19 +1181,19 @@ mod build_dsl {
                 allpass: loop_ap3 { delay_length: 14.0, feedback: 0.2, chans: 8 },
                 allpass: loop_ap4 { delay_length: 19.0, feedback: 0.2, chans: 8 },
 
-                sine: lfo1 { freq: 0.11 },
-                sine: lfo2 { freq: 0.13 },
-                sine: lfo3 { freq: 0.17 },
-                sine: lfo4 { freq: 0.19 },
-                sine: lfo5 { freq: 0.07 },
-                sine: lfo6 { freq: 0.23 },
-
                 track_mixer: feedback    { tracks: 1, chans_per_track: 8, gain: [0.5] },
                 track_mixer: hm_mix_down { tracks: 4, chans_per_track: 2, gain: [0.5, 0.5, 0.5, 0.5] },
                 track_mixer: wet_dry     { tracks: 2, chans_per_track: 2, gain: [0.5, 0.8] },
             }
 
             control {
+                lfo: lfo1 { freq: 0.11 },
+                lfo: lfo2 { freq: 0.13 },
+                lfo: lfo3 { freq: 0.17 },
+                lfo: lfo4 { freq: 0.19 },
+                lfo: lfo5 { freq: 0.07 },
+                lfo: lfo6 { freq: 0.23 },
+
                 map: lfo1_map { range: [-1.0, 1.0], new_range: [4.0,  6.0 ] },
                 map: lfo2_map { range: [-1.0, 1.0], new_range: [7.5,  10.5] },
                 map: lfo3_map { range: [-1.0, 1.0], new_range: [13.0, 15.0] },
@@ -1269,13 +1269,13 @@ mod build_dsl {
         }
 
         audio {
-            sine: pan_lfo { freq: 0.3 },
             pan,
             svf { chans: 2, cutoff: 5400.0, q: 0.4, type: "lowpass" },
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
         }
 
         control {
+            lfo: pan_lfo { freq: 0.3 },
             map { range: [-1.0, 1.0], new_range: [0.3, 0.7 ] },
         }
 

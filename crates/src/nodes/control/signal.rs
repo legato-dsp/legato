@@ -19,7 +19,7 @@ impl Signal {
             key,
             val,
             smoothing: smoothing_factor,
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().control_out(1).build(),
         }
     }
 }

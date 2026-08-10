@@ -17,7 +17,7 @@ impl Phasor {
         Self {
             phase: 0.0,
             freq,
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().control_out(1).build(),
         }
     }
 

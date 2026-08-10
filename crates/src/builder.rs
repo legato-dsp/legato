@@ -13,7 +13,7 @@ use crate::{
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
-    ports::Ports,
+    ports::{PortKind, Ports},
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
     },
@@ -329,10 +329,43 @@ where
             }
         };
 
+        // A node's outputs are single-kind, so the resolved source ports fix the
+        // kind a portless sink should auto-map onto.
+        let source_kind = source_indicies
+            .first()
+            .and_then(|&i| {
+                self.runtime
+                    .get_node_ports(&connection.source)
+                    .audio_out
+                    .get(i)
+                    .map(|p| p.kind)
+            })
+            .unwrap_or(PortKind::Audio);
+
         let sink_indicies: Vec<usize> = match connection.sink_kind {
             Port::None => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
-                ports.audio_in.iter().enumerate().map(|(i, _)| i).collect()
+                let matched: Vec<usize> = ports
+                    .audio_in
+                    .iter()
+                    .filter(|p| p.kind == source_kind)
+                    .map(|p| p.index)
+                    .collect();
+
+                // A bare `>>` never crosses kinds: if the sink exposes no port of
+                // the source's kind, the target must be named explicitly.
+                if matched.is_empty() && !ports.audio_in.is_empty() {
+                    let (alias, kind) = self
+                        .runtime
+                        .get_node(&connection.sink)
+                        .map(|n| (n.name.clone(), n.node_kind.clone()))
+                        .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+                    panic!(
+                        "Bare `>>` from a {source_kind:?} source has no matching input on \
+                         node '{alias}' ({kind}): name the target port explicitly"
+                    );
+                }
+                matched
             }
             Port::Index(port) => vec![port],
             Port::Named(ref port) => {
@@ -379,18 +412,24 @@ where
                 source_indicies[0],
                 sink_indicies[0],
             ),
-            (1, n) if n >= 1 => one_to_n(
-                &mut self.runtime,
-                connection,
-                source_indicies[0],
-                sink_indicies.as_slice(),
-            ),
-            (n, 1) if n >= 1 => n_to_one(
-                &mut self.runtime,
-                connection,
-                source_indicies.as_slice(),
-                sink_indicies[0],
-            ),
+            (1, n) if n >= 1 => {
+                self.assert_audio_fan(&connection.sink, &sink_indicies, PortDir::In);
+                one_to_n(
+                    &mut self.runtime,
+                    connection,
+                    source_indicies[0],
+                    sink_indicies.as_slice(),
+                )
+            }
+            (n, 1) if n >= 1 => {
+                self.assert_audio_fan(&connection.source, &source_indicies, PortDir::Out);
+                n_to_one(
+                    &mut self.runtime,
+                    connection,
+                    source_indicies.as_slice(),
+                    sink_indicies[0],
+                )
+            }
             (n, m) if n == m => n_to_n(
                 &mut self.runtime,
                 connection,
@@ -437,6 +476,36 @@ where
                     PortDir::In => "input",
                     PortDir::Out => "output",
                 },
+            );
+        }
+    }
+
+    /// Panic if an implicit fan (broadcast or mix) would touch control ports:
+    /// those insert audio-only DSP nodes, so control targets must be named.
+    fn assert_audio_fan(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
+        let ports = self.runtime.get_node_ports(key);
+        let list = match dir {
+            PortDir::In => &ports.audio_in,
+            PortDir::Out => &ports.audio_out,
+        };
+        let control: Vec<&str> = indices
+            .iter()
+            .filter_map(|&i| list.get(i))
+            .filter(|p| p.kind == PortKind::Control)
+            .map(|p| p.name)
+            .collect();
+        if !control.is_empty() {
+            let (alias, kind) = self
+                .runtime
+                .get_node(key)
+                .map(|n| (n.name.clone(), n.node_kind.clone()))
+                .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+            panic!(
+                "Implicit fan would touch control port(s) [{}] on node '{alias}' ({kind}): \
+                 control connections cannot broadcast or mix; name the target explicitly \
+                 (e.g. {alias}.{})",
+                control.join(", "),
+                control[0],
             );
         }
     }

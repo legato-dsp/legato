@@ -31,9 +31,7 @@ fn main() {
         }
 
         audio {
-            // 5 mono strings summed to one bus, gently rolled off, then spread
-            // to stereo. keep osc_mixer -> svf on port 0 only (>> svf would also
-            // hit svf's cutoff/q mod ports).
+            // 5 mono strings summed to one bus, rolled off, then spread to stereo.
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.3, 0.3, 0.3, 0.3, 0.3] },
             svf { chans: 1, cutoff: 6000.0, q: 0.4, type: "lowpass" },
             mono_fan_out { chans: 2 },
@@ -49,7 +47,8 @@ fn main() {
         poly_voice[1:15:3] >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
-        osc_mixer >> mono_fan_out // no key tracking
+        osc_mixer >> svf
+        svf >> mono_fan_out
 
         { mono_fan_out }
     "#,
