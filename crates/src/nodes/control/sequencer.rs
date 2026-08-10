@@ -39,8 +39,8 @@ pub struct StepSequencer {
 impl StepSequencer {
     pub fn new(num_steps: usize) -> Self {
         let ports = PortBuilder::default()
-            .audio_in_named(&["phasor"])
-            .audio_out_named(&["freq", "vel", "gate"])
+            .control_in_named(&["phasor"])
+            .control_out_named(&["freq", "vel", "gate"])
             .build();
 
         Self {

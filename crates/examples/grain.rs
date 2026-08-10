@@ -30,12 +30,12 @@ fn main() {
             in freq gate
 
             audio {
-                sine: lfo { freq: 0.1 },
                 grain { sampler_name: "main", chans: 2, size: 70, shape: 0.5, scan: 0.05 },
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 2 },
             }
 
-            control { 
+            control {
+                lfo { freq: 0.1 },
                 map { range: [-1.0, 1.0], new_range: [100, 300] }
             }
 

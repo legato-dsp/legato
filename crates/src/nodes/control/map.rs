@@ -26,7 +26,7 @@ impl Map {
             max: Vf32::splat(range[1]),
             mapped_min: Vf32::splat(new_range[0]),
             mapped_max: Vf32::splat(new_range[1]),
-            ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
+            ports: PortBuilder::default().control_in(1).control_out(1).build(),
         }
     }
 }

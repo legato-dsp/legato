@@ -29,6 +29,7 @@ use crate::{
             tap::DelayTap,
         },
         control::{
+            lfo::Lfo,
             map::Map,
             phasor::{ClockDef, Phasor},
             sequencer::StepSequencer,
@@ -128,6 +129,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 pub fn control_registry_factory() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register_node::<Signal>();
+    registry.register_node::<Lfo>();
     registry.register_node::<Map>();
     registry.register_node::<Phasor>();
     registry.register_node::<ClockDef>();

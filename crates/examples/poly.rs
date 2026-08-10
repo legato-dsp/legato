@@ -48,7 +48,7 @@ fn main() {
         poly_voice[1:13:3] >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
-        osc_mixer >> svf[0] // No key tracking
+        osc_mixer >> svf // audio-only auto-map skips svf's cutoff/q control ports
 
         svf >> mono_fan_out
 

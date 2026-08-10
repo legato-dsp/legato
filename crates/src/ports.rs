@@ -1,7 +1,15 @@
+/// Signal vs control value; independent of rate, it only governs how portless endpoints auto-map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortKind {
+    Audio,
+    Control,
+}
+
 #[derive(Clone, Debug)]
 pub struct PortMeta {
     pub name: &'static str,
     pub index: usize,
+    pub kind: PortKind,
 }
 
 #[derive(Clone, Debug)]
@@ -45,44 +53,68 @@ pub struct PortBuilder {
 }
 
 impl PortBuilder {
+    fn push_in(&mut self, name: &'static str, kind: PortKind) {
+        let index = self.port_audio_in.len();
+        self.port_audio_in.push(PortMeta { name, index, kind });
+    }
+
+    fn push_out(&mut self, name: &'static str, kind: PortKind) {
+        let index = self.port_audio_out.len();
+        self.port_audio_out.push(PortMeta { name, index, kind });
+    }
+
     pub fn audio_in(mut self, count: usize) -> Self {
         for i in 0..count {
-            self.port_audio_in.push(PortMeta {
-                name: default_audio_in_name(i, count),
-                index: i,
-            });
+            self.push_in(default_audio_in_name(i, count), PortKind::Audio);
         }
         self
     }
 
     pub fn audio_out(mut self, count: usize) -> Self {
         for i in 0..count {
-            self.port_audio_out.push(PortMeta {
-                name: default_audio_out_name(i, count),
-                index: i,
-            });
+            self.push_out(default_audio_out_name(i, count), PortKind::Audio);
         }
         self
     }
 
     pub fn audio_in_named(mut self, names: &[&'static str]) -> Self {
-        let index = self.port_audio_in.len();
-        for (i, name) in names.iter().enumerate() {
-            self.port_audio_in.push(PortMeta {
-                name,
-                index: index + i,
-            });
+        for name in names {
+            self.push_in(name, PortKind::Audio);
         }
         self
     }
 
     pub fn audio_out_named(mut self, names: &[&'static str]) -> Self {
-        let index = self.port_audio_out.len();
-        for (i, name) in names.iter().enumerate() {
-            self.port_audio_out.push(PortMeta {
-                name,
-                index: index + i,
-            });
+        for name in names {
+            self.push_out(name, PortKind::Audio);
+        }
+        self
+    }
+
+    pub fn control_in(mut self, count: usize) -> Self {
+        for i in 0..count {
+            self.push_in(default_audio_in_name(i, count), PortKind::Control);
+        }
+        self
+    }
+
+    pub fn control_out(mut self, count: usize) -> Self {
+        for i in 0..count {
+            self.push_out(default_audio_out_name(i, count), PortKind::Control);
+        }
+        self
+    }
+
+    pub fn control_in_named(mut self, names: &[&'static str]) -> Self {
+        for name in names {
+            self.push_in(name, PortKind::Control);
+        }
+        self
+    }
+
+    pub fn control_out_named(mut self, names: &[&'static str]) -> Self {
+        for name in names {
+            self.push_out(name, PortKind::Control);
         }
         self
     }
@@ -249,6 +281,27 @@ mod tests {
 
         assert_eq!(indices(&ports.audio_in), vec![0, 1, 2]);
         assert_eq!(indices(&ports.audio_out), vec![0, 1]);
+    }
+
+    #[test]
+    fn test_control_shares_flat_index_space() {
+        let ports = PortBuilder::default()
+            .audio_in(2)
+            .control_in_named(&["cutoff", "q"])
+            .build();
+
+        assert_eq!(names(&ports.audio_in), vec!["l", "r", "cutoff", "q"]);
+        assert_eq!(indices(&ports.audio_in), vec![0, 1, 2, 3]);
+        let kinds: Vec<PortKind> = ports.audio_in.iter().map(|p| p.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                PortKind::Audio,
+                PortKind::Audio,
+                PortKind::Control,
+                PortKind::Control
+            ]
+        );
     }
 
     #[test]

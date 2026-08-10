@@ -43,7 +43,7 @@ impl Adsr {
             attack_starting_level: 0.0,
             release_starting_level: 0.0,
             ports: PortBuilder::default()
-                .audio_in_named(&["gate"])
+                .control_in_named(&["gate"])
                 .audio_in(chans)
                 .audio_out(chans)
                 .build(),

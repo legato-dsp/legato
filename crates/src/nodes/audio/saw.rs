@@ -34,7 +34,7 @@ impl Saw {
             phase: 0.0,
             sr,
             ports: PortBuilder::default()
-                .audio_in_named(&["freq"])
+                .control_in_named(&["freq"])
                 .audio_out(chans)
                 .build(),
         }

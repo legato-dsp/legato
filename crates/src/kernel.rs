@@ -22,7 +22,7 @@ use crate::{
         control::map::Map,
     },
     persample::{MAX_FRAME_PORTS, PerSampleNode},
-    ports::{PortMeta, Ports},
+    ports::{PortKind, PortMeta, Ports},
 };
 use std::collections::HashMap;
 
@@ -532,6 +532,7 @@ pub fn lower_kernel(
         .map(|(i, name)| PortMeta {
             name: Box::leak(name.clone().into_boxed_str()),
             index: i,
+            kind: PortKind::Audio,
         })
         .collect();
 
