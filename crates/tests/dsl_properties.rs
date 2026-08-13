@@ -5,6 +5,7 @@
 //! afterwards, because `Ast` addresses nodes by name while a generator addresses
 //! them by position. Aliases are derived from position, so they are unique.
 
+use legato::builder::ValidationError;
 use legato::dsl::ir::*;
 use legato::dsl::parse::legato_parser;
 use legato::dsl::pipeline::Pipeline;
@@ -15,12 +16,19 @@ const LEAF_TYPE: &str = "leaf";
 /// Endpoint port names; some hit a patch's virtual ports, some deliberately don't.
 const PORT_NAMES: [&str; 3] = ["v0", "v1", "sig"];
 
-/// `(instantiate a patch, which one, instance count, params)`.
-type DeclSpec = (bool, usize, u32, Object);
+/// `(drop the alias, instantiate a patch, which one, instance count, params)`.
+type DeclSpec = (bool, bool, usize, u32, Object);
 /// A connection with positional endpoints, named when the declarations exist.
 type WireSpec = (usize, usize, NodeSelector, Port, NodeSelector, Port);
 /// `(defaults, virtual ports, body, wiring, virtual-port targets, sink)`.
-type MacroSpec = (usize, usize, Vec<DeclSpec>, Vec<WireSpec>, Vec<usize>, usize);
+type MacroSpec = (
+    usize,
+    usize,
+    Vec<DeclSpec>,
+    Vec<WireSpec>,
+    Vec<usize>,
+    usize,
+);
 
 // ---------------------------------------------------------------------------
 // Build
@@ -52,20 +60,32 @@ fn clamp(sel: &mut NodeSelector, count: u32) {
 }
 
 fn build_decls(specs: Vec<DeclSpec>, macros: &[AstMacro], prefix: &str) -> Vec<NodeDeclaration> {
-    specs
+    let bare: Vec<bool> = specs.iter().map(|(bare, ..)| *bare).collect();
+    let mut decls: Vec<NodeDeclaration> = specs
         .into_iter()
         .enumerate()
-        .map(|(i, (want_patch, pick, count, params))| NodeDeclaration {
-            node_type: match want_patch && !macros.is_empty() {
-                true => macros[pick % macros.len()].name.clone(),
-                false => LEAF_TYPE.to_string(),
+        .map(
+            |(i, (_, want_patch, pick, count, params))| NodeDeclaration {
+                node_type: match want_patch && !macros.is_empty() {
+                    true => macros[pick % macros.len()].name.clone(),
+                    false => LEAF_TYPE.to_string(),
+                },
+                alias: Some(format!("{prefix}{i}")),
+                params: Some(params),
+                count,
             },
-            // Always named, since `None` aliases collide by node type — see target 2.
-            alias: Some(format!("{prefix}{i}")),
-            params: Some(params),
-            count,
-        })
-        .collect()
+        )
+        .collect();
+
+    // An unaliased declaration takes its node type as alias, so it is only
+    // unique where that type is declared once.
+    for i in 0..decls.len() {
+        let ty = decls[i].node_type.clone();
+        if bare[i] && decls.iter().filter(|d| d.node_type == ty).count() == 1 {
+            decls[i].alias = None;
+        }
+    }
+    decls
 }
 
 fn build_conns(
@@ -235,7 +255,7 @@ fn render_decl(decl: &NodeDeclaration) -> String {
         1 => String::new(),
         n => format!(" * {n}"),
     };
-    let params = decl.params.as_ref().map_or(String::new(), |p| render_params(p));
+    let params = decl.params.as_ref().map_or(String::new(), render_params);
     format!("{}{alias}{count} {{ {params} }}", decl.node_type)
 }
 
@@ -337,7 +357,7 @@ fn params() -> impl Strategy<Value = Object> {
 }
 
 fn decl_spec() -> impl Strategy<Value = DeclSpec> {
-    (any::<bool>(), 0..4usize, 1u32..=3, params())
+    (any::<bool>(), any::<bool>(), 0..4usize, 1u32..=3, params())
 }
 
 fn wire_spec() -> impl Strategy<Value = WireSpec> {
@@ -393,7 +413,7 @@ proptest! {
     #[test]
     fn pipeline_lowers_without_panicking(ast in ast()) {
         let src = render(&ast);
-        let graph = Pipeline::default().run_from_ast(ast);
+        let graph = Pipeline::default().run_from_ast(ast).expect("unique aliases must lower");
 
         prop_assert!(graph.node_count() > 0, "empty graph from:\n{}", src);
         prop_assert!(!graph.has_unresolved_macros(), "macros left in:\n{}", src);
@@ -406,12 +426,76 @@ proptest! {
     #[test]
     fn rendered_source_lowers_identically(ast in ast()) {
         let src = render(&ast);
-        let direct = Pipeline::default().run_from_ast(ast);
+        let direct = Pipeline::default().run_from_ast(ast).expect("unique aliases must lower");
 
         let reparsed = legato_parser(&src).expect("rendered source must parse");
-        let via_text = Pipeline::default().run_from_ast(reparsed);
+        let via_text = Pipeline::default().run_from_ast(reparsed).expect("reparsed must lower");
 
         prop_assert_eq!(via_text.node_count(), direct.node_count(), "in:\n{}", src);
         prop_assert_eq!(via_text.edge_count(), direct.edge_count(), "in:\n{}", src);
     }
+
+    /// P3: the alias index is a bijection, so expansion never shadows a node.
+    #[test]
+    fn alias_index_is_bijective(ast in ast()) {
+        let src = render(&ast);
+        let graph = Pipeline::default().run_from_ast(ast).expect("unique aliases must lower");
+
+        let mut aliases: Vec<&str> = graph.nodes().map(|n| n.alias.as_str()).collect();
+        aliases.sort_unstable();
+        aliases.dedup();
+        prop_assert_eq!(aliases.len(), graph.node_count(), "shadowed alias in:\n{}", src);
+
+        for node in graph.nodes() {
+            prop_assert_eq!(
+                graph.resolve_alias(&node.alias),
+                Some(node.id),
+                "alias '{}' does not resolve to its own node in:\n{}",
+                node.alias,
+                src
+            );
+        }
+    }
+
+    /// P4: a repeated alias is rejected rather than silently shadowing a node.
+    #[test]
+    fn duplicate_alias_is_rejected(mut ast in ast(), pick in 0..8usize) {
+        let decls = &mut ast.declarations[0].declarations;
+        let victim = pick % decls.len();
+        let clash = alias_of(&decls[(victim + 1) % decls.len()]).to_string();
+        decls[victim].alias = Some(clash.clone());
+
+        let src = render(&ast);
+        let err = Pipeline::default().run_from_ast(ast).unwrap_err();
+        prop_assert!(
+            matches!(err, ValidationError::DuplicateAlias(_)),
+            "expected DuplicateAlias for '{}', got {:?} in:\n{}",
+            clash,
+            err,
+            src
+        );
+    }
+}
+
+/// Writing the same node type twice without aliases is the natural way to hit this.
+#[test]
+fn repeated_node_type_without_alias_is_rejected() {
+    let ast = legato_parser("audio { sine { }, sine { } }\n{ sine }").expect("parses");
+    let err = Pipeline::default().run_from_ast(ast).unwrap_err();
+    assert!(matches!(err, ValidationError::DuplicateAlias(_)), "{err:?}");
+}
+
+#[test]
+fn duplicate_alias_inside_patch_is_rejected() {
+    let src = r#"
+        patch p() {
+            audio { leaf: b { }, leaf: b { } }
+            { b }
+        }
+        audio { p: a { } }
+        { a }
+    "#;
+    let ast = legato_parser(src).expect("parses");
+    let err = Pipeline::default().run_from_ast(ast).unwrap_err();
+    assert!(matches!(err, ValidationError::DuplicateAlias(_)), "{err:?}");
 }

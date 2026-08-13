@@ -195,7 +195,9 @@ mod tests {
             { v }
         "#;
         let ast = legato_parser(src).expect("test source should parse");
-        let graph = Pipeline::default().run_from_ast(ast);
+        let graph = Pipeline::default()
+            .run_from_ast(ast)
+            .expect("test source should lower");
 
         let source_ports = |snk: &str| -> Vec<Port> {
             graph

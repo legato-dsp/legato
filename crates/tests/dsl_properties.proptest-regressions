@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5ba4f62cd960709d70511011bd1a959efab3b3530206f3f597c3f5a07e44d652 # shrinks to mut ast = Ast { declarations: [DeclarationScope { namespace: "audio", declarations: [NodeDeclaration { node_type: "leaf", alias: Some("a0"), params: Some({}), count: 1 }, NodeDeclaration { node_type: "leaf", alias: Some("a1"), params: Some({}), count: 1 }] }], connections: [Connection { source: Endpoint { node: "a0", node_selector: Single, port: None }, sink: Endpoint { node: "a1", node_selector: Single, port: None } }], macros: [], sink: "a0", source: None }, pick = 0

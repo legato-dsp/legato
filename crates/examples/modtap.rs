@@ -47,7 +47,9 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(&graph);
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        .build_dsl(&graph)
+        .expect("graph should build");
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("CoreAudio host not available");

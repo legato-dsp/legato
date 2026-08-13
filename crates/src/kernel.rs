@@ -924,7 +924,7 @@ mod tests {
     /// Parse `src`, lower it, and hand back the kernel definition `name`.
     fn kernel_def(src: &str, name: &str) -> IRMacro {
         let ast = legato_parser(src).expect("kernel test source should parse");
-        let graph = ast_to_graph(ast);
+        let graph = ast_to_graph(ast).expect("test source should lower");
         graph
             .macro_registry
             .get(name)

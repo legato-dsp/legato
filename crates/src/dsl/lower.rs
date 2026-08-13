@@ -1,17 +1,26 @@
 use indexmap::IndexMap;
 
+use crate::builder::ValidationError;
 use crate::dsl::ir::*;
 use std::collections::HashMap;
+
+/// Aliases key the alias index, so a repeat would shadow the earlier declaration.
+fn duplicate_alias(alias: &str, scope: Option<&str>) -> ValidationError {
+    let scope = scope.map_or_else(|| "top level".to_string(), |s| format!("patch '{s}'"));
+    ValidationError::DuplicateAlias(format!(
+        "duplicate alias '{alias}' at {scope}; alias one declaration or spawn with `* n`"
+    ))
+}
 
 /// Convert the ASTMacro to the IRMacro
 fn convert_macro(
     name: &str,
     ast_map: &mut HashMap<String, AstMacro>,
     converted: &mut HashMap<String, IRMacro>,
-) {
+) -> Result<(), ValidationError> {
     // Check to avoid redundant macro conversion
     if converted.contains_key(name) {
-        return;
+        return Ok(());
     }
 
     let ast_macro = ast_map
@@ -22,7 +31,7 @@ fn convert_macro(
     for scope in &ast_macro.declarations {
         for decl in &scope.declarations {
             if ast_map.contains_key(&decl.node_type) {
-                convert_macro(&decl.node_type, ast_map, converted);
+                convert_macro(&decl.node_type, ast_map, converted)?;
             }
         }
     }
@@ -45,6 +54,10 @@ fn convert_macro(
                     "kernel '{}' declares '{}' ({}), but kernels may only contain leaf nodes",
                     name, alias, decl.node_type
                 );
+            }
+
+            if local_alias_to_id.contains_key(&alias) {
+                return Err(duplicate_alias(&alias, Some(name)));
             }
 
             let id = body.add_node(
@@ -111,6 +124,7 @@ fn convert_macro(
             sink: sink_id,
         },
     );
+    Ok(())
 }
 
 /// Leaf, MacroRef or KernelRef, depending on what `node_type` names in the
@@ -126,7 +140,7 @@ fn classify_node_type(node_type: &str, registry: &HashMap<String, IRMacro>) -> I
 /// We have a bit of an easier Ast shape that the actual IR, since patches
 /// are not-quite recursive. Here, we convert macros to a type that can recurse,
 /// this makes various graph transformations easier.
-pub fn ast_to_graph(ast: Ast) -> IRGraph {
+pub fn ast_to_graph(ast: Ast) -> Result<IRGraph, ValidationError> {
     let mut graph = IRGraph::new();
 
     let mut macro_ast_map: HashMap<String, AstMacro> = ast
@@ -140,7 +154,7 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
     // Process each macro, recursing into dependencies first
     let names: Vec<String> = macro_ast_map.keys().cloned().collect();
     for name in names {
-        convert_macro(&name, &mut macro_ast_map, &mut converted);
+        convert_macro(&name, &mut macro_ast_map, &mut converted)?;
     }
 
     graph.macro_registry = converted;
@@ -153,6 +167,10 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
             let alias = decl.alias.clone().unwrap_or_else(|| decl.node_type.clone());
 
             let kind = classify_node_type(&decl.node_type, &graph.macro_registry);
+
+            if alias_to_id.contains_key(&alias) {
+                return Err(duplicate_alias(&alias, None));
+            }
 
             let id = graph.add_node(
                 kind,
@@ -191,7 +209,7 @@ pub fn ast_to_graph(ast: Ast) -> IRGraph {
         .as_ref()
         .and_then(|s| alias_to_id.get(s).copied());
 
-    graph
+    Ok(graph)
 }
 
 #[macro_export]
@@ -216,7 +234,9 @@ mod spawn_tests {
     use super::*;
 
     fn expand(ast: Ast) -> IRGraph {
-        Pipeline::default().run_from_ast(ast)
+        Pipeline::default()
+            .run_from_ast(ast)
+            .expect("test ast should lower")
     }
 
     fn multi_decl(node_type: &str, alias: &str, count: u32) -> NodeDeclaration {

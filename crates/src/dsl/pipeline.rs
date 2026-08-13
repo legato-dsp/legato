@@ -1,3 +1,4 @@
+use crate::builder::ValidationError;
 use crate::dsl::{
     expand::MacroExpansionPass, ir::*, lower::ast_to_graph, resolve::ResolvePass,
     spawn::SpawnKNodesPass,
@@ -27,9 +28,9 @@ impl Pipeline {
 
     /// Translate `ast` to a literal [`IRGraph`] (see [`ast_to_graph`]), then
     /// run all passes in order.
-    pub fn run_from_ast(self, ast: Ast) -> IRGraph {
-        let initial = ast_to_graph(ast);
-        self.run(initial)
+    pub fn run_from_ast(self, ast: Ast) -> Result<IRGraph, ValidationError> {
+        let initial = ast_to_graph(ast)?;
+        Ok(self.run(initial))
     }
 
     /// Run all passes on an already-constructed graph.
@@ -115,7 +116,9 @@ mod grain_example_tests {
 
     fn expand(src: &str) -> IRGraph {
         let ast = legato_parser(src).expect("grain patch should parse");
-        Pipeline::default().run_from_ast(ast)
+        Pipeline::default()
+            .run_from_ast(ast)
+            .expect("grain patch should lower")
     }
 
     /// Assert there is exactly one edge `src.src_port -> snk.snk_port`.

@@ -20,7 +20,9 @@ fn build(src: &str, out_chans: usize) -> LegatoApp {
         rt_capacity: 0,
     };
     let ports = PortBuilder::default().audio_out(out_chans).build();
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(src);
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        .build_dsl(src)
+        .expect("graph should build");
     app
 }
 

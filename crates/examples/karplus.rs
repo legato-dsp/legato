@@ -74,7 +74,8 @@ fn main() {
 
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .set_midi_runtime(midi_rt_fe)
-        .build_dsl(&graph);
+        .build_dsl(&graph)
+        .expect("graph should build");
 
     #[cfg(target_os = "macos")]
     let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
