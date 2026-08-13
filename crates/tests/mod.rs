@@ -8,7 +8,9 @@ mod parse_and_lower {
 
     fn parse_and_lower(src: &str) -> IRGraph {
         let ast = legato_parser(src).expect("Parse failed");
-        Pipeline::default().run_from_ast(ast)
+        Pipeline::default()
+            .run_from_ast(ast)
+            .expect("Lowering failed")
     }
 
     /// Retrieve a param value from a node by alias, panicking with a clear
@@ -1308,8 +1310,9 @@ mod build_dsl {
 
         // Builds the whole graph end-to-end (pipeline + builder + prepare).
         // No MIDI runtime / audio device is required to construct the app.
-        let (_app, _frontend) =
-            LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(POLY_GRAPH);
+        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+            .build_dsl(POLY_GRAPH)
+            .expect("graph should build");
     }
 }
 
@@ -1396,7 +1399,9 @@ mod build_dsl_delay {
             { feedback }
         "#;
 
-        let _ = LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(graph);
+        let _ = LegatoBuilder::<Unconfigured>::new(config, ports)
+            .build_dsl(graph)
+            .expect("graph should build");
     }
 
     #[test]
@@ -1410,7 +1415,8 @@ mod build_dsl_delay {
         let ports = PortBuilder::default().audio_out(2).build();
 
         // Sample data is loaded later via the frontend; the graph builds without it.
-        let (_app, _frontend) =
-            LegatoBuilder::<Unconfigured>::new(config, ports).build_dsl(DELAY_GRAPH);
+        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+            .build_dsl(DELAY_GRAPH)
+            .expect("graph should build");
     }
 }

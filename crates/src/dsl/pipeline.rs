@@ -1,3 +1,4 @@
+use crate::builder::ValidationError;
 use crate::dsl::{
     expand::MacroExpansionPass, ir::*, lower::ast_to_graph, resolve::ResolvePass,
     spawn::SpawnKNodesPass,
@@ -6,7 +7,7 @@ use crate::dsl::{
 /// A single, named transformation of an [`IRGraph`].
 pub trait GraphPass {
     fn name(&self) -> &'static str;
-    fn run(&self, graph: IRGraph) -> IRGraph;
+    fn run(&self, graph: IRGraph) -> Result<IRGraph, ValidationError>;
 }
 
 /// An ordered sequence of [`GraphPass`]es applied to an [`IRGraph`].
@@ -27,14 +28,16 @@ impl Pipeline {
 
     /// Translate `ast` to a literal [`IRGraph`] (see [`ast_to_graph`]), then
     /// run all passes in order.
-    pub fn run_from_ast(self, ast: Ast) -> IRGraph {
-        let initial = ast_to_graph(ast);
+    pub fn run_from_ast(self, ast: Ast) -> Result<IRGraph, ValidationError> {
+        let initial = ast_to_graph(ast)?;
         self.run(initial)
     }
 
     /// Run all passes on an already-constructed graph.
-    pub fn run(self, graph: IRGraph) -> IRGraph {
-        self.passes.into_iter().fold(graph, |g, pass| pass.run(g))
+    pub fn run(self, graph: IRGraph) -> Result<IRGraph, ValidationError> {
+        self.passes
+            .into_iter()
+            .try_fold(graph, |g, pass| pass.run(g))
     }
 }
 
@@ -115,7 +118,9 @@ mod grain_example_tests {
 
     fn expand(src: &str) -> IRGraph {
         let ast = legato_parser(src).expect("grain patch should parse");
-        Pipeline::default().run_from_ast(ast)
+        Pipeline::default()
+            .run_from_ast(ast)
+            .expect("grain patch should lower")
     }
 
     /// Assert there is exactly one edge `src.src_port -> snk.snk_port`.

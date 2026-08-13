@@ -7,6 +7,7 @@
 //! re-implemented in [`crate::dsl::expand`], [`crate::dsl::spawn`] and the
 //! builder; [`broadcast`] is the one shared implementation.
 
+use crate::builder::ValidationError;
 use crate::dsl::{ir::*, pipeline::GraphPass};
 
 /// Resolve a strided/sliced [`Port`] to the concrete single-port index for the
@@ -88,7 +89,7 @@ impl GraphPass for ResolvePass {
         "ResolvePass"
     }
 
-    fn run(&self, mut graph: IRGraph) -> IRGraph {
+    fn run(&self, mut graph: IRGraph) -> Result<IRGraph, ValidationError> {
         debug_assert!(
             !graph.has_unresolved_macros(),
             "ResolvePass: macros must be expanded before resolving"
@@ -104,7 +105,7 @@ impl GraphPass for ResolvePass {
             );
         }
 
-        graph
+        Ok(graph)
     }
 }
 

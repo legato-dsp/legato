@@ -99,7 +99,8 @@ fn main() {
 
     let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
         .set_midi_runtime(midi_rt_fe)
-        .build_dsl(&graph);
+        .build_dsl(&graph)
+        .expect("graph should build");
 
     dbg!(&app);
 

@@ -136,8 +136,9 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
     let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
 
-    let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
-        r#"
+    let (mut app, _) = LegatoBuilder::new(config, ports)
+        .build_dsl(&String::from(
+            r#"
             { delay_write }
 
             audio {
@@ -147,7 +148,8 @@ fn bench_stereo_delay(c: &mut Criterion) {
 
             { delay_read }
         "#,
-    ));
+        ))
+        .expect("graph should build");
 
     c.bench_function("Basic stereo delay", |b| {
         b.iter(|| {
@@ -177,7 +179,9 @@ fn bench_delay_quality(c: &mut Criterion) {
                 {{ delay_read }}
             "#
         );
-        let (app, _) = LegatoBuilder::new(config, ports).build_dsl(&graph);
+        let (app, _) = LegatoBuilder::new(config, ports)
+            .build_dsl(&graph)
+            .expect("graph should build");
         app
     };
 
@@ -222,7 +226,7 @@ fn bench_delay_quality(c: &mut Criterion) {
 
 //             { sweep }
 //         "#,
-//     ));
+//     )).expect("graph should build");
 
 //     c.bench_function("Basic oversampler", |b| {
 //         let ai: &[Box<[f32]>] = &[
@@ -326,7 +330,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
 
         { master }
     "#,
-    ));
+    )).expect("graph should build");
 
     c.bench_function("Kitchen Sink", |b| {
         b.iter(|| {
@@ -351,7 +355,9 @@ fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
 
     let build = |graph: &str| {
         let ports = PortBuilder::default().audio_out(2).build();
-        let (app, _) = LegatoBuilder::new(config, ports).build_dsl(graph);
+        let (app, _) = LegatoBuilder::new(config, ports)
+            .build_dsl(graph)
+            .expect("graph should build");
         app
     };
 

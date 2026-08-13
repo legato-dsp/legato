@@ -48,6 +48,12 @@ pub enum ValidationError {
     UnsupportedInKernel(String),
     /// A node has more audio ports on input/output side than [`crate::executor::MAX_ARITY`].
     ArityExceeded(String),
+    /// Two declarations resolve to the same alias, so one would shadow the other.
+    DuplicateAlias(String),
+    /// Two node selections cannot be paired: neither is single and they differ.
+    SelectionArity(String),
+    /// A graph pass could not expand the program as written.
+    Expansion(String),
 }
 
 // Typestates for the builder
@@ -183,7 +189,7 @@ impl LegatoBuilder<Unconfigured> {
 }
 
 impl LegatoBuilder<Configured> {
-    pub fn build_dsl(self, graph: &str) -> (LegatoApp, LegatoFrontend) {
+    pub fn build_dsl(self, graph: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
         let can_build = self.into_state::<DslBuilding>();
         can_build._build_dsl(graph)
     }
@@ -608,10 +614,9 @@ impl LegatoBuilder<DslBuilding> {
         self.last_selection = Some(SelectionKind::Single(key));
     }
 
-    fn _build_dsl(mut self, content: &str) -> (LegatoApp, LegatoFrontend) {
-        let ast = legato_parser(content).unwrap();
-
-        let ir = Pipeline::default().run_from_ast(ast);
+    fn _build_dsl(mut self, content: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
+        let ast = legato_parser(content)?;
+        let ir = Pipeline::default().run_from_ast(ast)?;
 
         // Sanity check: every node must be a leaf before the builder runs.
         debug_assert!(
@@ -660,7 +665,7 @@ impl LegatoBuilder<DslBuilding> {
             .set_sink_key(ir_to_runtime[&sink_id])
             .expect("Could not set sink");
 
-        self.build()
+        Ok(self.build())
     }
 }
 
