@@ -50,6 +50,10 @@ pub enum ValidationError {
     ArityExceeded(String),
     /// Two declarations resolve to the same alias, so one would shadow the other.
     DuplicateAlias(String),
+    /// Two node selections cannot be paired: neither is single and they differ.
+    SelectionArity(String),
+    /// A graph pass could not expand the program as written.
+    Expansion(String),
 }
 
 // Typestates for the builder

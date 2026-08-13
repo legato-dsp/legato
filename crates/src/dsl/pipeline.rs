@@ -7,7 +7,7 @@ use crate::dsl::{
 /// A single, named transformation of an [`IRGraph`].
 pub trait GraphPass {
     fn name(&self) -> &'static str;
-    fn run(&self, graph: IRGraph) -> IRGraph;
+    fn run(&self, graph: IRGraph) -> Result<IRGraph, ValidationError>;
 }
 
 /// An ordered sequence of [`GraphPass`]es applied to an [`IRGraph`].
@@ -30,12 +30,14 @@ impl Pipeline {
     /// run all passes in order.
     pub fn run_from_ast(self, ast: Ast) -> Result<IRGraph, ValidationError> {
         let initial = ast_to_graph(ast)?;
-        Ok(self.run(initial))
+        self.run(initial)
     }
 
     /// Run all passes on an already-constructed graph.
-    pub fn run(self, graph: IRGraph) -> IRGraph {
-        self.passes.into_iter().fold(graph, |g, pass| pass.run(g))
+    pub fn run(self, graph: IRGraph) -> Result<IRGraph, ValidationError> {
+        self.passes
+            .into_iter()
+            .try_fold(graph, |g, pass| pass.run(g))
     }
 }
 

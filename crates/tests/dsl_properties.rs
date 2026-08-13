@@ -10,6 +10,7 @@ use legato::dsl::ir::*;
 use legato::dsl::parse::legato_parser;
 use legato::dsl::pipeline::Pipeline;
 use proptest::prelude::*;
+use std::collections::BTreeSet;
 
 const NAMESPACE: &str = "audio";
 const LEAF_TYPE: &str = "leaf";
@@ -37,10 +38,6 @@ type MacroSpec = (
 /// Mirrors the fallback in `lower::ast_to_graph`.
 fn alias_of(decl: &NodeDeclaration) -> &str {
     decl.alias.as_deref().unwrap_or(&decl.node_type)
-}
-
-fn is_patch(decl: &NodeDeclaration, macros: &[AstMacro]) -> bool {
-    macros.iter().any(|m| m.name == decl.node_type)
 }
 
 fn broadcastable(src: usize, snk: usize) -> bool {
@@ -88,11 +85,7 @@ fn build_decls(specs: Vec<DeclSpec>, macros: &[AstMacro], prefix: &str) -> Vec<N
     decls
 }
 
-fn build_conns(
-    specs: Vec<WireSpec>,
-    decls: &[NodeDeclaration],
-    macros: &[AstMacro],
-) -> Vec<Connection> {
+fn build_conns(specs: Vec<WireSpec>, decls: &[NodeDeclaration]) -> Vec<Connection> {
     let n = decls.len();
     if n < 2 {
         return Vec::new();
@@ -104,23 +97,14 @@ fn build_conns(
             let i = a % n;
             let j = (i + 1 + b % (n - 1)) % n;
             let (src, snk) = (&decls[i.min(j)], &decls[i.max(j)]);
-
-            // Expansion matches raw counts, not selectors, on the way into a patch.
-            if is_patch(snk, macros) && !broadcastable(src.count as usize, snk.count as usize) {
-                return None;
-            }
             clamp(&mut src_sel, src.count);
             clamp(&mut snk_sel, snk.count);
 
-            // Selector arity only binds leaf to leaf; a patch always fans into
-            // single instances, so its own selectors cannot mismatch.
-            let bound = !is_patch(src, macros) && !is_patch(snk, macros);
-            if bound
-                && !broadcastable(
-                    src_sel.selected_count(src.count as usize),
-                    snk_sel.selected_count(snk.count as usize),
-                )
-            {
+            // Selected arity must match exactly, patch or leaf alike.
+            if !broadcastable(
+                src_sel.selected_count(src.count as usize),
+                snk_sel.selected_count(snk.count as usize),
+            ) {
                 // Fan-in is legal for any source arity.
                 snk_sel = NodeSelector::Index(0);
             }
@@ -141,6 +125,37 @@ fn build_conns(
         .collect()
 }
 
+fn leaf(alias: &str, count: u32) -> NodeDeclaration {
+    NodeDeclaration {
+        node_type: LEAF_TYPE.to_string(),
+        alias: Some(alias.to_string()),
+        params: Some(Object::new()),
+        count,
+    }
+}
+
+fn scope(declarations: Vec<NodeDeclaration>) -> DeclarationScope {
+    DeclarationScope {
+        namespace: NAMESPACE.to_string(),
+        declarations,
+    }
+}
+
+fn endpoint(node: &str, port: Port) -> Endpoint {
+    Endpoint {
+        node: node.to_string(),
+        node_selector: NodeSelector::Single,
+        port,
+    }
+}
+
+fn wire(src: &str, src_port: Port, snk: &str, snk_port: Port) -> Connection {
+    Connection {
+        source: endpoint(src, src_port),
+        sink: endpoint(snk, snk_port),
+    }
+}
+
 fn build_macro(idx: usize, spec: MacroSpec, earlier: &[AstMacro]) -> AstMacro {
     let (defaults, vports, decl_specs, wire_specs, vconn_specs, sink) = spec;
     let mut body = build_decls(decl_specs, earlier, "b");
@@ -156,20 +171,14 @@ fn build_macro(idx: usize, spec: MacroSpec, earlier: &[AstMacro]) -> AstMacro {
         let target = target % body.len();
         // Same for virtual-port targets: fan-in to one instance always broadcasts.
         body[target].count = 1;
-        connections.push(Connection {
-            source: Endpoint {
-                node: format!("v{}", i % vports),
-                node_selector: NodeSelector::Single,
-                port: Port::None,
-            },
-            sink: Endpoint {
-                node: alias_of(&body[target]).to_string(),
-                node_selector: NodeSelector::Single,
-                port: Port::None,
-            },
-        });
+        connections.push(wire(
+            &format!("v{}", i % vports),
+            Port::None,
+            alias_of(&body[target]),
+            Port::None,
+        ));
     }
-    connections.extend(build_conns(wire_specs, &body, earlier));
+    connections.extend(build_conns(wire_specs, &body));
 
     AstMacro {
         name: format!("p{idx}"),
@@ -186,6 +195,402 @@ fn build_macro(idx: usize, spec: MacroSpec, earlier: &[AstMacro]) -> AstMacro {
             declarations: body,
         }],
         connections,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transparency: one body expressed as a patch instance and inlined
+// ---------------------------------------------------------------------------
+
+const EXT: &str = "ext";
+const OUT: &str = "out";
+const INSTANCE: &str = "a0";
+/// A default deliberately shadowed by an instantiation param.
+const SHADOWED: Value = Value::F32(-999.0);
+
+/// `(feed it, interior targets, give the source its targets' instance count)`.
+type VPortSpec = (bool, Vec<usize>, bool);
+
+#[derive(Debug, Clone)]
+struct Transparency {
+    patched: Ast,
+    inlined: Ast,
+}
+
+/// A virtual port: the interior nodes it fans to, and the outside node feeding it.
+struct VPort {
+    name: String,
+    targets: Vec<usize>,
+    source: Option<NodeDeclaration>,
+}
+
+/// Resolve raw virtual-port draws against the body they address.
+fn build_vports(specs: Vec<VPortSpec>, body: &[NodeDeclaration]) -> Vec<VPort> {
+    specs
+        .into_iter()
+        .enumerate()
+        .map(|(k, (fed, raw_targets, share_count))| {
+            let mut targets: Vec<usize> = raw_targets.into_iter().map(|t| t % body.len()).collect();
+            targets.sort_unstable();
+            targets.dedup();
+
+            // The source broadcasts onto every target, so it is either single or
+            // matches a count they all share.
+            let counts: BTreeSet<u32> = targets.iter().map(|&t| body[t].count).collect();
+            let count = match (share_count, counts.len()) {
+                (true, 1) => *counts.first().expect("checked non-empty"),
+                _ => 1,
+            };
+
+            // Feeding a virtual port with no targets falls through to the patch
+            // sink, which inlining has no way to express.
+            let source = (fed && !targets.is_empty()).then(|| leaf(&format!("{EXT}{k}"), count));
+
+            VPort {
+                name: format!("v{k}"),
+                targets,
+                source,
+            }
+        })
+        .collect()
+}
+
+/// Rewrite literal params into templates bound to the *same* value, so the two
+/// forms must agree exactly. `picks` is `(templatise, bind via instantiation)`.
+fn bind_templates(body: &mut [NodeDeclaration], picks: &[(bool, bool)]) -> (Object, Object) {
+    let (mut defaults, mut overrides) = (Object::new(), Object::new());
+    if picks.is_empty() {
+        return (defaults, overrides);
+    }
+    let mut n = 0;
+    for decl in body.iter_mut() {
+        let Some(params) = decl.params.as_mut() else {
+            continue;
+        };
+        for val in params.values_mut() {
+            let (templatise, via_instance) = picks[n % picks.len()];
+            n += 1;
+            if !templatise {
+                continue;
+            }
+            let name = format!("t{n}");
+            let bound = std::mem::replace(val, Value::Template(format!("${name}")));
+            match via_instance {
+                // An instantiation param must beat the default it shadows.
+                true => {
+                    defaults.insert(name.clone(), SHADOWED);
+                    overrides.insert(name, bound);
+                }
+                false => {
+                    defaults.insert(name, bound);
+                }
+            }
+        }
+    }
+    (defaults, overrides)
+}
+
+fn build_transparency(
+    macro_specs: Vec<MacroSpec>,
+    decl_specs: Vec<DeclSpec>,
+    wire_specs: Vec<WireSpec>,
+    vport_specs: Vec<VPortSpec>,
+    sink: usize,
+    downstream: bool,
+    picks: Vec<(bool, bool)>,
+) -> Transparency {
+    let mut macros: Vec<AstMacro> = Vec::new();
+    for (i, spec) in macro_specs.into_iter().enumerate() {
+        let mac = build_macro(i, spec, &macros);
+        macros.push(mac);
+    }
+
+    let mut body = build_decls(decl_specs, &macros, "b");
+    // Templates are introduced deliberately below, so start from literals only.
+    for decl in &mut body {
+        for val in decl.params.iter_mut().flat_map(|p| p.values_mut()) {
+            if matches!(val, Value::Template(_)) {
+                *val = Value::F32(1.0);
+            }
+        }
+    }
+
+    let sink = sink % body.len();
+    let sink_alias = alias_of(&body[sink]).to_string();
+    let vports = build_vports(vport_specs, &body);
+    let conns = build_conns(wire_specs, &body);
+
+    // The inlined form keeps the literal values the templates are bound to.
+    let inline_body = body.clone();
+    let (defaults, overrides) = bind_templates(&mut body, &picks);
+
+    // Interior wiring: each virtual port fans to its targets.
+    let mut patch_conns: Vec<Connection> = vports
+        .iter()
+        .flat_map(|v| {
+            v.targets
+                .iter()
+                .map(|&t| wire(&v.name, Port::None, alias_of(&inline_body[t]), Port::None))
+        })
+        .collect();
+    patch_conns.extend(conns.clone());
+
+    let name = format!("p{}", macros.len());
+    let mut patched_macros = macros.clone();
+    patched_macros.push(AstMacro {
+        name: name.clone(),
+        kind: MacroKind::Patch,
+        default_params: Some(defaults),
+        virtual_ports_in: vports.iter().map(|v| v.name.clone()).collect(),
+        declarations: vec![scope(body)],
+        connections: patch_conns,
+        sink: sink_alias.clone(),
+    });
+
+    let sources: Vec<&NodeDeclaration> = vports.iter().filter_map(|v| v.source.as_ref()).collect();
+    let top_sink = match downstream {
+        true => OUT.to_string(),
+        false => INSTANCE.to_string(),
+    };
+
+    // Patched: every source feeds the instance through the named virtual port.
+    let mut patched_decls: Vec<NodeDeclaration> = sources.iter().map(|d| (*d).clone()).collect();
+    patched_decls.push(NodeDeclaration {
+        node_type: name,
+        alias: Some(INSTANCE.to_string()),
+        params: Some(overrides),
+        count: 1,
+    });
+    let mut patched_conns: Vec<Connection> = vports
+        .iter()
+        .filter_map(|v| v.source.as_ref().map(|s| (v, s)))
+        .map(|(v, s)| {
+            wire(
+                alias_of(s),
+                Port::None,
+                INSTANCE,
+                Port::Named(v.name.clone()),
+            )
+        })
+        .collect();
+    if downstream {
+        patched_decls.push(leaf(OUT, 1));
+        patched_conns.push(wire(INSTANCE, Port::None, OUT, Port::None));
+    }
+
+    // Inlined: the same sources feed each interior target directly.
+    let mut inline_decls: Vec<NodeDeclaration> = sources.iter().map(|d| (*d).clone()).collect();
+    inline_decls.extend(inline_body.iter().cloned());
+    let mut inline_conns: Vec<Connection> = vports
+        .iter()
+        .filter_map(|v| v.source.as_ref().map(|s| (v, s)))
+        .flat_map(|(v, s)| {
+            v.targets.iter().map(|&t| {
+                wire(
+                    alias_of(s),
+                    Port::None,
+                    alias_of(&inline_body[t]),
+                    Port::None,
+                )
+            })
+        })
+        .collect();
+    inline_conns.extend(conns);
+    if downstream {
+        inline_decls.push(leaf(OUT, 1));
+        inline_conns.push(wire(&sink_alias, Port::None, OUT, Port::None));
+    }
+
+    Transparency {
+        patched: Ast {
+            declarations: vec![scope(patched_decls)],
+            connections: patched_conns,
+            macros: patched_macros,
+            sink: top_sink.clone(),
+            source: None,
+        },
+        inlined: Ast {
+            declarations: vec![scope(inline_decls)],
+            connections: inline_conns,
+            macros,
+            sink: match downstream {
+                true => top_sink,
+                false => sink_alias,
+            },
+            source: None,
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multiplicity: one subject spawned `* n` versus declared n times
+// ---------------------------------------------------------------------------
+
+const SUBJECT: &str = "a";
+const SRC: &str = "src";
+const SNK: &str = "snk";
+
+#[derive(Debug, Clone)]
+struct Multiplicity {
+    spawned: Ast,
+    declared: Ast,
+}
+
+/// The instances a selector picks out of `n`.
+fn selected(sel: &NodeSelector, n: u32) -> Vec<usize> {
+    match sel {
+        NodeSelector::Single | NodeSelector::All => (0..n as usize).collect(),
+        NodeSelector::Index(i) => vec![*i],
+        NodeSelector::Range(a, b) => (*a..*b).collect(),
+    }
+}
+
+fn at(node: &str, sel: NodeSelector) -> Endpoint {
+    Endpoint {
+        node: node.to_string(),
+        node_selector: sel,
+        port: Port::None,
+    }
+}
+
+fn build_multiplicity(
+    macro_specs: Vec<MacroSpec>,
+    use_patch: bool,
+    n: u32,
+    params: Object,
+    upstream: Option<NodeSelector>,
+    downstream: Option<NodeSelector>,
+) -> Multiplicity {
+    let mut macros: Vec<AstMacro> = Vec::new();
+    for (i, spec) in macro_specs.into_iter().enumerate() {
+        let mac = build_macro(i, spec, &macros);
+        macros.push(mac);
+    }
+
+    // The last macro is the deepest, so a patch subject nests as far as possible.
+    let node_type = match use_patch && !macros.is_empty() {
+        true => macros.last().expect("checked non-empty").name.clone(),
+        false => LEAF_TYPE.to_string(),
+    };
+    let subject = |alias: &str, count: u32| NodeDeclaration {
+        node_type: node_type.clone(),
+        alias: Some(alias.to_string()),
+        params: Some(params.clone()),
+        count,
+    };
+
+    let clamped = |sel: Option<NodeSelector>| {
+        sel.map(|mut s| {
+            clamp(&mut s, n);
+            s
+        })
+    };
+    let (upstream, downstream) = (clamped(upstream), clamped(downstream));
+
+    let mut spawn_decls = Vec::new();
+    let mut declare_decls = Vec::new();
+    let (mut spawn_conns, mut declare_conns) = (Vec::new(), Vec::new());
+
+    if let Some(sel) = &upstream {
+        spawn_decls.push(leaf(SRC, 1));
+        declare_decls.push(leaf(SRC, 1));
+        spawn_conns.push(Connection {
+            source: at(SRC, NodeSelector::Single),
+            sink: at(SUBJECT, sel.clone()),
+        });
+        declare_conns.extend(
+            selected(sel, n)
+                .into_iter()
+                .map(|i| wire(SRC, Port::None, &format!("{SUBJECT}{i}"), Port::None)),
+        );
+    }
+
+    spawn_decls.push(subject(SUBJECT, n));
+    declare_decls.extend((0..n).map(|i| subject(&format!("{SUBJECT}{i}"), 1)));
+
+    if let Some(sel) = &downstream {
+        spawn_decls.push(leaf(SNK, 1));
+        declare_decls.push(leaf(SNK, 1));
+        spawn_conns.push(Connection {
+            source: at(SUBJECT, sel.clone()),
+            sink: at(SNK, NodeSelector::Single),
+        });
+        declare_conns.extend(
+            selected(sel, n)
+                .into_iter()
+                .map(|i| wire(&format!("{SUBJECT}{i}"), Port::None, SNK, Port::None)),
+        );
+    }
+
+    // Spawning binds the sink to the last instance, so the declared form names it.
+    let (spawn_sink, declare_sink) = match downstream.is_some() {
+        true => (SNK.to_string(), SNK.to_string()),
+        false => (SUBJECT.to_string(), format!("{SUBJECT}{}", n - 1)),
+    };
+
+    Multiplicity {
+        spawned: Ast {
+            declarations: vec![scope(spawn_decls)],
+            connections: spawn_conns,
+            macros: macros.clone(),
+            sink: spawn_sink,
+            source: None,
+        },
+        declared: Ast {
+            declarations: vec![scope(declare_decls)],
+            connections: declare_conns,
+            macros,
+            sink: declare_sink,
+            source: None,
+        },
+    }
+}
+
+/// Graph shape keyed by alias, under a rename that lines two forms up.
+#[derive(Debug, PartialEq)]
+struct Fingerprint {
+    nodes: Vec<String>,
+    edges: Vec<String>,
+    sink: Option<String>,
+}
+
+fn strip(prefix: &str) -> impl Fn(&str) -> String + '_ {
+    move |alias| alias.strip_prefix(prefix).unwrap_or(alias).to_string()
+}
+
+fn fingerprint(graph: &IRGraph, rename: impl Fn(&str) -> String) -> Fingerprint {
+    let name = |id: NodeId| rename(&graph.get_node(id).expect("endpoint must exist").alias);
+    let mut nodes: Vec<String> = graph
+        .nodes()
+        .map(|n| {
+            format!(
+                "{} {}::{} {:?}",
+                name(n.id),
+                n.namespace,
+                n.node_type,
+                n.params
+            )
+        })
+        .collect();
+    let mut edges: Vec<String> = graph
+        .edges()
+        .iter()
+        .map(|e| {
+            format!(
+                "{}{:?} -> {}{:?}",
+                name(e.source),
+                e.source_port,
+                name(e.sink),
+                e.sink_port
+            )
+        })
+        .collect();
+    nodes.sort();
+    edges.sort();
+    Fingerprint {
+        nodes,
+        edges,
+        sink: graph.sink.map(name),
     }
 }
 
@@ -360,6 +765,43 @@ fn decl_spec() -> impl Strategy<Value = DeclSpec> {
     (any::<bool>(), any::<bool>(), 0..4usize, 1u32..=3, params())
 }
 
+fn vport_spec() -> impl Strategy<Value = VPortSpec> {
+    (
+        any::<bool>(),
+        prop::collection::vec(0..8usize, 0..3),
+        any::<bool>(),
+    )
+}
+
+fn multiplicity() -> impl Strategy<Value = Multiplicity> {
+    (
+        prop::collection::vec(macro_spec(), 0..3),
+        any::<bool>(),
+        2u32..=4,
+        params(),
+        prop::option::of(selector()),
+        prop::option::of(selector()),
+    )
+        .prop_map(|(macros, use_patch, n, params, upstream, downstream)| {
+            build_multiplicity(macros, use_patch, n, params, upstream, downstream)
+        })
+}
+
+fn transparency() -> impl Strategy<Value = Transparency> {
+    (
+        prop::collection::vec(macro_spec(), 0..4),
+        prop::collection::vec(decl_spec(), 1..5),
+        prop::collection::vec(wire_spec(), 0..5),
+        prop::collection::vec(vport_spec(), 0..4),
+        0..8usize,
+        any::<bool>(),
+        prop::collection::vec((any::<bool>(), any::<bool>()), 0..6),
+    )
+        .prop_map(|(macros, decls, wires, vports, sink, downstream, picks)| {
+            build_transparency(macros, decls, wires, vports, sink, downstream, picks)
+        })
+}
+
 fn wire_spec() -> impl Strategy<Value = WireSpec> {
     (0..8usize, 0..8usize, selector(), port(), selector(), port())
 }
@@ -390,7 +832,7 @@ fn ast() -> impl Strategy<Value = Ast> {
                 macros.push(mac);
             }
             let decls = build_decls(decl_specs, &macros, "a");
-            let connections = build_conns(wire_specs, &decls, &macros);
+            let connections = build_conns(wire_specs, &decls);
             Ast {
                 sink: alias_of(&decls[sink % decls.len()]).to_string(),
                 declarations: vec![DeclarationScope {
@@ -475,6 +917,52 @@ proptest! {
             src
         );
     }
+
+    /// P5: a patch is transparent — instantiating it equals inlining its body.
+    #[test]
+    fn patch_expands_to_its_inlined_body(case in transparency()) {
+        let (patch_src, inline_src) = (render(&case.patched), render(&case.inlined));
+        let patched = Pipeline::default()
+            .run_from_ast(case.patched)
+            .expect("patched form must lower");
+        let inlined = Pipeline::default()
+            .run_from_ast(case.inlined)
+            .expect("inlined form must lower");
+
+        prop_assert_eq!(
+            fingerprint(&patched, strip(&format!("{INSTANCE}."))),
+            fingerprint(&inlined, strip("")),
+            "patched:\n{}\ninlined:\n{}",
+            patch_src,
+            inline_src
+        );
+    }
+
+    /// P6: `x * n` equals declaring `x` n times, for leaves and for patches.
+    #[test]
+    fn spawning_n_equals_declaring_n(case in multiplicity()) {
+        let (spawn_src, declare_src) = (render(&case.spawned), render(&case.declared));
+        let spawned = Pipeline::default()
+            .run_from_ast(case.spawned)
+            .expect("spawned form must lower");
+        let declared = Pipeline::default()
+            .run_from_ast(case.declared)
+            .expect("declared form must lower");
+
+        // Instance `i` of the spawn is the `i`th separate declaration.
+        let unspawn = |alias: &str| match alias.strip_prefix(&format!("{SUBJECT}.")) {
+            Some(rest) => format!("{SUBJECT}{rest}"),
+            None => alias.to_string(),
+        };
+
+        prop_assert_eq!(
+            fingerprint(&spawned, unspawn),
+            fingerprint(&declared, strip("")),
+            "spawned:\n{}\ndeclared:\n{}",
+            spawn_src,
+            declare_src
+        );
+    }
 }
 
 /// Writing the same node type twice without aliases is the natural way to hit this.
@@ -483,6 +971,100 @@ fn repeated_node_type_without_alias_is_rejected() {
     let ast = legato_parser("audio { sine { }, sine { } }\n{ sine }").expect("parses");
     let err = Pipeline::default().run_from_ast(ast).unwrap_err();
     assert!(matches!(err, ValidationError::DuplicateAlias(_)), "{err:?}");
+}
+
+/// A sink-side selector must mean the same thing for a patch as for a leaf.
+#[test]
+fn sink_selector_picks_patch_instances() {
+    let edges = |src: &str| {
+        let graph = Pipeline::default()
+            .run_from_ast(legato_parser(src).expect("parses"))
+            .expect("lowers");
+        graph.edge_count()
+    };
+    let leaf = "audio { leaf: src { }, leaf: a * 3 { } }\nsrc >> a(0)\n{ a }";
+    let patch = "patch p() { audio { leaf: b { } } { b } }\n\
+                 audio { leaf: src { }, p: a * 3 { } }\nsrc >> a(0)\n{ a }";
+    assert_eq!(edges(leaf), 1);
+    assert_eq!(
+        edges(patch),
+        1,
+        "a patch instance ignored its sink selector"
+    );
+}
+
+/// Instance arity is exact: a patch pairs by selected instance, like a leaf.
+#[test]
+fn patch_instance_arity_matches_leaf() {
+    const PATCH: &str = "patch p() { audio { leaf: b { } } { b } }\n";
+
+    let edges = |decls: &str, conn: &str| -> Result<usize, ValidationError> {
+        let src = format!("{PATCH}audio {{ {decls} }}\n{conn}\n{{ snk }}");
+        let ast = legato_parser(&src).expect("parses");
+        Pipeline::default()
+            .run_from_ast(ast)
+            .map(|g| g.edge_count())
+    };
+
+    // Both directions matter: a patch source splits its outgoing edges, a patch
+    // sink resolves its incoming ones, and each has its own arity check.
+    for (src_ty, snk_ty) in [("leaf", "leaf"), ("leaf", "p"), ("p", "leaf"), ("p", "p")] {
+        let at = |s: u32, k: u32| format!("{src_ty}: src * {s} {{ }}, {snk_ty}: snk * {k} {{ }}");
+        let case = format!("{src_ty}->{snk_ty}");
+
+        // 2:4 has no exact pairing and neither side is single.
+        assert!(
+            matches!(
+                edges(&at(4, 4), "src(0..2) >> snk(*)"),
+                Err(ValidationError::SelectionArity(_))
+            ),
+            "{case} 2:4 should be a selection-arity error"
+        );
+        // 2:2 zips the selected instances, however they were declared.
+        assert_eq!(
+            edges(&at(4, 4), "src(0..2) >> snk(0..2)"),
+            Ok(2),
+            "{case} 2:2"
+        );
+        assert_eq!(edges(&at(4, 2), "src(0..2) >> snk(*)"), Ok(2), "{case} 4/2");
+        // One source still broadcasts to many sinks.
+        assert_eq!(edges(&at(4, 4), "src(0) >> snk(*)"), Ok(4), "{case} 1:4");
+    }
+}
+
+/// Expansion order must not depend on which nodes were removed before it.
+#[test]
+fn identical_patch_instances_expand_identically() {
+    let src = r#"
+        patch p0() { audio { leaf: b0 { } } { b0 } }
+        patch p1() {
+            audio { leaf: b0 { }, p0: b1 * 2 { }, p0: b2 * 2 { } }
+            b1(0..1) >> b2
+            { b0 }
+        }
+        audio { p1: a0 { }, p1: a1 { } }
+        { a1 }
+    "#;
+    let graph = Pipeline::default()
+        .run_from_ast(legato_parser(src).expect("parses"))
+        .expect("lowers");
+
+    let wiring = |instance: &str| {
+        let mut edges: Vec<String> = graph
+            .edges()
+            .iter()
+            .map(|e| {
+                let named = |id| graph.get_node(id).expect("endpoint exists").alias.clone();
+                (named(e.source), named(e.sink))
+            })
+            .filter(|(src, _)| src.starts_with(instance))
+            .map(|(src, snk)| format!("{src} -> {snk}"))
+            .map(|s| s.replace(instance, "_"))
+            .collect();
+        edges.sort();
+        edges
+    };
+    assert_eq!(wiring("a0"), wiring("a1"));
 }
 
 #[test]

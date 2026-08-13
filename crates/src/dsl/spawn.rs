@@ -1,3 +1,4 @@
+use crate::builder::ValidationError;
 use crate::dsl::{
     ir::*,
     pipeline::GraphPass,
@@ -13,13 +14,13 @@ impl GraphPass for SpawnKNodesPass {
         "SpawnKNodesPass"
     }
 
-    fn run(&self, graph: IRGraph) -> IRGraph {
+    fn run(&self, graph: IRGraph) -> Result<IRGraph, ValidationError> {
         self.expand_nodes(graph)
     }
 }
 
 impl SpawnKNodesPass {
-    fn expand_nodes(&self, mut graph: IRGraph) -> IRGraph {
+    fn expand_nodes(&self, mut graph: IRGraph) -> Result<IRGraph, ValidationError> {
         let multi: Vec<(NodeId, IRNode)> = graph
             .nodes()
             .filter(|n| n.count > 1)
@@ -27,7 +28,7 @@ impl SpawnKNodesPass {
             .collect();
 
         if multi.is_empty() {
-            return graph;
+            return Ok(graph);
         }
 
         let multi_ids: std::collections::HashSet<NodeId> =
@@ -77,7 +78,7 @@ impl SpawnKNodesPass {
             let srcs = edge.source_selector.select(&src_pool).to_vec();
             let snks = edge.sink_selector.select(&snk_pool).to_vec();
 
-            Self::expand_edge(&mut graph, edge, &srcs, &snks);
+            Self::expand_edge(&mut graph, edge, &srcs, &snks)?;
         }
 
         // ── Phase 3: remove originals (also removes their incident edges) ──
@@ -92,26 +93,29 @@ impl SpawnKNodesPass {
             graph.remove_node(*orig_id);
         }
 
-        graph
+        Ok(graph)
     }
 
     /// Wire up a concrete set of source and sink NodeIds according to the
     /// original edge's port configuration.
-    fn expand_edge(graph: &mut IRGraph, edge: &IREdge, srcs: &[NodeId], snks: &[NodeId]) {
+    fn expand_edge(
+        graph: &mut IRGraph,
+        edge: &IREdge,
+        srcs: &[NodeId],
+        snks: &[NodeId],
+    ) -> Result<(), ValidationError> {
         // Coupled case: N source instances zipped onto a contiguous port slice
         // of a single sink (e.g. `src(0..N) >> mixer[a..b]`). The instance index
         // selects the concrete port, so this is its own zip rather than a plain
         // node-level broadcast.
         if let Port::Slice(start, end) = &edge.sink_port {
-            assert_eq!(
-                srcs.len(),
-                end - start,
-                "SpawnKNodesPass: source instance count ({}) must equal \
-                 port slice width ({}) for edge to {:?}",
-                srcs.len(),
-                end - start,
-                edge.sink,
-            );
+            if srcs.len() != end - start {
+                return Err(ValidationError::SelectionArity(format!(
+                    "source instance count ({}) must equal port slice width ({})",
+                    srcs.len(),
+                    end - start,
+                )));
+            }
             for (i, &src) in srcs.iter().enumerate() {
                 graph.connect(
                     src,
@@ -120,7 +124,7 @@ impl SpawnKNodesPass {
                     port_for_instance(&edge.sink_port, i),
                 );
             }
-            return;
+            return Ok(());
         }
 
         // Dual of the coupled case above: a *single* source addressed by a
@@ -142,14 +146,14 @@ impl SpawnKNodesPass {
                     edge.sink_port.clone(),
                 );
             }
-            return;
+            return Ok(());
         }
 
         // All other node-level multiplicity follows the shared broadcasting rule.
         let connect = |graph: &mut IRGraph, src: NodeId, snk: NodeId| {
             graph.connect(src, edge.source_port.clone(), snk, edge.sink_port.clone());
         };
-        match broadcast(srcs, snks).unwrap_or_else(|e| panic!("SpawnKNodesPass: {e}")) {
+        match broadcast(srcs, snks).map_err(|e| ValidationError::SelectionArity(e.to_string()))? {
             Plan::Zip(pairs) => {
                 for (src, snk) in pairs {
                     connect(graph, src, snk);
@@ -166,6 +170,7 @@ impl SpawnKNodesPass {
                 }
             }
         }
+        Ok(())
     }
 }
 

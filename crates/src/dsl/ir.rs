@@ -101,6 +101,20 @@ impl NodeSelector {
     pub fn selected_count(&self, total: usize) -> usize {
         self.select(&vec![(); total]).len()
     }
+
+    /// Whether this selector picks instance `i` out of `total`.
+    pub fn selects(&self, i: usize, total: usize) -> bool {
+        match self {
+            Self::Single | Self::All => i < total,
+            Self::Index(j) => *j == i,
+            Self::Range(s, e) => (*s..*e).contains(&i),
+        }
+    }
+
+    /// The instance indices this selector picks out of `total`, in order.
+    pub fn selected_indices(&self, total: usize) -> Vec<usize> {
+        (0..total).filter(|&i| self.selects(i, total)).collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -386,8 +400,11 @@ impl IRGraph {
     }
 
     /// Remove a node and all of its incident edges.
+    ///
+    /// Shifts rather than swaps: passes iterate nodes in insertion order, and
+    /// expansion order decides how selectors resolve.
     pub fn remove_node(&mut self, id: NodeId) {
-        if let Some(node) = self.nodes.swap_remove(&id) {
+        if let Some(node) = self.nodes.shift_remove(&id) {
             self.alias_index.remove(&node.alias);
         }
         self.edges.retain(|e| e.source != id && e.sink != id);
