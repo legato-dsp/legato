@@ -1,7 +1,10 @@
+[workspace]
+members = ["legato-macros"]
+
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.0.41"
+version = "0.0.42"
 edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
@@ -31,6 +34,7 @@ cpal = { version = "0.16.0", features = ["jack"] }
 rtrb = "0.3.3"
 
 [dev-dependencies]
+legato-macros = { path = "legato-macros" }
 criterion = { version = "0.5", features = ["html_reports"] }
 rustfft = "6"
 proptest = "1"

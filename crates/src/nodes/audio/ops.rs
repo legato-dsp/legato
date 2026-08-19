@@ -1,6 +1,7 @@
 use crate::{
     context::AudioContext,
     math::fast_tanh_vf32,
+    msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
@@ -83,9 +84,30 @@ impl PerSampleNode for ApplyOp {
             }
         }
     }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
 }
 
 impl Node for ApplyOp {
+    /// Set the operand applied to every channel, i.e. the `val` param.
+    ///
+    /// Only takes effect while the `val` port is unpatched, since a patched
+    /// port overrides the internal value — same precedence as everywhere else.
+    ///
+    /// Unknown parameter names are ignored rather than panicking. Messages
+    /// originate from user input and arrive on the audio thread, so a bad name
+    /// must not take down the stream. (Several other nodes still `unreachable!`
+    /// here; they predate generated code being able to address them.)
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("val", RtValue::F32(value)) = (payload.param_name, payload.value)
+        {
+            self.val = value;
+        }
+    }
+
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let val_idx = self.ports.audio_in.len() - 1;
         let val_chan = ai[val_idx];
