@@ -51,14 +51,6 @@
             pkgs.pnpm
             pkgs.uv
           ];
-
-          env = {
-            RUSTFLAGS = "-C target-cpu=native";
-          };
-
-          shellHook = ''
-            unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
-          '';
       });
 
       packages = forEachSystem ({ pkgs, nightly, naersk', commonArgs, ... }: {
