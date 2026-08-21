@@ -1,5 +1,12 @@
 {
-  description = "A minimal development and testing environment for Legato with Rust nightly";
+  description = "The toolchain for Legato with Rust nightly";
+
+  nixConfig = {
+    extra-substituters = [ "legato-dsp.cachix.org" ];
+    extra-trusted-public-keys = [
+      "legato-dsp.cachix.org-1:fUg2O/uwyu1SeJsxonkCjJa9c735WnjqUTVuBGlvizc="
+    ];
+  };
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
