@@ -104,6 +104,15 @@ impl Runtime {
     pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
         self.executor.graph.get_node_mut(*key)
     }
+    /// The kind of every node in the built graph, for introspecting graph shape.
+    pub fn node_kinds(&self) -> Vec<&str> {
+        self.executor
+            .graph
+            .nodes()
+            .iter()
+            .map(|n| n.node_kind.as_str())
+            .collect()
+    }
 
     pub fn drain_external_sample_msg(&mut self) {
         let resources = self.context.get_resources_mut();
