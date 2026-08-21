@@ -25,7 +25,7 @@
           };
 
           nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
-            extensions = [ "rust-src" "clippy" "rustfmt" ];
+            extensions = [ "rust-src" "clippy" "rustfmt" "rust-analyzer" ];
           });
 
           craneLib = (crane.mkLib pkgs).overrideToolchain nightly;
