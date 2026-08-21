@@ -1,18 +1,23 @@
 name: CI
-
 on:
   push:
     branches:
       - main
   pull_request:
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -22,16 +27,21 @@ jobs:
         with:
           name: legato-dsp
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       - name: Check Formatting
         run: nix develop .#default -c cargo fmt --manifest-path ./crates/Cargo.toml --check
-
       - name: Clippy
-        run: nix develop .#default -c cargo clippy --manifest-path ./crates/Cargo.toml  --lib -p legato
-
+        run: nix develop .#default -c cargo clippy --manifest-path ./crates/Cargo.toml --lib -p legato
   build:
     needs: lint
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -41,9 +51,7 @@ jobs:
         with:
           name: legato-dsp
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       - name: Nix Build
         run: nix build . --print-build-logs
-
       - name: Nix Test
         run: nix develop .#default -c cargo test --manifest-path ./crates/Cargo.toml --workspace
