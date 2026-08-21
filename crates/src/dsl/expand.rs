@@ -1,5 +1,9 @@
 use crate::builder::ValidationError;
-use crate::dsl::{ir::*, pipeline::GraphPass, resolve::port_for_instance};
+use crate::dsl::{
+    ir::*,
+    pipeline::GraphPass,
+    resolve::{port_for_instance, source_ports},
+};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -191,6 +195,36 @@ impl MacroExpansionPass {
             // Splitting one edge per source instance would otherwise let each
             // half broadcast independently, giving a cross product.
             let sinks = selection_of(graph, edge.sink, &edge.sink_selector);
+
+            // Coupled flatten: N instances zipped instance-major onto a single
+            // sink's port slice. Instances x source-ports must equal the slice
+            // width exactly, so there is one flatten axis and no cross-product.
+            if let (true, 1, Port::Slice(start, end)) = (multi_src, sinks.len(), &edge.sink_port) {
+                let width = end - start;
+                let ports = source_ports(&edge.source_port);
+                if srcs.len() * ports.len() != width {
+                    return Err(ValidationError::SelectionArity(format!(
+                        "source lines ({} instances x {} ports) must equal sink port slice width ({width}) out of patch '{}'",
+                        srcs.len(),
+                        ports.len(),
+                        node.node_type,
+                    )));
+                }
+                for (i, &src) in srcs.iter().enumerate() {
+                    for (offset, source_port) in ports.iter().enumerate() {
+                        graph.connect_multi(
+                            src,
+                            NodeSelector::Single,
+                            source_port.clone(),
+                            edge.sink,
+                            NodeSelector::Single,
+                            Port::Index(start + i * ports.len() + offset),
+                        );
+                    }
+                }
+                continue;
+            }
+
             for (i, &src) in srcs.iter().enumerate() {
                 let resolved_sink_selector =
                     pair_selector(&sinks, i, srcs.len(), &edge.sink_selector).ok_or_else(|| {

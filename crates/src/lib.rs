@@ -89,6 +89,11 @@ impl LegatoApp {
     pub fn get_config(&self) -> Config {
         self.runtime.get_config()
     }
+
+    /// The kind of every node in the built graph, for asserting graph shape.
+    pub fn node_kinds(&self) -> Vec<&str> {
+        self.runtime.node_kinds()
+    }
 }
 
 impl Debug for LegatoApp {

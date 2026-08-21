@@ -535,3 +535,41 @@ fn karplus_polyphony_routes_freq_per_voice() {
         "voice 1 lost 330 Hz (freq mis-routed)"
     );
 }
+
+/// A clean instance-major zip (`s(*) >> g[0..4]`) resolves to one-to-one wires,
+/// so the builder must insert none of its implicit fan DSP nodes; the broadcast
+/// control below proves the check can actually see a `MonoFanOut` when one is
+/// warranted, guarding against the assertion silently passing on any graph.
+#[test]
+fn clean_zip_inserts_no_implicit_fan_nodes() {
+    let zip = r#"
+        audio {
+            saw: s * 4 { chans: 1, freq: 220.0 },
+            gain: g { val: 1.0, chans: 4 }
+        }
+        s(*) >> g[0..4]
+        { g }
+    "#;
+    let app = build(zip, 1);
+    let kinds = app.node_kinds();
+    assert!(
+        !kinds.contains(&"MonoFanOut") && !kinds.contains(&"TrackMixer"),
+        "clean zip inserted an implicit fan node: {kinds:?}"
+    );
+
+    // Broadcasting one source across the same slice genuinely needs a fan-out.
+    let broadcast = r#"
+        audio {
+            saw: s { chans: 1, freq: 220.0 },
+            gain: g { val: 1.0, chans: 4 }
+        }
+        s >> g[0..4]
+        { g }
+    "#;
+    let app = build(broadcast, 1);
+    let kinds = app.node_kinds();
+    assert!(
+        kinds.contains(&"MonoFanOut"),
+        "one-to-many broadcast should insert a MonoFanOut: {kinds:?}"
+    );
+}

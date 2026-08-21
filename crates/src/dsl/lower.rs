@@ -445,6 +445,126 @@ mod spawn_tests {
     }
 
     #[test]
+    fn test_all_selector_distributes_over_sink_port_slice() {
+        // Regression for the poly-voice "clipping" bug: `src(*) >> mixer[0..5]`
+        // must zip five instances onto five mixer ports (instance i -> port i),
+        // not fan every instance across all ports. The buggy bare-`>>` form
+        // summed every source into every port, inflating the mixer's input
+        // edges from 5 to 25; the explicit slice keeps it a clean one-to-one.
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![multi_decl("osc", "src", 5), multi_decl("mixer", "mixer", 1)],
+            )],
+            connections: vec![conn(
+                "src",
+                NodeSelector::All,
+                Port::None,
+                "mixer",
+                NodeSelector::Single,
+                Port::Slice(0, 5),
+            )],
+            sink: "mixer".into(),
+            ..Default::default()
+        };
+
+        let graph = expand(ast);
+
+        // Exactly one edge per instance: five, not twenty-five.
+        assert_eq!(graph.edge_count(), 5);
+        for i in 0..5 {
+            let src = graph.find_node_by_alias(&format!("src.{i}")).unwrap();
+            let out = graph.find_edges_from(&format!("src.{i}"));
+            assert_eq!(out.len(), 1, "src.{i} must feed exactly one port");
+            assert_eq!(out[0].source, src.id);
+            assert_eq!(out[0].sink_port, Port::Index(i));
+        }
+    }
+
+    #[test]
+    fn test_all_selector_flattens_multi_port_over_sink_slice() {
+        // `src(*)[0..2] >> mixer[0..6]`: 3 instances each contributing 2 ports
+        // zip exactly onto the width-6 slice, instance-major: (instance i, port
+        // j) -> mixer[i*2 + j]. The source slice fixes ports-per-instance, so
+        // there is no width/instances inference.
+        const SP: usize = 2;
+        let ast = Ast {
+            declarations: vec![scope(
+                "audio",
+                vec![multi_decl("osc", "src", 3), multi_decl("mixer", "mixer", 1)],
+            )],
+            connections: vec![conn(
+                "src",
+                NodeSelector::All,
+                Port::Slice(0, 2),
+                "mixer",
+                NodeSelector::Single,
+                Port::Slice(0, 6),
+            )],
+            sink: "mixer".into(),
+            ..Default::default()
+        };
+
+        let graph = expand(ast);
+
+        // 3 instances x 2 ports = 6 flattened one-to-one edges.
+        assert_eq!(graph.edge_count(), 6);
+        for i in 0..3 {
+            let out = graph.find_edges_from(&format!("src.{i}"));
+            assert_eq!(out.len(), SP, "src.{i} must contribute {SP} ports");
+            for j in 0..SP {
+                let edge = out
+                    .iter()
+                    .find(|e| e.source_port == Port::Index(j))
+                    .unwrap_or_else(|| panic!("src.{i} missing source port {j}"));
+                // Each instance owns the contiguous window [i*sp, i*sp + sp).
+                assert_eq!(edge.sink_port, Port::Index(i * SP + j));
+            }
+        }
+    }
+
+    #[test]
+    fn test_patch_source_flattens_over_sink_slice() {
+        // Same flatten through the patch path: three `voice` instances each own
+        // two consecutive mixer ports (voice.i's ports -> mixer[2i], mixer[2i+1]).
+        use crate::dsl::parse::legato_parser;
+        const SP: usize = 2;
+        let src = r#"
+            patch voice() { audio { osc: b { } } { b } }
+            audio { voice: v * 3 { }, mixer: mixer { } }
+            v(*)[0..2] >> mixer[0..6]
+            { mixer }
+        "#;
+        let graph = expand(legato_parser(src).expect("parses"));
+
+        let edges = graph.find_edges_to("mixer");
+        assert_eq!(edges.len(), 6);
+        // Every mixer port is fed exactly once.
+        for port in 0..6 {
+            assert_eq!(
+                edges
+                    .iter()
+                    .filter(|e| e.sink_port == Port::Index(port))
+                    .count(),
+                1,
+                "mixer port {port} must have exactly one feeder"
+            );
+        }
+        // Each instance feeds two consecutive ports with its ports 0 and 1.
+        for i in 0..3 {
+            let out = graph.find_edges_from(&format!("v.{i}.b"));
+            assert_eq!(out.len(), SP, "v.{i} must contribute {SP} ports");
+            for j in 0..SP {
+                let edge = out
+                    .iter()
+                    .find(|e| e.source_port == Port::Index(j))
+                    .unwrap_or_else(|| panic!("v.{i} missing source port {j}"));
+                assert_eq!(edge.sink_port, Port::Index(i * SP + j));
+            }
+        }
+    }
+
+    #[test]
     fn test_broadcast_single_source_to_multi_sink() {
         let ast = Ast {
             declarations: vec![scope(

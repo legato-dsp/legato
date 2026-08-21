@@ -24,6 +24,17 @@ pub fn port_for_instance(port: &Port, i: usize) -> Port {
     }
 }
 
+/// The concrete per-instance source ports a source spec expands to; its length is the source's ports-per-instance in a coupled `src(*) >> sink[a..b]` flatten.
+pub fn source_ports(source_port: &Port) -> Vec<Port> {
+    match source_port {
+        Port::Slice(start, end) => (*start..*end).map(Port::Index).collect(),
+        Port::Stride { start, end, stride } => {
+            (*start..*end).step_by(*stride).map(Port::Index).collect()
+        }
+        other => vec![other.clone()],
+    }
+}
+
 /// The two selections of a connection could not be matched under the
 /// broadcasting rules (i.e. an `n:m` connection with `n != m`, neither being 1).
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,7 +2,7 @@ use crate::builder::ValidationError;
 use crate::dsl::{
     ir::*,
     pipeline::GraphPass,
-    resolve::{Plan, broadcast, port_for_instance},
+    resolve::{Plan, broadcast, port_for_instance, source_ports},
 };
 use std::collections::HashMap;
 
@@ -109,20 +109,27 @@ impl SpawnKNodesPass {
         // selects the concrete port, so this is its own zip rather than a plain
         // node-level broadcast.
         if let Port::Slice(start, end) = &edge.sink_port {
-            if srcs.len() != end - start {
+            let width = end - start;
+            let ports = source_ports(&edge.source_port);
+            // Exact zip: instances x source-ports must equal the slice width, so
+            // there is a single flatten axis and no cross-product inference.
+            if srcs.len() * ports.len() != width {
                 return Err(ValidationError::SelectionArity(format!(
-                    "source instance count ({}) must equal port slice width ({})",
+                    "source lines ({} instances x {} ports) must equal port slice width ({width})",
                     srcs.len(),
-                    end - start,
+                    ports.len(),
                 )));
             }
+            // Flatten instance-major: instance i owns ports [i*len, i*len + len).
             for (i, &src) in srcs.iter().enumerate() {
-                graph.connect(
-                    src,
-                    edge.source_port.clone(),
-                    snks[0],
-                    port_for_instance(&edge.sink_port, i),
-                );
+                for (offset, source_port) in ports.iter().enumerate() {
+                    graph.connect(
+                        src,
+                        source_port.clone(),
+                        snks[0],
+                        Port::Index(start + i * ports.len() + offset),
+                    );
+                }
             }
             return Ok(());
         }

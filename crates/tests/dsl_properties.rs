@@ -1081,3 +1081,101 @@ fn duplicate_alias_inside_patch_is_rejected() {
     let err = Pipeline::default().run_from_ast(ast).unwrap_err();
     assert!(matches!(err, ValidationError::DuplicateAlias(_)), "{err:?}");
 }
+
+/// Resolved edges keyed by endpoint alias and port, order-independent.
+fn edge_set(graph: &IRGraph) -> BTreeSet<String> {
+    let alias = |id| {
+        graph
+            .get_node(id)
+            .expect("endpoint must exist")
+            .alias
+            .clone()
+    };
+    graph
+        .edges()
+        .iter()
+        .map(|e| {
+            format!(
+                "{}{:?} -> {}{:?}",
+                alias(e.source),
+                e.source_port,
+                alias(e.sink),
+                e.sink_port
+            )
+        })
+        .collect()
+}
+
+fn lower_src(src: &str) -> IRGraph {
+    Pipeline::default()
+        .run_from_ast(legato_parser(src).expect("source must parse"))
+        .expect("source must lower")
+}
+
+proptest! {
+    /// Flatten-distributes (single dimension, `sp = 1`): `src(*) >> mixer[0..n]`
+    /// zips instance `i` onto port `i`, which must be identical to writing the n
+    /// explicit `src(i) >> mixer[i]` wires. This is the invariant the poly-voice
+    /// clipping bug violated — it fanned each instance across *every* port (an
+    /// `n:n` cross-product plus a summing mixer) instead of a one-to-one zip.
+    #[test]
+    fn all_selector_slice_equals_explicit_wires(n in 2u32..=8) {
+        let decls = format!("audio {{ leaf: src * {n} {{ }}, leaf: mixer {{ }} }}");
+        let sliced = format!("{decls}\nsrc(*) >> mixer[0..{n}]\n{{ mixer }}");
+        let explicit: String = (0..n).map(|i| format!("src({i}) >> mixer[{i}]\n")).collect();
+        let explicit = format!("{decls}\n{explicit}{{ mixer }}");
+
+        prop_assert_eq!(
+            edge_set(&lower_src(&sliced)),
+            edge_set(&lower_src(&explicit)),
+            "sliced:\n{}\nexplicit:\n{}",
+            sliced,
+            explicit
+        );
+    }
+
+    /// Flatten-distributes (`sp > 1`): `src(*)[0..sp] >> mixer[0..n*sp]` lays each
+    /// instance's `sp` ports onto a contiguous window, instance-major. It must
+    /// equal writing every `src(i)[j] >> mixer[i*sp + j]` line by hand — a single
+    /// flatten axis, no cross-product. The exact `n*sp == width` check means a
+    /// mismatched width is rejected rather than silently inferred.
+    #[test]
+    fn flatten_slice_equals_explicit_wires(n in 2u32..=6, sp in 2u32..=4) {
+        let width = n * sp;
+        let decls = format!("audio {{ leaf: src * {n} {{ }}, leaf: mixer {{ }} }}");
+        let sliced = format!("{decls}\nsrc(*)[0..{sp}] >> mixer[0..{width}]\n{{ mixer }}");
+        let explicit: String = (0..n)
+            .flat_map(|i| (0..sp).map(move |j| format!("src({i})[{j}] >> mixer[{}]\n", i * sp + j)))
+            .collect();
+        let explicit = format!("{decls}\n{explicit}{{ mixer }}");
+
+        prop_assert_eq!(
+            edge_set(&lower_src(&sliced)),
+            edge_set(&lower_src(&explicit)),
+            "sliced:\n{}\nexplicit:\n{}",
+            sliced,
+            explicit
+        );
+    }
+
+    /// A width that is not `instances * source_ports` has no single-axis flatten
+    /// and must be a selection-arity error, never a silent cross-product.
+    #[test]
+    fn mismatched_flatten_width_is_rejected(n in 2u32..=6, sp in 1u32..=3, slack in 1u32..=3) {
+        // Any width the exact product can't hit (offset by `slack`, avoiding 0).
+        let width = n * sp + slack;
+        let src = format!(
+            "audio {{ leaf: src * {n} {{ }}, leaf: mixer {{ }} }}\n\
+             src(*)[0..{sp}] >> mixer[0..{width}]\n{{ mixer }}"
+        );
+        let err = Pipeline::default()
+            .run_from_ast(legato_parser(&src).expect("parses"))
+            .unwrap_err();
+        prop_assert!(
+            matches!(err, ValidationError::SelectionArity(_)),
+            "expected SelectionArity for {n}x{sp} into width {width}, got {:?}\n{}",
+            err,
+            src
+        );
+    }
+}
