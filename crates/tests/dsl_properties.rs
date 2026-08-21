@@ -1084,7 +1084,13 @@ fn duplicate_alias_inside_patch_is_rejected() {
 
 /// Resolved edges keyed by endpoint alias and port, order-independent.
 fn edge_set(graph: &IRGraph) -> BTreeSet<String> {
-    let alias = |id| graph.get_node(id).expect("endpoint must exist").alias.clone();
+    let alias = |id| {
+        graph
+            .get_node(id)
+            .expect("endpoint must exist")
+            .alias
+            .clone()
+    };
     graph
         .edges()
         .iter()

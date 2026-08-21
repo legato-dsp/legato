@@ -542,7 +542,10 @@ mod spawn_tests {
         // Every mixer port is fed exactly once.
         for port in 0..6 {
             assert_eq!(
-                edges.iter().filter(|e| e.sink_port == Port::Index(port)).count(),
+                edges
+                    .iter()
+                    .filter(|e| e.sink_port == Port::Index(port))
+                    .count(),
                 1,
                 "mixer port {port} must have exactly one feeder"
             );
