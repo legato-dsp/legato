@@ -2,7 +2,7 @@
   description = "The toolchain for Legato with Rust nightly";
 
   nixConfig = {
-    extra-substituters = [ "legato-dsp.cachix.org" ];
+    extra-substituters = [ "https://legato-dsp.cachix.org" ];
     extra-trusted-public-keys = [
       "legato-dsp.cachix.org-1:fUg2O/uwyu1SeJsxonkCjJa9c735WnjqUTVuBGlvizc="
     ];
@@ -10,11 +10,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    naersk.url = "github:nix-community/naersk";
+    crane.url = "github:ipetkov/crane";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, naersk, rust-overlay, ... }:
+  outputs = { self, nixpkgs, crane, rust-overlay, ... }:
     let
       supportedSystems = [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" "aarch64-linux" ];
       forEachSystem = f: nixpkgs.lib.genAttrs supportedSystems (system:
@@ -28,21 +28,33 @@
             extensions = [ "rust-src" "clippy" "rustfmt" ];
           });
 
-          naersk' = naersk.lib.${system}.override {
-            cargo = nightly;
-            rustc = nightly;
+          craneLib = (crane.mkLib pkgs).overrideToolchain nightly;
+
+          src = nixpkgs.lib.fileset.toSource {
+            root = ./crates;
+            fileset = nixpkgs.lib.fileset.unions [
+              (craneLib.fileset.commonCargoSources ./crates)
+              (nixpkgs.lib.fileset.fileFilter (file: file.hasExt "legato") ./crates)
+            ];
           };
 
           commonArgs = {
+            inherit src;
+            strictDeps = true;
+
             nativeBuildInputs = with pkgs; [ clang pkg-config ];
             buildInputs = with pkgs; [
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ udev alsa-lib jack2 ffmpeg_6-full   ];
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ udev alsa-lib jack2 ffmpeg_6-full ];
+
+            RUSTFLAGS = if pkgs.stdenv.isx86_64 then "-C target-cpu=x86-64-v3" else "";
           };
-        in f { inherit pkgs system nightly naersk' commonArgs; });
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        in f { inherit pkgs system nightly craneLib commonArgs cargoArtifacts; });
     in
     {
-      devShells = forEachSystem ({ pkgs, nightly, commonArgs, ... }:
-        pkgs.mkShell {
+      devShells = forEachSystem ({ pkgs, nightly, commonArgs, ... }: {
+        default = pkgs.mkShell {
           nativeBuildInputs = commonArgs.nativeBuildInputs;
           buildInputs = commonArgs.buildInputs ++ [
             nightly
@@ -51,29 +63,18 @@
             pkgs.pnpm
             pkgs.uv
           ];
+        };
       });
 
-      packages = forEachSystem ({ pkgs, nightly, naersk', commonArgs, ... }: {
-        default = naersk'.buildPackage {
-          src = ./crates;
-          cargo = nightly;
-          rustc = nightly;
+      packages = forEachSystem ({ craneLib, commonArgs, cargoArtifacts, ... }: {
+        default = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+        });
 
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
-          buildInputs = commonArgs.buildInputs;
-          RUSTFLAGS = if pkgs.stdenv.isx86_64 then "-C target-cpu=x86-64-v3" else "";
-        };
-
-        generate-docs = naersk'.buildPackage {
-          src = ./crates;
-          cargo = nightly;
-          rustc = nightly;
-          singleStep = true;
-
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
-          buildInputs = commonArgs.buildInputs;
-          cargoBuildOptions = prev: prev ++ [ "--features" "docs" "--bin" "export-docs" ];
-        };
+        generate-docs = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          cargoExtraArgs = "--features docs --bin export-docs";
+        });
       });
     };
 }

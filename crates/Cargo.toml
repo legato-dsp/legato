@@ -4,7 +4,7 @@ members = ["legato-macros"]
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.0.42"
+version = "0.0.43"
 edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
@@ -29,7 +29,7 @@ midir = "0.10.3"
 crossbeam = "0.8.4"
 halfband = "0.2.0"
 ariadne = "0.6.0"
-chumsky = "0.12.0"
+chumsky = { version = "0.12.0", default-features = false, features = ["std"] }
 cpal = { version = "0.16.0", features = ["jack"] }
 rtrb = "0.3.3"
 
