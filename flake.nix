@@ -61,7 +61,6 @@
             pkgs.pre-commit
             pkgs.nodejs
             pkgs.pnpm
-            pkgs.uv
           ];
         };
       });
