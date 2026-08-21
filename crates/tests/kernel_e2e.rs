@@ -573,3 +573,103 @@ fn clean_zip_inserts_no_implicit_fan_nodes() {
         "one-to-many broadcast should insert a MonoFanOut: {kinds:?}"
     );
 }
+
+/// A *bare* instance-major zip (`s(*) >> g`, no explicit port slice) whose
+/// source count matches the sink's inputs must walk along and pair 1:1, exactly
+/// like the sliced form — not broadcast each source across every input (which
+/// inserts a `MonoFanOut` per source and over-sums into every port).
+#[test]
+fn bare_zip_matching_arity_walks_and_pairs() {
+    let bare = r#"
+        audio {
+            saw: s * 4 { chans: 1, freq: 220.0 },
+            gain: g { val: 1.0, chans: 4 }
+        }
+        s(*) >> g
+        { g }
+    "#;
+    let app = build(bare, 1);
+    let kinds = app.node_kinds();
+    assert!(
+        !kinds.contains(&"MonoFanOut") && !kinds.contains(&"TrackMixer"),
+        "bare matching-arity zip inserted an implicit fan node: {kinds:?}"
+    );
+}
+
+/// A bare zip whose source count exceeds the sink's inputs cannot pair 1:1;
+/// rather than silently broadcasting-and-summing, the builder rejects it so the
+/// author names the ports (`>> g[0..N]`) to fan or mix on purpose.
+#[test]
+fn bare_zip_overrun_is_rejected() {
+    let overrun = r#"
+        audio {
+            saw: s * 5 { chans: 1, freq: 220.0 },
+            track_mixer: m { tracks: 4, chans_per_track: 1 }
+        }
+        s(*) >> m
+        { m }
+    "#;
+    let err = std::panic::catch_unwind(|| build(overrun, 1));
+    assert!(err.is_err(), "bare zip overrun should be rejected");
+}
+
+/// The full poly-voice signal path: five spawned voices bare-zip onto a
+/// 5-track mixer (`voice(*) >> track_mixer`). The one `mono_fan_out` in the
+/// graph is *declared* (kind `mono_fan_out`), so the auto-inserted broadcast
+/// kind (`MonoFanOut`) must be entirely absent — proving the zip walked and
+/// paired 1:1 instead of fanning every voice across all five tracks.
+#[test]
+fn poly_voice_bare_zip_adds_no_auto_fan_out() {
+    let src = r#"
+        patch voice(
+            attack = 50.0,
+            decay = 30.0,
+            sustain = 0.3,
+            release = 50.0
+        ) {
+            in freq gate
+
+            audio {
+                saw { chans: 1 },
+                adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+            }
+
+            freq >> saw
+            gate >> adsr.gate
+            saw >> adsr
+
+            { adsr }
+        }
+
+        patches {
+            voice * 5 { },
+        }
+
+        audio {
+            svf { chans: 1, cutoff: 3600.0, q: 0.4, type: "lowpass" },
+            mono_fan_out { chans: 2 },
+            track_mixer { tracks: 5, chans_per_track: 1 },
+            plate480: verb { predelay: 32.0, decay: 0.8, damping: 0.3, mix: 0.8 }
+        }
+
+        midi {
+            poly_voice { chan: 0, voices: 5 }
+        }
+
+        poly_voice[0:10:3] >> voice(*).gate
+        poly_voice[1:10:3] >> voice(*).freq
+
+        voice(*) >> track_mixer
+
+        track_mixer >> svf
+        svf >> mono_fan_out >> verb
+
+        { verb }
+    "#;
+    let app = build(src, 2);
+    let kinds = app.node_kinds();
+    assert!(
+        !kinds.contains(&"MonoFanOut"),
+        "poly-voice bare zip inserted an auto MonoFanOut: {kinds:?}"
+    );
+}

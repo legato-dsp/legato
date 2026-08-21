@@ -516,6 +516,50 @@ where
             );
         }
     }
+
+    /// The audio-out port indices a source spec resolves to on its node.
+    fn source_out_indices(&self, key: &NodeKey, port: &Port) -> Vec<usize> {
+        let ports = self.runtime.get_node_ports(key);
+        match port {
+            Port::None => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
+            Port::Index(i) => vec![*i],
+            Port::Named(name) => vec![
+                ports
+                    .audio_out
+                    .iter()
+                    .find(|p| p.name == name)
+                    .unwrap_or_else(|| panic!("Could not find index for named port {name}"))
+                    .index,
+            ],
+            Port::Slice(start, end) => (*start..*end).collect(),
+            Port::Stride { start, end, stride } => (*start..*end).step_by(*stride).collect(),
+        }
+    }
+
+    /// The audio-in port indices on `sink` whose kind matches `kind`.
+    fn matched_audio_in(&self, sink: &NodeKey, kind: PortKind) -> Vec<usize> {
+        self.runtime
+            .get_node_ports(sink)
+            .audio_in
+            .iter()
+            .filter(|p| p.kind == kind)
+            .map(|p| p.index)
+            .collect()
+    }
+
+    /// The kind of the first resolved source out port, defaulting to audio.
+    fn source_kind(&self, key: &NodeKey, out_indices: &[usize]) -> PortKind {
+        out_indices
+            .first()
+            .and_then(|&i| {
+                self.runtime
+                    .get_node_ports(key)
+                    .audio_out
+                    .get(i)
+                    .map(|p| p.kind)
+            })
+            .unwrap_or(PortKind::Audio)
+    }
 }
 
 /// Which side of a node a port index refers to, used by port-range validation.
@@ -651,13 +695,81 @@ impl LegatoBuilder<DslBuilding> {
         }
 
         // Wire edges using the NodeId -> NodeKey map (no string lookups).
+        //
+        // Bare `>>` fan groups: when several *narrow* sources (each covering
+        // fewer lines than the sink has matching inputs) land on one sink with
+        // no explicit sink port, they zip instance-major onto those inputs
+        // instead of each broadcasting across every input (which over-sums).
+        // A full-width bare edge, or a lone one, is left to the normal path so
+        // stacked stereo feeds still fan-in/sum. Grouping here — rather than in
+        // the IR — keeps `x * n >> sink` identical to n separate `x_i >> sink`
+        // statements, since both reach the builder as the same portless edges.
+        let mut narrow_bare_count: HashMap<NodeKey, usize> = HashMap::new();
         for edge in ir.edges() {
-            self._connect_ref_self(AddConnectionProps {
-                source: ir_to_runtime[&edge.source],
-                source_kind: edge.source_port.clone(),
-                sink: ir_to_runtime[&edge.sink],
-                sink_kind: edge.sink_port.clone(),
-            });
+            if !matches!(edge.sink_port, Port::None) {
+                continue;
+            }
+            let source = ir_to_runtime[&edge.source];
+            let sink = ir_to_runtime[&edge.sink];
+            let out_indices = self.source_out_indices(&source, &edge.source_port);
+            let kind = self.source_kind(&source, &out_indices);
+            let matched = self.matched_audio_in(&sink, kind);
+            if out_indices.len() < matched.len() {
+                *narrow_bare_count.entry(sink).or_default() += 1;
+            }
+        }
+
+        // A per-sink cursor over its matching inputs as a fan group fills them.
+        let mut zip_cursor: HashMap<NodeKey, usize> = HashMap::new();
+
+        for edge in ir.edges() {
+            let source = ir_to_runtime[&edge.source];
+            let sink = ir_to_runtime[&edge.sink];
+
+            let out_indices = self.source_out_indices(&source, &edge.source_port);
+            let kind = self.source_kind(&source, &out_indices);
+            let matched = self.matched_audio_in(&sink, kind);
+
+            let in_fan_group = matches!(edge.sink_port, Port::None)
+                && out_indices.len() < matched.len()
+                && narrow_bare_count.get(&sink).copied().unwrap_or(0) > 1;
+
+            if !in_fan_group {
+                self._connect_ref_self(AddConnectionProps {
+                    source,
+                    source_kind: edge.source_port.clone(),
+                    sink,
+                    sink_kind: edge.sink_port.clone(),
+                });
+                continue;
+            }
+
+            // Zip this group member onto the next free matching inputs.
+            let cursor = zip_cursor.entry(sink).or_insert(0);
+
+            if *cursor + out_indices.len() > matched.len() {
+                let (alias, node_kind) = self
+                    .runtime
+                    .get_node(&sink)
+                    .map(|n| (n.name.clone(), n.node_kind.clone()))
+                    .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+                return Err(ValidationError::SelectionArity(format!(
+                    "bare `>>` fan into '{alias}' ({node_kind}) overruns its {} matching input(s): \
+                     name the ports explicitly (e.g. `>> {alias}[0..N]`) to fan or mix deliberately",
+                    matched.len(),
+                )));
+            }
+
+            for &out in &out_indices {
+                let sink_index = matched[*cursor];
+                *cursor += 1;
+                self._connect_ref_self(AddConnectionProps {
+                    source,
+                    source_kind: Port::Index(out),
+                    sink,
+                    sink_kind: Port::Index(sink_index),
+                });
+            }
         }
 
         let sink_id = ir
