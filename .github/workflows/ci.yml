@@ -17,9 +17,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v15
+        with:
+          name: legato-dsp
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       - name: Check Formatting
         run: nix develop .#default -c cargo fmt --manifest-path ./crates/Cargo.toml --check
 
@@ -33,8 +36,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v15
+        with:
+          name: legato-dsp
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Nix Build
         run: nix build . --print-build-logs
