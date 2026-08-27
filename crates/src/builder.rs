@@ -13,7 +13,7 @@ use crate::{
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
-    ports::{PortKind, Ports},
+    ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
     },
@@ -304,10 +304,10 @@ where
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
         let source_indicies: Vec<usize> = match connection.source_kind {
-            Port::None => {
-                let ports = self.runtime.get_node_ports(&connection.source);
-                ports.audio_out.iter().enumerate().map(|(i, _)| i).collect()
-            }
+            Port::None => self
+                .runtime
+                .get_node_ports(&connection.source)
+                .default_out(),
             Port::Index(port) => vec![port],
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.source);
@@ -336,44 +336,8 @@ where
             }
         };
 
-        // A node's outputs are single-kind, so the resolved source ports fix the
-        // kind a portless sink should auto-map onto.
-        let source_kind = source_indicies
-            .first()
-            .and_then(|&i| {
-                self.runtime
-                    .get_node_ports(&connection.source)
-                    .audio_out
-                    .get(i)
-                    .map(|p| p.kind)
-            })
-            .unwrap_or(PortKind::Audio);
-
         let sink_indicies: Vec<usize> = match connection.sink_kind {
-            Port::None => {
-                let ports = self.runtime.get_node_ports(&connection.sink);
-                let matched: Vec<usize> = ports
-                    .audio_in
-                    .iter()
-                    .filter(|p| p.kind == source_kind)
-                    .map(|p| p.index)
-                    .collect();
-
-                // A bare `>>` never crosses kinds: if the sink exposes no port of
-                // the source's kind, the target must be named explicitly.
-                if matched.is_empty() && !ports.audio_in.is_empty() {
-                    let (alias, kind) = self
-                        .runtime
-                        .get_node(&connection.sink)
-                        .map(|n| (n.name.clone(), n.node_kind.clone()))
-                        .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
-                    panic!(
-                        "Bare `>>` from a {source_kind:?} source has no matching input on \
-                         node '{alias}' ({kind}): name the target port explicitly"
-                    );
-                }
-                matched
-            }
+            Port::None => self.runtime.get_node_ports(&connection.sink).default_in(),
             Port::Index(port) => vec![port],
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
@@ -411,6 +375,7 @@ where
 
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
+        let bare_sink = matches!(connection.sink_kind, Port::None);
 
         match (source_arity, sink_arity) {
             (1, 1) => one_to_one(
@@ -419,24 +384,29 @@ where
                 source_indicies[0],
                 sink_indicies[0],
             ),
-            (1, n) if n >= 1 => {
-                self.assert_audio_fan(&connection.sink, &sink_indicies, PortDir::In);
-                one_to_n(
-                    &mut self.runtime,
-                    connection,
-                    source_indicies[0],
-                    sink_indicies.as_slice(),
-                )
+            (1, n) if n > 1 => one_to_n(
+                &mut self.runtime,
+                connection,
+                source_indicies[0],
+                sink_indicies.as_slice(),
+            ),
+            (n, 1) if n > 1 && bare_sink => {
+                let (alias, node_kind) = self
+                    .runtime
+                    .get_node(&connection.sink)
+                    .map(|node| (node.name.clone(), node.node_kind.clone()))
+                    .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+                panic!(
+                    "bare `>>` into '{alias}' ({node_kind}) would reduce {n} channels to 1: \
+                     name a target port or route through a mixer (e.g. track_mixer)"
+                );
             }
-            (n, 1) if n >= 1 => {
-                self.assert_audio_fan(&connection.source, &source_indicies, PortDir::Out);
-                n_to_one(
-                    &mut self.runtime,
-                    connection,
-                    source_indicies.as_slice(),
-                    sink_indicies[0],
-                )
-            }
+            (n, 1) if n > 1 => n_to_one(
+                &mut self.runtime,
+                connection,
+                source_indicies.as_slice(),
+                sink_indicies[0],
+            ),
             (n, m) if n == m => n_to_n(
                 &mut self.runtime,
                 connection,
@@ -487,41 +457,11 @@ where
         }
     }
 
-    /// Panic if an implicit fan (broadcast or mix) would touch control ports:
-    /// those insert audio-only DSP nodes, so control targets must be named.
-    fn assert_audio_fan(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
-        let ports = self.runtime.get_node_ports(key);
-        let list = match dir {
-            PortDir::In => &ports.audio_in,
-            PortDir::Out => &ports.audio_out,
-        };
-        let control: Vec<&str> = indices
-            .iter()
-            .filter_map(|&i| list.get(i))
-            .filter(|p| p.kind == PortKind::Control)
-            .map(|p| p.name)
-            .collect();
-        if !control.is_empty() {
-            let (alias, kind) = self
-                .runtime
-                .get_node(key)
-                .map(|n| (n.name.clone(), n.node_kind.clone()))
-                .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
-            panic!(
-                "Implicit fan would touch control port(s) [{}] on node '{alias}' ({kind}): \
-                 control connections cannot broadcast or mix; name the target explicitly \
-                 (e.g. {alias}.{})",
-                control.join(", "),
-                control[0],
-            );
-        }
-    }
-
     /// The audio-out port indices a source spec resolves to on its node.
     fn source_out_indices(&self, key: &NodeKey, port: &Port) -> Vec<usize> {
         let ports = self.runtime.get_node_ports(key);
         match port {
-            Port::None => ports.audio_out.iter().enumerate().map(|(i, _)| i).collect(),
+            Port::None => ports.default_out(),
             Port::Index(i) => vec![*i],
             Port::Named(name) => vec![
                 ports
@@ -536,29 +476,9 @@ where
         }
     }
 
-    /// The audio-in port indices on `sink` whose kind matches `kind`.
-    fn matched_audio_in(&self, sink: &NodeKey, kind: PortKind) -> Vec<usize> {
-        self.runtime
-            .get_node_ports(sink)
-            .audio_in
-            .iter()
-            .filter(|p| p.kind == kind)
-            .map(|p| p.index)
-            .collect()
-    }
-
-    /// The kind of the first resolved source out port, defaulting to audio.
-    fn source_kind(&self, key: &NodeKey, out_indices: &[usize]) -> PortKind {
-        out_indices
-            .first()
-            .and_then(|&i| {
-                self.runtime
-                    .get_node_ports(key)
-                    .audio_out
-                    .get(i)
-                    .map(|p| p.kind)
-            })
-            .unwrap_or(PortKind::Audio)
+    /// The bare-`>>` target input indices on `sink`.
+    fn default_in(&self, sink: &NodeKey) -> Vec<usize> {
+        self.runtime.get_node_ports(sink).default_in()
     }
 }
 
@@ -694,16 +614,8 @@ impl LegatoBuilder<DslBuilding> {
             ir_to_runtime.insert(node_id, runtime_key);
         }
 
-        // Wire edges using the NodeId -> NodeKey map (no string lookups).
-        //
-        // Bare `>>` fan groups: when several *narrow* sources (each covering
-        // fewer lines than the sink has matching inputs) land on one sink with
-        // no explicit sink port, they zip instance-major onto those inputs
-        // instead of each broadcasting across every input (which over-sums).
-        // A full-width bare edge, or a lone one, is left to the normal path so
-        // stacked stereo feeds still fan-in/sum. Grouping here — rather than in
-        // the IR — keeps `x * n >> sink` identical to n separate `x_i >> sink`
-        // statements, since both reach the builder as the same portless edges.
+        // Count narrow bare sources per sink: several small feeds into one sink's
+        // default bus zip across it rather than each broadcasting over the whole bus.
         let mut narrow_bare_count: HashMap<NodeKey, usize> = HashMap::new();
         for edge in ir.edges() {
             if !matches!(edge.sink_port, Port::None) {
@@ -712,14 +624,13 @@ impl LegatoBuilder<DslBuilding> {
             let source = ir_to_runtime[&edge.source];
             let sink = ir_to_runtime[&edge.sink];
             let out_indices = self.source_out_indices(&source, &edge.source_port);
-            let kind = self.source_kind(&source, &out_indices);
-            let matched = self.matched_audio_in(&sink, kind);
+            let matched = self.default_in(&sink);
             if out_indices.len() < matched.len() {
                 *narrow_bare_count.entry(sink).or_default() += 1;
             }
         }
 
-        // A per-sink cursor over its matching inputs as a fan group fills them.
+        // Where the next group member lands on each sink's default bus.
         let mut zip_cursor: HashMap<NodeKey, usize> = HashMap::new();
 
         for edge in ir.edges() {
@@ -727,8 +638,7 @@ impl LegatoBuilder<DslBuilding> {
             let sink = ir_to_runtime[&edge.sink];
 
             let out_indices = self.source_out_indices(&source, &edge.source_port);
-            let kind = self.source_kind(&source, &out_indices);
-            let matched = self.matched_audio_in(&sink, kind);
+            let matched = self.default_in(&sink);
 
             let in_fan_group = matches!(edge.sink_port, Port::None)
                 && out_indices.len() < matched.len()
@@ -744,7 +654,7 @@ impl LegatoBuilder<DslBuilding> {
                 continue;
             }
 
-            // Zip this group member onto the next free matching inputs.
+            // Zip this member onto the next free slots on the default bus.
             let cursor = zip_cursor.entry(sink).or_insert(0);
 
             if *cursor + out_indices.len() > matched.len() {

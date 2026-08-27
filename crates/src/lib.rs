@@ -11,6 +11,7 @@ use crate::{
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
     },
+    graph::Connection,
     runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
@@ -93,6 +94,14 @@ impl LegatoApp {
     /// The kind of every node in the built graph, for asserting graph shape.
     pub fn node_kinds(&self) -> Vec<&str> {
         self.runtime.node_kinds()
+    }
+
+    /// The connections feeding a node, for inspecting or rendering the built graph.
+    pub fn incoming_connections(
+        &self,
+        key: NodeKey,
+    ) -> impl Iterator<Item = Connection> + '_ {
+        self.runtime.incoming_connections(key)
     }
 }
 

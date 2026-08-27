@@ -43,6 +43,7 @@ impl DelayTap {
             sr,
             ports: PortBuilder::default()
                 .audio_in(chans)
+                .default_in()
                 .audio_in_named(&["delay_length"])
                 .audio_out(chans)
                 .build(),

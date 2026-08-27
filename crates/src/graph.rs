@@ -306,7 +306,7 @@ mod test {
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
         node::{Inputs, Node},
-        ports::{PortKind, PortMeta, Ports},
+        ports::{PortMeta, Ports},
     };
 
     #[derive(Clone)]
@@ -321,12 +321,12 @@ mod test {
                     audio_in: vec![PortMeta {
                         name: "in",
                         index: 0,
-                        kind: PortKind::Audio,
+                        default: true,
                     }],
                     audio_out: vec![PortMeta {
                         name: "out",
                         index: 0,
-                        kind: PortKind::Audio,
+                        default: true,
                     }],
                 },
             }
