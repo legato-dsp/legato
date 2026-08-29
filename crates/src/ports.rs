@@ -38,7 +38,11 @@ impl Ports {
 }
 
 fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
-    let marked: Vec<usize> = ports.iter().filter(|p| p.default).map(|p| p.index).collect();
+    let marked: Vec<usize> = ports
+        .iter()
+        .filter(|p| p.default)
+        .map(|p| p.index)
+        .collect();
     if marked.is_empty() {
         ports.iter().map(|p| p.index).collect()
     } else {
@@ -228,9 +232,7 @@ mod tests {
 
     #[test]
     fn test_default_audio_in_mono() {
-        let ports = PortBuilder::default()
-        .audio_in(1)
-        .build();
+        let ports = PortBuilder::default().audio_in(1).build();
 
         assert_eq!(names(&ports.audio_in), vec!["in"]);
         assert_eq!(indices(&ports.audio_in), vec![0]);
@@ -246,9 +248,7 @@ mod tests {
 
     #[test]
     fn test_default_audio_in_stereo() {
-        let ports = PortBuilder::default()
-        .audio_in(2)
-        .build();
+        let ports = PortBuilder::default().audio_in(2).build();
 
         assert_eq!(names(&ports.audio_in), vec!["l", "r"]);
         assert_eq!(indices(&ports.audio_in), vec![0, 1]);
@@ -256,9 +256,7 @@ mod tests {
 
     #[test]
     fn test_default_audio_out_stereo() {
-        let ports = PortBuilder::default()
-        .audio_out(2)
-        .build();
+        let ports = PortBuilder::default().audio_out(2).build();
 
         assert_eq!(names(&ports.audio_out), vec!["l", "r"]);
         assert_eq!(indices(&ports.audio_out), vec![0, 1]);
@@ -267,8 +265,8 @@ mod tests {
     #[test]
     fn test_named_audio_in() {
         let ports = PortBuilder::default()
-        .audio_in_named(&["fm", "sidechain"])
-        .build();
+            .audio_in_named(&["fm", "sidechain"])
+            .build();
 
         assert_eq!(names(&ports.audio_in), vec!["fm", "sidechain"]);
         assert_eq!(indices(&ports.audio_in), vec![0, 1]);
@@ -277,8 +275,8 @@ mod tests {
     #[test]
     fn test_named_audio_out() {
         let ports = PortBuilder::default()
-        .audio_out_named(&["dry", "wet"])
-        .build();
+            .audio_out_named(&["dry", "wet"])
+            .build();
 
         assert_eq!(names(&ports.audio_out), vec!["dry", "wet"]);
         assert_eq!(indices(&ports.audio_out), vec![0, 1]);
@@ -287,9 +285,9 @@ mod tests {
     #[test]
     fn test_mixed_audio_in() {
         let ports = PortBuilder::default()
-        .audio_in(1) // ["in"]
-        .audio_in_named(&["mod1", "mod2"]) // appended, indices continue
-        .build();
+            .audio_in(1) // ["in"]
+            .audio_in_named(&["mod1", "mod2"]) // appended, indices continue
+            .build();
 
         assert_eq!(names(&ports.audio_in), vec!["in", "mod1", "mod2"]);
         assert_eq!(indices(&ports.audio_in), vec![0, 1, 2]);
@@ -298,9 +296,9 @@ mod tests {
     #[test]
     fn test_mixed_audio_out() {
         let ports = PortBuilder::default()
-        .audio_out(1) // ["out"]
-        .audio_out_named(&["aux"]) // appended
-        .build();
+            .audio_out(1) // ["out"]
+            .audio_out_named(&["aux"]) // appended
+            .build();
 
         assert_eq!(names(&ports.audio_out), vec!["out", "aux"]);
         assert_eq!(indices(&ports.audio_out), vec![0, 1]);
@@ -309,10 +307,10 @@ mod tests {
     #[test]
     fn test_all_port_categories() {
         let ports = PortBuilder::default()
-        .audio_in(2)
-        .audio_in_named(&["lfo"])
-        .audio_out_named(&["dry", "wet"])
-        .build();
+            .audio_in(2)
+            .audio_in_named(&["lfo"])
+            .audio_out_named(&["dry", "wet"])
+            .build();
 
         assert_eq!(names(&ports.audio_in), vec!["l", "r", "lfo"]);
         assert_eq!(names(&ports.audio_out), vec!["dry", "wet"]);
@@ -376,10 +374,7 @@ mod tests {
 
     #[test]
     fn test_zero_in_zero_out() {
-        let ports = PortBuilder::default()
-        .audio_in(0)
-        .audio_out(0)
-        .build();
+        let ports = PortBuilder::default().audio_in(0).audio_out(0).build();
 
         assert!(ports.audio_in.iter().len() == 0);
         assert!(ports.audio_out.iter().len() == 0);

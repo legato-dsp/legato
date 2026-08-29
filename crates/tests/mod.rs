@@ -1456,7 +1456,10 @@ mod build_dsl_automap {
             .build_dsl(graph)
             .expect("graph should build");
 
-        let svf_key = *frontend.clone_registry().get("svf").expect("svf in registry");
+        let svf_key = *frontend
+            .clone_registry()
+            .get("svf")
+            .expect("svf in registry");
         let mut sink_ports: Vec<usize> = app
             .incoming_connections(svf_key)
             .map(|c| c.sink.port_index)
@@ -1542,7 +1545,9 @@ mod build_dsl_automap {
 
         // Narrow-bare fan: the 5 mono voices each land on their own mixer input
         // (ports 0..5), never summed onto one port.
-        let mixer = *registry.get("track_mixer").expect("track_mixer in registry");
+        let mixer = *registry
+            .get("track_mixer")
+            .expect("track_mixer in registry");
         let mut voice_feeds: Vec<usize> = app
             .incoming_connections(mixer)
             .map(|c| c.sink.port_index)
@@ -1621,7 +1626,9 @@ mod build_dsl_automap {
         // Strided sink placement: each voice owns a stereo track. Voice i's grain
         // channel 0 -> mixer port 2i, channel 1 -> port 2i+1, so the six inputs
         // are filled once each and the two channels stay interleaved per track.
-        let mixer = *registry.get("track_mixer").expect("track_mixer in registry");
+        let mixer = *registry
+            .get("track_mixer")
+            .expect("track_mixer in registry");
         let feeds: Vec<(usize, usize)> = app
             .incoming_connections(mixer)
             .map(|c| (c.source.port_index, c.sink.port_index))

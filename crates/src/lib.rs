@@ -6,12 +6,12 @@ use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
+    graph::Connection,
     msg::{LegatoMsg, NodeMessage},
     resources::{
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
     },
-    graph::Connection,
     runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
@@ -97,10 +97,7 @@ impl LegatoApp {
     }
 
     /// The connections feeding a node, for inspecting or rendering the built graph.
-    pub fn incoming_connections(
-        &self,
-        key: NodeKey,
-    ) -> impl Iterator<Item = Connection> + '_ {
+    pub fn incoming_connections(&self, key: NodeKey) -> impl Iterator<Item = Connection> + '_ {
         self.runtime.incoming_connections(key)
     }
 }
