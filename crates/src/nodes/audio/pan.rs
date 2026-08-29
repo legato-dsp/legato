@@ -21,6 +21,7 @@ impl Pan {
             pan: pan.clamp(0.0, 1.0),
             ports: PortBuilder::default()
                 .audio_in(1)
+                .default_in()
                 .audio_in_named(&["pan"])
                 .audio_out(2)
                 .build(),

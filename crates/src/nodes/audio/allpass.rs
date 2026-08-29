@@ -37,6 +37,7 @@ impl Allpass {
             sr,
             ports: PortBuilder::default()
                 .audio_in(chans)
+                .default_in()
                 .audio_in_named(&["delay_length", "feedback"])
                 .audio_out(chans)
                 .build(),

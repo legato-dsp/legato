@@ -101,6 +101,15 @@ impl Runtime {
     pub fn get_node(&self, key: &NodeKey) -> Option<&LegatoNode> {
         self.executor.graph.get_node(*key)
     }
+    /// The connections feeding a node, for inspecting or rendering the built graph.
+    pub fn incoming_connections(&self, key: NodeKey) -> impl Iterator<Item = Connection> + '_ {
+        self.executor
+            .graph
+            .incoming_connections(key)
+            .into_iter()
+            .flatten()
+            .copied()
+    }
     pub fn get_node_mut(&mut self, key: &NodeKey) -> Option<&mut LegatoNode> {
         self.executor.graph.get_node_mut(*key)
     }

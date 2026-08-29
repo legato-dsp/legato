@@ -1420,3 +1420,238 @@ mod build_dsl_delay {
             .expect("graph should build");
     }
 }
+
+mod build_dsl_automap {
+    use legato::{
+        builder::{LegatoBuilder, Unconfigured},
+        config::Config,
+        ports::PortBuilder,
+    };
+
+    fn config() -> Config {
+        Config {
+            sample_rate: 48_000,
+            block_size: 1024,
+            channels: 2,
+            rt_capacity: 0,
+        }
+    }
+
+    // A bare `>>` lands on the sink's default audio bus (svf ports 0, 1) and leaves
+    // its named cutoff/q ports (2, 3) untouched.
+    #[test]
+    fn test_bare_maps_onto_default_bus() {
+        let graph = r#"
+            audio {
+                sampler { sampler_name: "amen", chans: 2 },
+                svf { chans: 2 },
+                track_mixer { tracks: 1, chans_per_track: 2 }
+            }
+            sampler >> svf
+            svf >> track_mixer
+            { track_mixer }
+        "#;
+        let ports = PortBuilder::default().audio_out(2).build();
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+            .build_dsl(graph)
+            .expect("graph should build");
+
+        let svf_key = *frontend
+            .clone_registry()
+            .get("svf")
+            .expect("svf in registry");
+        let mut sink_ports: Vec<usize> = app
+            .incoming_connections(svf_key)
+            .map(|c| c.sink.port_index)
+            .collect();
+        sink_ports.sort_unstable();
+        assert_eq!(sink_ports, vec![0, 1]);
+    }
+
+    // A bare `>>` never reduces channel count: 2 -> 1 is an error, not a silent mix.
+    #[test]
+    #[should_panic(expected = "would reduce")]
+    fn test_bare_reduce_is_rejected() {
+        let graph = r#"
+            audio {
+                sampler { sampler_name: "amen", chans: 2 },
+                gain { chans: 1 }
+            }
+            sampler >> gain
+            { gain }
+        "#;
+        let ports = PortBuilder::default().audio_out(2).build();
+        let _ = LegatoBuilder::<Unconfigured>::new(config(), ports)
+            .build_dsl(graph)
+            .expect("graph should build");
+    }
+
+    // 5-voice saw/adsr synth: voices sum through track_mixer, shaped by an svf,
+    // widened to stereo by mono_fan_out, into a plate reverb. Exercises bare `>>`
+    // on the default bus (voices -> mixer, mixer -> svf, svf -> fan, fan -> verb).
+    #[test]
+    fn test_saw_poly_reverb_graph_builds() {
+        let graph = r#"
+            patch voice(
+                attack = 50.0,
+                decay = 30.0,
+                sustain = 0.3,
+                release = 50.0
+            ) {
+                in freq gate
+
+                audio {
+                    saw { chans: 1 },
+                    adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+                }
+
+                freq >> saw
+                gate >> adsr.gate
+                saw >> adsr
+
+                { adsr }
+            }
+
+            patches {
+                voice * 5 { },
+            }
+
+            audio {
+                svf { chans: 1, cutoff: 3600.0, q: 0.4, type: "lowpass" },
+                mono_fan_out { chans: 2 },
+                track_mixer { tracks: 5, chans_per_track: 1, gain: [0.2, 0.2, 0.2, 0.2, 0.2] },
+                plate480: verb { predelay: 32.0, decay: 0.8, damping: 0.3, mix: 0.8 },
+            }
+
+            midi {
+                poly_voice { chan: 0, voices: 5 }
+            }
+
+            poly_voice[0:15:3] >> voice(*).gate
+            poly_voice[1:15:3] >> voice(*).freq
+
+            voice(*) >> track_mixer
+
+            track_mixer >> svf
+            svf >> mono_fan_out >> verb
+
+            { verb }
+        "#;
+        let ports = PortBuilder::default().audio_out(2).build();
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+            .build_dsl(graph)
+            .expect("graph should build");
+        let registry = frontend.clone_registry();
+
+        // Narrow-bare fan: the 5 mono voices each land on their own mixer input
+        // (ports 0..5), never summed onto one port.
+        let mixer = *registry
+            .get("track_mixer")
+            .expect("track_mixer in registry");
+        let mut voice_feeds: Vec<usize> = app
+            .incoming_connections(mixer)
+            .map(|c| c.sink.port_index)
+            .collect();
+        voice_feeds.sort_unstable();
+        assert_eq!(voice_feeds, vec![0, 1, 2, 3, 4]);
+
+        // mono_fan_out widens the mixed mono signal to both reverb inputs.
+        let verb = *registry.get("verb").expect("verb in registry");
+        let mut verb_feeds: Vec<usize> = app
+            .incoming_connections(verb)
+            .map(|c| c.sink.port_index)
+            .collect();
+        verb_feeds.sort_unstable();
+        assert_eq!(verb_feeds, vec![0, 1]);
+    }
+
+    // 3-voice granular synth: each voice's stereo grain is split across a
+    // per-voice track in track_mixer via strided sink slices, summed into a plate
+    // reverb. Exercises strided source fan (`poly_voice[..] >> voice(*).gate`) and
+    // strided sink placement (`voice(*)[c] >> track_mixer[c:6:2]`).
+    #[test]
+    fn test_granular_poly_reverb_graph_builds() {
+        let graph = r#"
+            patch voice(
+                attack = 120.0,
+                decay = 120.0,
+                sustain = 0.3,
+                release = 200.0
+            ) {
+                in freq gate
+
+                audio {
+                    grain { sampler_name: "main", chans: 2, size: 700, shape: 0.5, scan: 1.0 },
+                    adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 2 },
+                }
+
+                freq >> grain.freq
+                gate >> grain.trig
+
+                gate >> adsr.gate
+                grain >> adsr[1..3]
+
+                { adsr }
+            }
+
+            patches {
+                voice * 3 { },
+            }
+
+            audio {
+                track_mixer { tracks: 3, chans_per_track: 2 },
+                plate480: verb { predelay: 32.0, decay: 0.8, damping: 0.3, mix: 0.8 },
+            }
+
+            midi {
+                poly_voice { chan: 0, voices: 3 }
+            }
+
+            poly_voice[0:10:3] >> voice(*).gate
+            poly_voice[1:10:3] >> voice(*).freq
+
+            voice(*)[0] >> track_mixer[0:6:2]
+            voice(*)[1] >> track_mixer[1:6:2]
+
+            track_mixer >> verb
+
+            { verb }
+        "#;
+        let ports = PortBuilder::default().audio_out(2).build();
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+            .build_dsl(graph)
+            .expect("graph should build");
+        let registry = frontend.clone_registry();
+
+        // Strided sink placement: each voice owns a stereo track. Voice i's grain
+        // channel 0 -> mixer port 2i, channel 1 -> port 2i+1, so the six inputs
+        // are filled once each and the two channels stay interleaved per track.
+        let mixer = *registry
+            .get("track_mixer")
+            .expect("track_mixer in registry");
+        let feeds: Vec<(usize, usize)> = app
+            .incoming_connections(mixer)
+            .map(|c| (c.source.port_index, c.sink.port_index))
+            .collect();
+        assert_eq!(feeds.len(), 6);
+
+        let mut sink_ports: Vec<usize> = feeds.iter().map(|(_, snk)| *snk).collect();
+        sink_ports.sort_unstable();
+        assert_eq!(sink_ports, vec![0, 1, 2, 3, 4, 5]);
+
+        let mut ch0: Vec<usize> = feeds
+            .iter()
+            .filter(|(src, _)| *src == 0)
+            .map(|(_, snk)| *snk)
+            .collect();
+        let mut ch1: Vec<usize> = feeds
+            .iter()
+            .filter(|(src, _)| *src == 1)
+            .map(|(_, snk)| *snk)
+            .collect();
+        ch0.sort_unstable();
+        ch1.sort_unstable();
+        assert_eq!(ch0, vec![0, 2, 4]);
+        assert_eq!(ch1, vec![1, 3, 5]);
+    }
+}

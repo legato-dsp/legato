@@ -45,6 +45,7 @@ impl Adsr {
             ports: PortBuilder::default()
                 .control_in_named(&["gate"])
                 .audio_in(chans)
+                .default_in()
                 .audio_out(chans)
                 .build(),
         }

@@ -30,6 +30,7 @@ impl OnePole {
             state: vec![0.0; chans],
             ports: PortBuilder::default()
                 .audio_in(chans)
+                .default_in()
                 .audio_in_named(&["cutoff"])
                 .audio_out(chans)
                 .build(),
