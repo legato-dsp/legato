@@ -22,6 +22,7 @@ use legato::{
             tap::DelayTap,
         },
         control::map::Map,
+        modular::sample_and_hold::SampleAndHold,
     },
     persample::{PerSample, PerSampleNode},
 };
@@ -233,6 +234,28 @@ fn map_matches() {
         &[Some(noise(20))],
         0.0,
         "map",
+    );
+}
+
+// ── Modular ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn sample_and_hold_static_matches() {
+    assert_tick_equivalence(
+        SampleAndHold::new(SR as u32 / 100, SR as f32),
+        &[Some(noise(21)), None],
+        0.0,
+        "sample_and_hold static",
+    );
+}
+
+#[test]
+fn sample_and_hold_modulated_matches() {
+    assert_tick_equivalence(
+        SampleAndHold::new(SR as u32 / 100, SR as f32),
+        &[Some(noise(22)), Some(ramp(1.0, 40.0))],
+        0.0,
+        "sample_and_hold modulated",
     );
 }
 

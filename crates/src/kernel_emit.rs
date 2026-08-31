@@ -59,6 +59,10 @@ fn rust_type_for(node_type: &str) -> Option<(&'static str, &'static str)> {
         "householder" => ("Householder", "nodes::audio::householder::HouseholderMixer"),
         "hadamard" => ("Hadamard", "nodes::audio::hadamard::HadamardMixer"),
         "pan" => ("Pan", "nodes::audio::pan::Pan"),
+        "sample_and_hold" => (
+            "SampleAndHold",
+            "nodes::modular::sample_and_hold::SampleAndHold",
+        ),
         // Every arithmetic node is one `ApplyOp` behind the scenes.
         "mult" | "add" | "sub" | "div" | "gain" => ("Op", "nodes::audio::ops::ApplyOp"),
         _ => return None,
@@ -749,6 +753,7 @@ mod tests {
             "householder",
             "hadamard",
             "pan",
+            "sample_and_hold",
             "mult",
             "add",
             "sub",

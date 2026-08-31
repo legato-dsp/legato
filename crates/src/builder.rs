@@ -16,6 +16,7 @@ use crate::{
     ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
+        modular_registry_factory,
     },
     resources::{
         AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
@@ -144,11 +145,13 @@ impl LegatoBuilder<Unconfigured> {
         let audio_registry = audio_registry_factory();
         let control_registry = control_registry_factory();
         let midi_registry = midi_registry_factory();
+        let modular_registry = modular_registry_factory();
 
         // Default namespaces
         namespaces.insert("audio".into(), audio_registry);
         namespaces.insert("control".into(), control_registry);
         namespaces.insert("midi".into(), midi_registry);
+        namespaces.insert("modular".into(), modular_registry);
 
         namespaces.insert("user".into(), NodeRegistry::new());
 

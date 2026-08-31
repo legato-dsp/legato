@@ -6,6 +6,7 @@ use crate::{
     dsl::ir::DSLParams,
     msg::{NodeMessage, RtValue},
     node::{DynNode, Inputs, Node},
+    persample::PerSampleNode,
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
@@ -18,16 +19,19 @@ pub struct SampleAndHold {
     hold_time_in_samples: u32,
     /// A counter of the number of samples held
     samples_held: u32,
+    /// Used to convert the hold_time modulation from ms to samples
+    sr: f32,
     /// The port specification for [`SampleAndHold`]
     ports: Ports,
 }
 
 impl SampleAndHold {
-    pub fn new(hold_time_in_samples: u32) -> Self {
+    pub fn new(hold_time_in_samples: u32, sr: f32) -> Self {
         Self {
             held: 0.0,
             hold_time_in_samples: hold_time_in_samples.max(1), // Default to one second at current sample rate
             samples_held: 0,
+            sr,
             ports: PortBuilder::default()
                 .audio_in(1)
                 .default_in()
@@ -37,29 +41,38 @@ impl SampleAndHold {
                 .build(),
         }
     }
+    #[inline(always)]
+    fn tick_inner(&mut self, sample_in: f32, modulation: Option<f32>) -> f32 {
+        if let Some(modulation) = modulation {
+            // Cast modulation from ms to seconds, multiply by the sample_rate, and set a minimum of 1
+            self.hold_time_in_samples = (((self.sr * (modulation / 1000.0)).floor()) as u32).max(1);
+        }
+
+        // To get the initial value, as well as an updated, we set samples_held to 0
+        // This triggers the next branch, so we get the initial value as well
+        if self.samples_held >= self.hold_time_in_samples {
+            self.samples_held = 0;
+        }
+
+        if self.samples_held == 0 {
+            self.held = sample_in;
+        }
+
+        self.samples_held += 1;
+
+        self.held
+    }
     #[inline]
     fn process_no_modulation(&mut self, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let audio_out = &mut outputs[0];
         if let Some(audio_in) = inputs[0] {
             for (sample_in, sample_out) in audio_in.iter().zip(audio_out.iter_mut()) {
-                // To get the initial value, as well as an updated, we set samples_held to 0
-                // This triggers the next branch, so we get the initial value as well
-                if self.samples_held >= self.hold_time_in_samples {
-                    self.samples_held = 0;
-                }
-
-                if self.samples_held == 0 {
-                    self.held = *sample_in;
-                }
-
-                *sample_out = self.held;
-
-                self.samples_held += 1;
+                *sample_out = self.tick_inner(*sample_in, None);
             }
         }
     }
     #[inline]
-    fn process_with_modulation(&mut self, sr: u32, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+    fn process_with_modulation(&mut self, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let audio_out = &mut outputs[0];
         let modulation = inputs[1].unwrap(); // Already checked in previous call-site
 
@@ -67,24 +80,28 @@ impl SampleAndHold {
             for ((sample_in, modulation), sample_out) in
                 audio_in.iter().zip(modulation).zip(audio_out.iter_mut())
             {
-                // Cast modulation from ms to seconds, multiply by the sample_rate, and set a minimum of 1
-                self.hold_time_in_samples =
-                    (((sr as f32 * (modulation / 1000.0)).floor()) as u32).max(1);
-                // To get the initial value, as well as an updated, we set samples_held to 0
-                // This triggers the next branch, so we get the initial value as well
-                if self.samples_held <= self.hold_time_in_samples {
-                    self.samples_held = 0;
-                }
-
-                if self.samples_held == 0 {
-                    self.held = *sample_in;
-                }
-
-                *sample_out = self.held;
-
-                self.samples_held += 1;
+                *sample_out = self.tick_inner(*sample_in, Some(*modulation));
             }
         }
+    }
+}
+
+impl SampleAndHold {
+    pub fn from_params(
+        rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Self, ValidationError> {
+        let sr = rb.config.sample_rate as u32;
+        let hold_time = p
+            .get_duration_ms("hold_time")
+            .unwrap_or(Duration::from_secs(1));
+
+        let hold_time_in_samples = hold_time.as_secs_f32() * sr as f32;
+
+        Ok(SampleAndHold::new(
+            hold_time_in_samples.floor() as u32,
+            sr as f32,
+        ))
     }
 }
 
@@ -98,24 +115,28 @@ impl NodeDefinition for SampleAndHold {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let sr = rb.config.sample_rate as u32;
-        let hold_time = p
-            .get_duration_ms("hold_time")
-            .unwrap_or(Duration::from_secs(1));
+        Ok(Box::new(Self::from_params(rb, p)?))
+    }
+}
 
-        let hold_time_in_samples = hold_time.as_secs_f32() * sr as f32;
+impl PerSampleNode for SampleAndHold {
+    fn ports(&self) -> &Ports {
+        &self.ports
+    }
 
-        Ok(Box::new(SampleAndHold::new(
-            hold_time_in_samples.floor() as u32
-        )))
+    fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
+        out_frame[0] = self.tick_inner(in_frame[0].unwrap_or(0.0), in_frame[1]);
+    }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
     }
 }
 
 impl Node for SampleAndHold {
-    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
-        let sr = ctx.get_config().sample_rate as u32;
+    fn process(&mut self, _ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         if let Some(_) = inputs[1] {
-            self.process_with_modulation(sr, inputs, outputs);
+            self.process_with_modulation(inputs, outputs);
         } else {
             self.process_no_modulation(inputs, outputs);
         }
@@ -169,7 +190,7 @@ mod test {
             sample_rate: 256,
         };
 
-        let mut node = SampleAndHold::new(128); // Every half second
+        let mut node = SampleAndHold::new(128, 256.0); // Every half second
 
         let mut ctx = build_placeholder_context(config);
 

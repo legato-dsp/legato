@@ -39,6 +39,7 @@ use crate::{
             midi_sequencer::MidiSequencer,
             voice::{PolyVoice, Voice},
         },
+        modular::sample_and_hold::SampleAndHold,
     },
     spec::{NodeDefinition, NodeSpec},
 };
@@ -142,5 +143,11 @@ pub fn midi_registry_factory() -> NodeRegistry {
     registry.register_node::<Voice>();
     registry.register_node::<PolyVoice>();
     registry.register_node::<MidiSequencer>();
+    registry
+}
+
+pub fn modular_registry_factory() -> NodeRegistry {
+    let mut registry = NodeRegistry::new();
+    registry.register_node::<SampleAndHold>();
     registry
 }

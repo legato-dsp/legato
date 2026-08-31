@@ -19,6 +19,7 @@ use crate::{
             tap::DelayTap,
         },
         control::map::Map,
+        modular::sample_and_hold::SampleAndHold,
     },
     persample::PerSampleNode,
     ports::Ports,
@@ -47,6 +48,7 @@ pub enum KernelNode {
     Householder(HouseholderMixer),
     Hadamard(HadamardMixer),
     Pan(Pan),
+    SampleAndHold(SampleAndHold),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -65,6 +67,7 @@ macro_rules! dispatch {
             KernelNode::Householder($inner) => $body,
             KernelNode::Hadamard($inner) => $body,
             KernelNode::Pan($inner) => $body,
+            KernelNode::SampleAndHold($inner) => $body,
         }
     };
 }
@@ -118,6 +121,7 @@ pub fn build_kernel_node(
         "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
         "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
         "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
+        "sample_and_hold" => KernelNode::SampleAndHold(SampleAndHold::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),

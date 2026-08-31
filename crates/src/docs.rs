@@ -22,6 +22,7 @@ use crate::{
             signal::Signal,
         },
         midi::voice::{PolyVoice, Voice},
+        modular::sample_and_hold::SampleAndHold,
     },
     spec::{NodeDefinition, NodeDoc},
 };
@@ -64,11 +65,16 @@ pub fn midi_node_docs() -> Vec<NodeDoc> {
     vec![Voice::doc(), PolyVoice::doc()]
 }
 
-/// Returns documentation for all built-in nodes across audio, control, and MIDI namespaces.
+pub fn modular_node_docs() -> Vec<NodeDoc> {
+    vec![SampleAndHold::doc()]
+}
+
+/// Returns documentation for all built-in nodes across audio, control, MIDI, and modular namespaces.
 pub fn all_node_docs() -> Vec<NodeDoc> {
     let mut docs = audio_node_docs();
     docs.extend(control_node_docs());
     docs.extend(midi_node_docs());
+    docs.extend(modular_node_docs());
     docs
 }
 
