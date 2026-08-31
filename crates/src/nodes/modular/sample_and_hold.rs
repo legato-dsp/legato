@@ -7,13 +7,11 @@ use crate::{
     msg::{NodeMessage, RtValue},
     node::{DynNode, Inputs, Node},
     ports::{PortBuilder, Ports},
-    spec::{NodeDefinition, NodeSpec},
+    spec::NodeDefinition,
 };
 
 #[derive(Clone)]
 pub struct SampleAndHold {
-    /// The sample rate, we are keeping this here to validate incoming params
-    sr: u32,
     /// The current sampled value being sustained
     held: f32,
     /// The current hold duration, in samples
@@ -25,10 +23,9 @@ pub struct SampleAndHold {
 }
 
 impl SampleAndHold {
-    pub fn new(sr: u32, hold_time_in_samples: u32) -> Self {
+    pub fn new(hold_time_in_samples: u32) -> Self {
         Self {
             held: 0.0,
-            sr,
             hold_time_in_samples: hold_time_in_samples.max(1), // Default to one second at current sample rate
             samples_held: 0,
             ports: PortBuilder::default()
@@ -60,8 +57,7 @@ impl NodeDefinition for SampleAndHold {
         let hold_time_in_samples = hold_time.as_secs_f32() * sr as f32;
 
         Ok(Box::new(SampleAndHold::new(
-            sr,
-            hold_time_in_samples.floor() as u32,
+            hold_time_in_samples.floor() as u32
         )))
     }
 }
@@ -71,14 +67,19 @@ impl Node for SampleAndHold {
         let audio_out = &mut outputs[0];
         if let Some(audio_in) = inputs[0] {
             for (sample_in, sample_out) in audio_in.iter().zip(audio_out.iter_mut()) {
-                self.samples_held += 1;
-                // Check and see if we have iterated enough to update the held value
-                if self.samples_held >= self.hold_time_in_samples {
+                // To get the initial value, as well as an updated, we set samples_held to 0
+                // This triggers the next branch, so we get the initial value as well
+                if self.samples_held <= self.hold_time_in_samples {
                     self.samples_held = 0;
+                }
+
+                if self.samples_held == 0 {
                     self.held = *sample_in;
                 }
 
                 *sample_out = self.held;
+
+                self.samples_held += 1;
             }
         }
     }
@@ -100,31 +101,56 @@ impl Node for SampleAndHold {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use crate::config::Config;
+#[cfg(test)]
+mod test {
+    use crate::{
+        config::Config, harness::build_placeholder_context, node::Node,
+        nodes::modular::sample_and_hold::SampleAndHold,
+    };
 
-//     /// Here we have 4 different values, one second apart.
-//     /// We then sample every half second, and expect to see each one twice.
-//     #[test]
-//     fn test_basic_sample_and_hold() {
-//         // Test input block, 4 blocks of 256, 256 sample rate
-//         let input: [f32; 1024] = std::array::from_fn(|i| {
-//             let nth_block_floored = i + 1 / 256;
-//             nth_block_floored as f32
-//         });
+    /// Here we have 4 different values, one second apart.
+    /// We then sample every half second, and expect to see each one twice.
+    ///
+    /// As a quick smoke test, input and output should be the same, since we
+    /// are sampling twice per block and twice per second.
+    #[test]
+    fn noop_on_continous_block_with_factorable_held_size() {
+        // Test input block, 4 blocks of 256, 256 sample rate
+        let inputs: [f32; 1024] = std::array::from_fn(|i| {
+            let nth_block_floored = i / 256;
+            nth_block_floored as f32
+        });
 
-//         let output = [0.0; 1024];
+        dbg!(&inputs);
 
-//         let config = Config {
-//             block_size: 256,
-//             channels: 1,
-//             rt_capacity: 0,
-//             sample_rate: 256,
-//         };
+        let mut outputs = [0.0_f32; 1024];
 
-//         let node =
+        let config = Config {
+            block_size: 256,
+            channels: 1,
+            rt_capacity: 0,
+            sample_rate: 256,
+        };
 
-//         // We hold for one half second, with our convenient sample rate this is 128
-//     }
-// }
+        let mut node = SampleAndHold::new(128); // Every half second
+
+        let mut ctx = build_placeholder_context(config);
+
+        for i in 0..4 {
+            let lo = i * 256;
+            let hi = lo + 256;
+            let new_inputs = [Some(&inputs[lo..hi])];
+            node.process(&mut ctx, &new_inputs, &mut [&mut outputs[lo..hi]]);
+        }
+
+        // Since we held on the constant block and block / 2 boundary, this should have been a no-op
+        inputs
+            .iter()
+            .zip(outputs)
+            .enumerate()
+            .for_each(|(i, (input, output))| {
+                dbg!(i);
+                assert_eq!(*input, output);
+            });
+    }
+}
