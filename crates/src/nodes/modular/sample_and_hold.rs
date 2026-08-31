@@ -31,10 +31,59 @@ impl SampleAndHold {
             ports: PortBuilder::default()
                 .audio_in(1)
                 .default_in()
-                .audio_in_named(&["hold"])
+                .audio_in_named(&["hold_time"])
                 .audio_out(1)
                 .default_out()
                 .build(),
+        }
+    }
+    #[inline]
+    fn process_no_modulation(&mut self, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+        let audio_out = &mut outputs[0];
+        if let Some(audio_in) = inputs[0] {
+            for (sample_in, sample_out) in audio_in.iter().zip(audio_out.iter_mut()) {
+                // To get the initial value, as well as an updated, we set samples_held to 0
+                // This triggers the next branch, so we get the initial value as well
+                if self.samples_held >= self.hold_time_in_samples {
+                    self.samples_held = 0;
+                }
+
+                if self.samples_held == 0 {
+                    self.held = *sample_in;
+                }
+
+                *sample_out = self.held;
+
+                self.samples_held += 1;
+            }
+        }
+    }
+    #[inline]
+    fn process_with_modulation(&mut self, sr: u32, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+        let audio_out = &mut outputs[0];
+        let modulation = inputs[1].unwrap(); // Already checked in previous call-site
+
+        if let Some(audio_in) = inputs[0] {
+            for ((sample_in, modulation), sample_out) in
+                audio_in.iter().zip(modulation).zip(audio_out.iter_mut())
+            {
+                // Cast modulation from ms to seconds, multiply by the sample_rate, and set a minimum of 1
+                self.hold_time_in_samples =
+                    (((sr as f32 * (modulation / 1000.0)).floor()) as u32).max(1);
+                // To get the initial value, as well as an updated, we set samples_held to 0
+                // This triggers the next branch, so we get the initial value as well
+                if self.samples_held <= self.hold_time_in_samples {
+                    self.samples_held = 0;
+                }
+
+                if self.samples_held == 0 {
+                    self.held = *sample_in;
+                }
+
+                *sample_out = self.held;
+
+                self.samples_held += 1;
+            }
         }
     }
 }
@@ -63,32 +112,20 @@ impl NodeDefinition for SampleAndHold {
 }
 
 impl Node for SampleAndHold {
-    fn process(&mut self, _: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
-        let audio_out = &mut outputs[0];
-        if let Some(audio_in) = inputs[0] {
-            for (sample_in, sample_out) in audio_in.iter().zip(audio_out.iter_mut()) {
-                // To get the initial value, as well as an updated, we set samples_held to 0
-                // This triggers the next branch, so we get the initial value as well
-                if self.samples_held <= self.hold_time_in_samples {
-                    self.samples_held = 0;
-                }
-
-                if self.samples_held == 0 {
-                    self.held = *sample_in;
-                }
-
-                *sample_out = self.held;
-
-                self.samples_held += 1;
-            }
+    fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
+        let sr = ctx.get_config().sample_rate as u32;
+        if let Some(_) = inputs[1] {
+            self.process_with_modulation(sr, inputs, outputs);
+        } else {
+            self.process_no_modulation(inputs, outputs);
         }
     }
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
         if let NodeMessage::SetParam(payload) = msg {
             let incoming = match (payload.param_name, payload.value) {
-                ("hold", RtValue::U32(val)) => val as u32,
-                ("hold", RtValue::I32(val)) => val as u32,
-                ("hold", RtValue::F32(val)) => val.round() as u32, // TODO: Semantics?
+                ("hold_time", RtValue::U32(val)) => val as u32,
+                ("hold_time", RtValue::I32(val)) => val as u32,
+                ("hold_time", RtValue::F32(val)) => val.round() as u32, // TODO: Semantics?
                 _ => unimplemented!("Incorrect parameter passed to SampleAndHold!"),
             };
 
@@ -139,7 +176,7 @@ mod test {
         for i in 0..4 {
             let lo = i * 256;
             let hi = lo + 256;
-            let new_inputs = [Some(&inputs[lo..hi])];
+            let new_inputs = [Some(&inputs[lo..hi]), None]; // No modulation here
             node.process(&mut ctx, &new_inputs, &mut [&mut outputs[lo..hi]]);
         }
 
