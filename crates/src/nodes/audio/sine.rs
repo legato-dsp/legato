@@ -95,8 +95,6 @@ impl Sine {
         }
     }
 
-    /// Start the oscillator at `phase_turns` (0..1). `0.25` gives the
-    /// quadrature partner of a `0.0` oscillator at the same frequency.
     pub fn with_start_phase(mut self, phase_turns: f32) -> Self {
         self.phase = phase_turns;
         self
@@ -213,12 +211,11 @@ impl Node for Sine {
         }
     }
 
-    /// For now, we panic here, as it's difficult to make a strong message without allocating
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
         if let NodeMessage::SetParam(payload) = msg {
             match (payload.param_name, payload.value) {
                 ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unreachable!("Invalid parameter and value passed"),
+                _ => unimplemented!("Invalid parameter and value passed"),
             }
         }
     }
