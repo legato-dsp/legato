@@ -67,6 +67,7 @@ impl Runtime {
     pub fn get_config(&self) -> Config {
         self.context.get_config()
     }
+
     /// Prepare and allocate all of the information needed for the audio execution plan
     pub fn prepare(&mut self) {
         let block_size = self.context.get_config().block_size;
@@ -74,6 +75,7 @@ impl Runtime {
 
         self.executor.prepare(block_size);
     }
+
     /// Handle the message from the LegatoFrontend
     pub fn handle_msg(&mut self, msg: LegatoMsg) {
         match msg {

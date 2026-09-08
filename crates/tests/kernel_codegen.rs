@@ -233,8 +233,8 @@ fn generated_fm3_matches_interpreter() {
     let mut interp = fm3_interpreter(48_000);
     let mut generated = build_generated(48_000);
 
-    assert_eq!(PerSampleNode::ports(&generated).audio_in.len(), 1);
-    assert_eq!(PerSampleNode::ports(&generated).audio_out.len(), 1);
+    assert_eq!(PerSampleNode::ports(&generated).ports_in.len(), 1);
+    assert_eq!(PerSampleNode::ports(&generated).ports_out.len(), 1);
 
     let mut rng: u32 = 0x9E37_79B9;
     let mut a = [0.0f32];
@@ -299,8 +299,8 @@ fn generated_modtap_matches_interpreter() {
         generated_modtap4::Modtap4::new(rb).expect("generated modtap4 should build")
     });
 
-    assert_eq!(PerSampleNode::ports(&generated).audio_in.len(), 1);
-    assert_eq!(PerSampleNode::ports(&generated).audio_out.len(), 2);
+    assert_eq!(PerSampleNode::ports(&generated).ports_in.len(), 1);
+    assert_eq!(PerSampleNode::ports(&generated).ports_out.len(), 2);
 
     let mut a = [0.0f32; 2];
     let mut b = [0.0f32; 2];
@@ -350,8 +350,8 @@ fn generated_plate_matches_interpreter() {
         generated_plate::Plate::new(rb).expect("generated plate should build")
     });
 
-    assert_eq!(PerSampleNode::ports(&generated).audio_in.len(), 2);
-    assert_eq!(PerSampleNode::ports(&generated).audio_out.len(), 2);
+    assert_eq!(PerSampleNode::ports(&generated).ports_in.len(), 2);
+    assert_eq!(PerSampleNode::ports(&generated).ports_out.len(), 2);
 
     let mut a = [0.0f32; 2];
     let mut b = [0.0f32; 2];

@@ -144,7 +144,7 @@ impl Node for SampleAndHold {
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
         if let NodeMessage::SetParam(payload) = msg {
             let incoming = match (payload.param_name, payload.value) {
-                ("hold_time", RtValue::U32(val)) => val as u32,
+                ("hold_time", RtValue::U32(val)) => val,
                 ("hold_time", RtValue::I32(val)) => val as u32,
                 ("hold_time", RtValue::F32(val)) => val.round() as u32, // TODO: Semantics?
                 _ => unimplemented!("Incorrect parameter passed to SampleAndHold!"),

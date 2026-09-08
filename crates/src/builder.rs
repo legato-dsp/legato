@@ -315,7 +315,7 @@ where
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = ports
-                    .audio_out
+                    .ports_out
                     .iter()
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
@@ -345,7 +345,7 @@ where
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
                 let index = ports
-                    .audio_in
+                    .ports_in
                     .iter()
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
@@ -440,8 +440,8 @@ where
     fn assert_ports_in_range(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
         let ports = self.runtime.get_node_ports(key);
         let available = match dir {
-            PortDir::In => ports.audio_in.len(),
-            PortDir::Out => ports.audio_out.len(),
+            PortDir::In => ports.ports_in.len(),
+            PortDir::Out => ports.ports_out.len(),
         };
         if let Some(&bad) = indices.iter().find(|&&i| i >= available) {
             let (alias, kind) = self
@@ -468,7 +468,7 @@ where
             Port::Index(i) => vec![*i],
             Port::Named(name) => vec![
                 ports
-                    .audio_out
+                    .ports_out
                     .iter()
                     .find(|p| p.name == name)
                     .unwrap_or_else(|| panic!("Could not find index for named port {name}"))

@@ -2,6 +2,7 @@ use crate::{
     builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
+    node,
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
@@ -58,8 +59,8 @@ impl Executor {
             let ports = node.get_node().ports();
 
             for (count, dir) in [
-                (ports.audio_in.len(), "input"),
-                (ports.audio_out.len(), "output"),
+                (ports.ports_in.len(), "input"),
+                (ports.ports_out.len(), "output"),
             ] {
                 if count > MAX_ARITY {
                     return Err(ValidationError::ArityExceeded(format!(
@@ -109,8 +110,11 @@ impl Executor {
                 .unwrap()
                 .get_node()
                 .ports()
-                .audio_out
+                .ports_out
                 .len();
+
+            dbg!(key);
+            dbg!(arity);
 
             total_ports += arity;
         }
@@ -129,8 +133,8 @@ impl Executor {
         for node_key in sorted_order {
             let ports = nodes[*node_key].get_node().ports();
 
-            let audio_inputs_size = ports.audio_in.len();
-            let audio_outputs_size = ports.audio_out.len();
+            let audio_inputs_size = ports.ports_in.len();
+            let audio_outputs_size = ports.ports_out.len();
 
             // Fill the scratch buffer for the first N channels
             self.scratch[..audio_inputs_size * block_size].fill(0.0);
@@ -206,7 +210,7 @@ impl Executor {
             .expect("Could not find sink")
             .get_node()
             .ports()
-            .audio_out
+            .ports_out
             .len();
 
         let final_outputs = slice_node_ports(&self.data, *node_offset, block_size, node_arity);

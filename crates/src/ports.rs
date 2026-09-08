@@ -8,19 +8,19 @@ pub struct PortMeta {
 
 #[derive(Clone, Debug)]
 pub struct Ports {
-    pub audio_in: Vec<PortMeta>,
-    pub audio_out: Vec<PortMeta>,
+    pub ports_in: Vec<PortMeta>,
+    pub ports_out: Vec<PortMeta>,
 }
 
 impl Ports {
     pub fn find_port_in(&self, name: &String) -> Option<PortMeta> {
-        if let Some(port) = self.audio_in.iter().find(|x| x.name == name) {
+        if let Some(port) = self.ports_in.iter().find(|x| x.name == name) {
             return Some(port.clone());
         }
         None
     }
     pub fn find_port_out(&self, name: &String) -> Option<PortMeta> {
-        if let Some(port) = self.audio_out.iter().find(|x| x.name == name) {
+        if let Some(port) = self.ports_out.iter().find(|x| x.name == name) {
             return Some(port.clone());
         }
         None
@@ -28,12 +28,12 @@ impl Ports {
 
     /// Input indices a bare `>>` targets: the ports marked default, or every input if none are.
     pub fn default_in(&self) -> Vec<usize> {
-        default_indices(&self.audio_in)
+        default_indices(&self.ports_in)
     }
 
     /// Output indices a bare `>>` reads from: the ports marked default, or every output if none are.
     pub fn default_out(&self) -> Vec<usize> {
-        default_indices(&self.audio_out)
+        default_indices(&self.ports_out)
     }
 }
 
@@ -53,8 +53,8 @@ fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
 impl From<PortBuilder> for Ports {
     fn from(builder: PortBuilder) -> Self {
         Ports {
-            audio_in: builder.port_audio_in,
-            audio_out: builder.port_audio_out,
+            ports_in: builder.port_audio_in,
+            ports_out: builder.port_audio_out,
         }
     }
 }
@@ -167,9 +167,11 @@ impl PortBuilder {
         let (start, end) = self
             .last_in
             .expect("default_in() requires a preceding input batch");
+
         for p in &mut self.port_audio_in[start..end] {
             p.default = true;
         }
+
         self
     }
 
@@ -234,8 +236,8 @@ mod tests {
     fn test_default_audio_in_mono() {
         let ports = PortBuilder::default().audio_in(1).build();
 
-        assert_eq!(names(&ports.audio_in), vec!["in"]);
-        assert_eq!(indices(&ports.audio_in), vec![0]);
+        assert_eq!(names(&ports.ports_in), vec!["in"]);
+        assert_eq!(indices(&ports.ports_in), vec![0]);
     }
 
     #[test]
@@ -243,23 +245,23 @@ mod tests {
         let chans = 2;
         let ports = PortBuilder::default().audio_out(chans).build();
 
-        assert_eq!(ports.audio_out.iter().len(), 2);
+        assert_eq!(ports.ports_out.iter().len(), 2);
     }
 
     #[test]
     fn test_default_audio_in_stereo() {
         let ports = PortBuilder::default().audio_in(2).build();
 
-        assert_eq!(names(&ports.audio_in), vec!["l", "r"]);
-        assert_eq!(indices(&ports.audio_in), vec![0, 1]);
+        assert_eq!(names(&ports.ports_in), vec!["l", "r"]);
+        assert_eq!(indices(&ports.ports_in), vec![0, 1]);
     }
 
     #[test]
     fn test_default_audio_out_stereo() {
         let ports = PortBuilder::default().audio_out(2).build();
 
-        assert_eq!(names(&ports.audio_out), vec!["l", "r"]);
-        assert_eq!(indices(&ports.audio_out), vec![0, 1]);
+        assert_eq!(names(&ports.ports_out), vec!["l", "r"]);
+        assert_eq!(indices(&ports.ports_out), vec![0, 1]);
     }
 
     #[test]
@@ -268,8 +270,8 @@ mod tests {
             .audio_in_named(&["fm", "sidechain"])
             .build();
 
-        assert_eq!(names(&ports.audio_in), vec!["fm", "sidechain"]);
-        assert_eq!(indices(&ports.audio_in), vec![0, 1]);
+        assert_eq!(names(&ports.ports_in), vec!["fm", "sidechain"]);
+        assert_eq!(indices(&ports.ports_in), vec![0, 1]);
     }
 
     #[test]
@@ -278,8 +280,8 @@ mod tests {
             .audio_out_named(&["dry", "wet"])
             .build();
 
-        assert_eq!(names(&ports.audio_out), vec!["dry", "wet"]);
-        assert_eq!(indices(&ports.audio_out), vec![0, 1]);
+        assert_eq!(names(&ports.ports_out), vec!["dry", "wet"]);
+        assert_eq!(indices(&ports.ports_out), vec![0, 1]);
     }
 
     #[test]
@@ -289,8 +291,8 @@ mod tests {
             .audio_in_named(&["mod1", "mod2"]) // appended, indices continue
             .build();
 
-        assert_eq!(names(&ports.audio_in), vec!["in", "mod1", "mod2"]);
-        assert_eq!(indices(&ports.audio_in), vec![0, 1, 2]);
+        assert_eq!(names(&ports.ports_in), vec!["in", "mod1", "mod2"]);
+        assert_eq!(indices(&ports.ports_in), vec![0, 1, 2]);
     }
 
     #[test]
@@ -300,8 +302,8 @@ mod tests {
             .audio_out_named(&["aux"]) // appended
             .build();
 
-        assert_eq!(names(&ports.audio_out), vec!["out", "aux"]);
-        assert_eq!(indices(&ports.audio_out), vec![0, 1]);
+        assert_eq!(names(&ports.ports_out), vec!["out", "aux"]);
+        assert_eq!(indices(&ports.ports_out), vec![0, 1]);
     }
 
     #[test]
@@ -312,11 +314,11 @@ mod tests {
             .audio_out_named(&["dry", "wet"])
             .build();
 
-        assert_eq!(names(&ports.audio_in), vec!["l", "r", "lfo"]);
-        assert_eq!(names(&ports.audio_out), vec!["dry", "wet"]);
+        assert_eq!(names(&ports.ports_in), vec!["l", "r", "lfo"]);
+        assert_eq!(names(&ports.ports_out), vec!["dry", "wet"]);
 
-        assert_eq!(indices(&ports.audio_in), vec![0, 1, 2]);
-        assert_eq!(indices(&ports.audio_out), vec![0, 1]);
+        assert_eq!(indices(&ports.ports_in), vec![0, 1, 2]);
+        assert_eq!(indices(&ports.ports_out), vec![0, 1]);
     }
 
     #[test]
@@ -327,8 +329,8 @@ mod tests {
             .control_in_named(&["cutoff", "q"])
             .build();
 
-        assert_eq!(names(&ports.audio_in), vec!["l", "r", "cutoff", "q"]);
-        assert_eq!(indices(&ports.audio_in), vec![0, 1, 2, 3]);
+        assert_eq!(names(&ports.ports_in), vec!["l", "r", "cutoff", "q"]);
+        assert_eq!(indices(&ports.ports_in), vec![0, 1, 2, 3]);
     }
 
     #[test]
@@ -376,7 +378,7 @@ mod tests {
     fn test_zero_in_zero_out() {
         let ports = PortBuilder::default().audio_in(0).audio_out(0).build();
 
-        assert!(ports.audio_in.iter().len() == 0);
-        assert!(ports.audio_out.iter().len() == 0);
+        assert!(ports.ports_in.iter().len() == 0);
+        assert!(ports.ports_out.iter().len() == 0);
     }
 }

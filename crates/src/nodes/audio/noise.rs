@@ -8,7 +8,7 @@ use crate::{
     ports::{PortBuilder, Ports},
     spec::NodeDefinition,
 };
-static NOISE_SEED_COUNTER: AtomicU32 = AtomicU32::new(0);
+
 #[derive(Clone)]
 pub struct Noise {
     state: u32,
@@ -23,8 +23,7 @@ impl Default for Noise {
 
 impl Noise {
     pub fn new() -> Self {
-        let n = NOISE_SEED_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let state = (0xBAADF00Du32 ^ n.wrapping_mul(0x9E3779B1)) | 1;
+        let state = 0xBAADF00D;
         Self::with_seed(state)
     }
 

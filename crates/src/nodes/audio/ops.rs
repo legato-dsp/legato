@@ -110,7 +110,7 @@ impl Node for ApplyOp {
     }
 
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        let val_idx = self.ports.audio_in.len() - 1;
+        let val_idx = self.ports.ports_in.len() - 1;
         let val_chan = ai[val_idx];
 
         match val_chan {

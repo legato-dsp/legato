@@ -221,8 +221,8 @@ impl KernelPlan {
         };
 
         Ports {
-            audio_in: meta(&self.input_names),
-            audio_out: meta(&self.output_names),
+            ports_in: meta(&self.input_names),
+            ports_out: meta(&self.output_names),
         }
     }
 
@@ -459,8 +459,8 @@ pub fn resolve_plan(
             params,
             // Backfilled once all port counts are known.
             slot_base: ValueSlot(0),
-            n_out: ports.audio_out.len(),
-            inputs: vec![Vec::new(); ports.audio_in.len()],
+            n_out: ports.ports_out.len(),
+            inputs: vec![Vec::new(); ports.ports_in.len()],
         });
         node_ports.push(ports);
     }
@@ -495,12 +495,12 @@ pub fn resolve_plan(
 
         let src_ports = resolve_port(
             &edge.source_port,
-            &node_ports[src.0].audio_out,
+            &node_ports[src.0].ports_out,
             &plan_nodes[src.0].alias,
         )?;
         let snk_ports = resolve_port(
             &edge.sink_port,
-            &node_ports[snk.0].audio_in,
+            &node_ports[snk.0].ports_in,
             &plan_nodes[snk.0].alias,
         )?;
 
@@ -537,7 +537,7 @@ pub fn resolve_plan(
             let decl = decl_idx_of[node_id];
             let target_ports = resolve_port(
                 port,
-                &node_ports[decl.0].audio_in,
+                &node_ports[decl.0].ports_in,
                 &plan_nodes[decl.0].alias,
             )?;
             for tp in target_ports {
@@ -566,7 +566,7 @@ pub fn resolve_plan(
 
     // Exterior signature. Outputs are the sink node's output ports.
     let sink = decl_idx_of[&ir_macro.sink];
-    let sink_out = &node_ports[sink.0].audio_out;
+    let sink_out = &node_ports[sink.0].ports_out;
 
     let n_exterior_in = ir_macro.virtual_input_map.len();
     if n_exterior_in > MAX_FRAME_PORTS || sink_out.len() > MAX_FRAME_PORTS {

@@ -209,7 +209,7 @@ impl Svf {
         inputs: &Inputs,
         outputs: &mut [&mut [f32]],
     ) {
-        let chans = self.ports.audio_out.len();
+        let chans = self.ports.ports_out.len();
         let block_size = ctx.get_config().block_size;
         let cutoff_buf = inputs[chans];
         let q_buf = inputs[chans + 1];
@@ -244,7 +244,7 @@ impl Svf {
         inputs: &Inputs,
         outputs: &mut [&mut [f32]],
     ) {
-        let chans = self.ports.audio_out.len();
+        let chans = self.ports.ports_out.len();
         for c in 0..chans {
             if let Some(in_chan) = inputs[c] {
                 for n in 0..in_chan.len() {
@@ -281,7 +281,7 @@ impl PerSampleNode for Svf {
     }
 
     fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
-        let chans = self.ports.audio_out.len();
+        let chans = self.ports.ports_out.len();
 
         let cutoff_in = in_frame[chans];
         let q_in = in_frame[chans + 1];
@@ -314,7 +314,7 @@ impl PerSampleNode for Svf {
 
 impl Node for Svf {
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
-        let chans = self.ports.audio_out.len();
+        let chans = self.ports.ports_out.len();
 
         let cutoff_present = inputs[chans].is_some();
         let q_present = inputs[chans + 1].is_some();
