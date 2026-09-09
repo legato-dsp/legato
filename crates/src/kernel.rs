@@ -19,9 +19,7 @@ use crate::{
             tap::DelayTap,
         },
         control::map::Map,
-        modular::{
-            quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate,
-        },
+        modular::{quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate},
     },
     persample::PerSampleNode,
     ports::Ports,

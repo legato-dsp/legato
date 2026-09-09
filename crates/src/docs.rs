@@ -22,9 +22,7 @@ use crate::{
             signal::Signal,
         },
         midi::voice::{PolyVoice, Voice},
-        modular::{
-            quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate,
-        },
+        modular::{quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate},
     },
     spec::{NodeDefinition, NodeDoc},
 };
