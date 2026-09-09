@@ -64,6 +64,7 @@ fn rust_type_for(node_type: &str) -> Option<(&'static str, &'static str)> {
             "nodes::modular::sample_and_hold::SampleAndHold",
         ),
         "quantize" => ("Quantize", "nodes::modular::quantize::Quantize"),
+        "trig_to_gate" => ("TrigToGate", "nodes::modular::trig_to_gate::TrigToGate"),
         // Every arithmetic node is one `ApplyOp` behind the scenes.
         "mult" | "add" | "sub" | "div" | "gain" => ("Op", "nodes::audio::ops::ApplyOp"),
         _ => return None,
@@ -756,6 +757,7 @@ mod tests {
             "pan",
             "sample_and_hold",
             "quantize",
+            "trig_to_gate",
             "mult",
             "add",
             "sub",

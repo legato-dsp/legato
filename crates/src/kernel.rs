@@ -19,7 +19,9 @@ use crate::{
             tap::DelayTap,
         },
         control::map::Map,
-        modular::{quantize::Quantize, sample_and_hold::SampleAndHold},
+        modular::{
+            quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate,
+        },
     },
     persample::PerSampleNode,
     ports::Ports,
@@ -50,6 +52,7 @@ pub enum KernelNode {
     Pan(Pan),
     SampleAndHold(SampleAndHold),
     Quantize(Quantize),
+    TrigToGate(TrigToGate),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -70,6 +73,7 @@ macro_rules! dispatch {
             KernelNode::Pan($inner) => $body,
             KernelNode::SampleAndHold($inner) => $body,
             KernelNode::Quantize($inner) => $body,
+            KernelNode::TrigToGate($inner) => $body,
         }
     };
 }
@@ -125,6 +129,7 @@ pub fn build_kernel_node(
         "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
         "sample_and_hold" => KernelNode::SampleAndHold(SampleAndHold::from_params(rb, p)?),
         "quantize" => KernelNode::Quantize(Quantize::from_params(rb, p)?),
+        "trig_to_gate" => KernelNode::TrigToGate(TrigToGate::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),

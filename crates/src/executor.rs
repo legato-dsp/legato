@@ -113,9 +113,6 @@ impl Executor {
                 .ports_out
                 .len();
 
-            dbg!(key);
-            dbg!(arity);
-
             total_ports += arity;
         }
 

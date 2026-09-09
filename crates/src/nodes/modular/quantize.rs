@@ -42,7 +42,7 @@ impl Quantizer {
         Self::new(0x0fff).unwrap()
     }
 
-    /// The 12-bit pitch-class mask this quantizer snaps to, bit 0 = C.
+    /// The 12-bit pitch mask this quantizer snaps to, bit 0 = C.
     pub fn mask(&self) -> u16 {
         (self.mask & 0x0fff) as u16
     }
@@ -171,7 +171,7 @@ impl Quantize {
                 .default_in()
                 .control_out_named(&["freq"])
                 .default_out()
-                .control_out_named(&["note", "gate"])
+                .control_out_named(&["note", "trig"])
                 .build(),
         }
     }
@@ -185,8 +185,7 @@ impl Quantize {
         let mut res = None;
 
         // Update the last note held, we are doing this to launch trig signals.
-        // The first sample always fires: `last_note` starts at -inf, so no real
-        // note can compare equal to it.
+        // The first sample always fires, as `last_note` starts at -inf
         if note != self.last_note {
             let freq = mtof_f32(note);
 
@@ -199,15 +198,6 @@ impl Quantize {
         res
     }
 
-    /// One frame of the node: `(freq, note, trig)` for a single input pitch.
-    ///
-    /// `trig` is a one-sample impulse — 1.0 on the frame the quantized note
-    /// changes, 0.0 for every frame it is held. That is the edge shape the
-    /// rest of the graph expects (see `grain`'s `trig` input), so a quantizer
-    /// can clock an envelope or a grain each time it lands on a new note.
-    ///
-    /// Both the block path and the per-sample path go through here so the two
-    /// cannot drift; `persample_equivalence` holds them to it.
     #[inline(always)]
     fn tick_inner(&mut self, pitch: f32) -> (f32, f32, f32) {
         match self.update_quantizer(pitch) {

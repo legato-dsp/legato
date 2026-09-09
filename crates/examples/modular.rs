@@ -2,19 +2,17 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
-    midi::{MidiPortKind, start_midi_thread},
     ports::PortBuilder,
 };
 
-/// A five voice sawtooth example
 fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            attack = 50.0,
-            decay = 30.0,
-            sustain = 0.3,
-            release = 50.0
+            attack = 200.0,
+            decay = 800.0,
+            sustain = 0.7,
+            release = 1200.0
         ) {
             in freq gate
 
@@ -30,34 +28,54 @@ fn main() {
             { adsr }
         }
 
+        patch generative_voice {
+            patches {
+                voice { },
+            }
+
+            audio {
+                svf { chans: 1, cutoff: 3600.0, q: 0.4, type: "lowpass" },
+            }
+
+            modular {
+                random { rate: 800.0, prob: 0.3, range: [48.0, 76.0] },
+                quantize { notes: [0, 2, 3, 9, 10, 5] },
+                trig_to_gate { gate_time: 400.0 }
+            }
+
+            random.stepped >> quantize
+
+            // quantize only fires `trig` when the snapped note actually changes,
+            // so a held random value sustains the current note instead of
+            // retriggering the envelope.
+            quantize.trig >> trig_to_gate >> voice.gate
+            quantize.freq >> voice.freq
+
+            voice >> svf
+
+            { svf }
+        }
+
         patches {
-            voice * 5 { },
+            generative_voice * 5 {}
         }
 
         audio {
-            svf { chans: 2, cutoff: 5400.0, q: 0.4, type: "lowpass" },
-            track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+            track_mixer { tracks: 5, chans_per_track: 1 },
             mono_fan_out { chans: 2 },
+            plate480
         }
 
-        midi {
-            poly_voice { chan: 0, voices: 5 }
-        }
+        generative_voice(*) >> track_mixer
 
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
-        voice(*) >> osc_mixer[0..5]
+        track_mixer >> mono_fan_out >> plate480
 
-        osc_mixer >> svf // audio-only auto-map skips svf's cutoff/q control ports
-
-        svf >> mono_fan_out
-
-        { mono_fan_out }
+        { plate480 }
     "#,
     );
 
     let config = Config {
-        sample_rate: 44_100,
+        sample_rate: 48_000,
         block_size: 4096,
         channels: 2,
         rt_capacity: 0,
@@ -65,17 +83,7 @@ fn main() {
 
     let ports = PortBuilder::default().audio_out(2).build();
 
-    let midi_rt_fe = start_midi_thread(
-        256,
-        "my_port",
-        MidiPortKind::Index(0),
-        MidiPortKind::Index(0),
-        "my_port",
-    )
-    .unwrap();
-
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
-        .set_midi_runtime(midi_rt_fe)
         .build_dsl(&graph)
         .expect("graph should build");
 

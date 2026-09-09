@@ -1,17 +1,15 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::{DynNode, Node},
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
+    rng::XorShift,
     spec::NodeDefinition,
 };
-
 #[derive(Clone)]
 pub struct Noise {
-    state: u32,
+    rng: XorShift,
     ports: Ports,
 }
 
@@ -22,32 +20,29 @@ impl Default for Noise {
 }
 
 impl Noise {
+    /// Spawn a new noise node.
+    ///
+    /// This is not some cryptographically secure noise algorithm, it aims at
+    /// being fast for audio usage. The generator seeds itself from OS entropy
+    /// (see [`XorShift`]) so several voices never share a stream.
     pub fn new() -> Self {
-        let state = 0xBAADF00D;
-        Self::with_seed(state)
+        Self::from_rng(XorShift::seeded())
     }
 
     pub fn with_seed(seed: u32) -> Self {
+        Self::from_rng(XorShift::with_seed(seed))
+    }
+
+    fn from_rng(rng: XorShift) -> Self {
         Self {
-            state: seed | 1,
+            rng,
             ports: PortBuilder::default().audio_out(1).build(),
         }
     }
 
-    // Yields the next pseudo-random u32 val
-    #[inline(always)]
-    fn next_val(&mut self) -> u32 {
-        self.state ^= self.state << 13;
-        self.state ^= self.state >> 17;
-        self.state ^= self.state << 5;
-        self.state
-    }
-
     #[inline(always)]
     pub fn white(&mut self) -> f32 {
-        // Map u32 to -1,1
-        // TODO: Is there something with less ops?
-        (self.next_val() as i32 as f32) * (1.0 / i32::MAX as f32)
+        self.rng.bipolar()
     }
 }
 

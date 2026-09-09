@@ -22,7 +22,9 @@ use crate::{
             signal::Signal,
         },
         midi::voice::{PolyVoice, Voice},
-        modular::{quantize::Quantize, sample_and_hold::SampleAndHold},
+        modular::{
+            quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate,
+        },
     },
     spec::{NodeDefinition, NodeDoc},
 };
@@ -66,7 +68,7 @@ pub fn midi_node_docs() -> Vec<NodeDoc> {
 }
 
 pub fn modular_node_docs() -> Vec<NodeDoc> {
-    vec![SampleAndHold::doc(), Quantize::doc()]
+    vec![SampleAndHold::doc(), Quantize::doc(), TrigToGate::doc()]
 }
 
 /// Returns documentation for all built-in nodes across audio, control, MIDI, and modular namespaces.
