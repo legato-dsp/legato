@@ -9,10 +9,10 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            attack = 200.0,
-            decay = 800.0,
-            sustain = 0.7,
-            release = 1200.0
+            attack = 1.0,
+            decay = 12.0,
+            sustain = 0.0,
+            release = 60.0
         ) {
             in freq gate
 
@@ -34,20 +34,17 @@ fn main() {
             }
 
             audio {
-                svf { chans: 1, cutoff: 3600.0, q: 0.4, type: "lowpass" },
+                svf { chans: 1, cutoff: 2400.0, q: 0.4, type: "lowpass" },
             }
 
             modular {
-                random { rate: 800.0, prob: 0.3, range: [48.0, 76.0] },
+                random { rate: 120.0, prob: 0.3, range: [ 32.0, 96.0] },
                 quantize { notes: [0, 2, 3, 9, 10, 5] },
-                trig_to_gate { gate_time: 400.0 }
+                trig_to_gate { gate_time: 30.0 }
             }
 
             random.stepped >> quantize
 
-            // quantize only fires `trig` when the snapped note actually changes,
-            // so a held random value sustains the current note instead of
-            // retriggering the envelope.
             quantize.trig >> trig_to_gate >> voice.gate
             quantize.freq >> voice.freq
 
@@ -63,7 +60,7 @@ fn main() {
         audio {
             track_mixer { tracks: 5, chans_per_track: 1 },
             mono_fan_out { chans: 2 },
-            plate480
+            plate480 { mix: 0.4 }
         }
 
         generative_voice(*) >> track_mixer

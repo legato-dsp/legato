@@ -1,22 +1,3 @@
-    // Four modulated normalized-feedback comb taps -> stereo (mono in, 2 out).
-    // Odd taps pan left, even taps pan right; distinct delays + independent LFO
-    // phases decorrelate the two sides for width.
-    //
-    // Each tap is its OWN feedback loop, written as a crossfade comb:
-    //     m_i = (1 - feedback) * in + feedback * t_i
-    //         = in + feedback * (t_i - in)
-    // The second form is what the graph builds (feed the feedback gain the
-    // DIFFERENCE t_i - in, via a `sub`, so no param arithmetic is needed). Its
-    // DC gain is exactly 1 for ANY feedback, so turning feedback up makes the
-    // echoes denser without making the output louder -- energy-conserving, like
-    // a real delay. That keeps the LINEAR 1/4 output near full scale at all
-    // settings (no soft-clip / saturation needed), while feedback is still
-    // per-tap so the loop gain is exactly `feedback` with no shared-feedback
-    // coherent-mode trap and no mixing matrix.
-    //
-    //   depth    - modulation excursion in ms (one shared 4-chan mult)
-    //   rate     - LFO frequency in Hz (sine.freq)
-    //   feedback - per-tap loop gain 0..~0.95 (regeneration / echo density)
     kernel modtap4(
         depth = 12.0,
         rate = 0.05,
@@ -25,51 +6,34 @@
         in in
 
         audio {
-            // per-tap input mix: dry input + this tap's feedback contribution
-            // feedback*(t_i - in). (both fan into port [0] and sum.)
             add: m1 { val: 0.0, chans: 1 },
             add: m2 { val: 0.0, chans: 1 },
             add: m3 { val: 0.0, chans: 1 },
             add: m4 { val: 0.0, chans: 1 },
 
-            // phase-staggered LFOs, one shared per-channel depth scale.
             sine: lfo1 { freq: $rate, phase: 0.0 },
             sine: lfo2 { freq: $rate, phase: 0.25 },
             sine: lfo3 { freq: $rate, phase: 0.5 },
             sine: lfo4 { freq: $rate, phase: 0.75 },
             mult: depth { val: $depth, chans: 4 },
 
-            // base delay per tap (ms), mutually incommensurate. modulated time
-            // = base +/- depth ms.
             add: dt1 { val: 71.0, chans: 1 },
             add: dt2 { val: 113.0, chans: 1 },
             add: dt3 { val: 173.0, chans: 1 },
             add: dt4 { val: 241.0, chans: 1 },
 
-            // the four delay lines (capacity covers longest tap + mod, 1s @ 48k)
             tap: t1 { delay_length: 71.0, chans: 1, capacity: 48000 },
             tap: t2 { delay_length: 113.0, chans: 1, capacity: 48000 },
             tap: t3 { delay_length: 173.0, chans: 1, capacity: 48000 },
             tap: t4 { delay_length: 241.0, chans: 1, capacity: 48000 },
 
-            // per-tap difference t_i - in, so the feedback gain crossfades
-            // (normalizes) the comb instead of just adding regeneration.
             sub: d1 { val: 0.0, chans: 1 },
             sub: d2 { val: 0.0, chans: 1 },
             sub: d3 { val: 0.0, chans: 1 },
             sub: d4 { val: 0.0, chans: 1 },
 
-            // one shared per-tap feedback gain (4 independent channels).
             mult: fb { val: $feedback, chans: 4 },
 
-            // stereo wet output: odd taps (t1,t3) -> left, even taps (t2,t4) ->
-            // right. each side scales its 2-tap sum by 0.35 -- lower than a
-            // naive 1/2 because summing only two normalized combs lets their
-            // echo trains align transiently (a 2-tap side has a higher crest
-            // factor than the mono 4, and it grows with feedback), so 0.35
-            // keeps the peak <= ~0.96 even at feedback 0.95. the taps have
-            // distinct delays and independent LFO phases, so L/R are
-            // decorrelated -> real width. `out` is a 2-channel collector.
             mult: out_l { val: 0.35, chans: 1 },
             mult: out_r { val: 0.35, chans: 1 },
             add: out { val: 0.0, chans: 2 },
