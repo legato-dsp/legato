@@ -19,6 +19,7 @@ use crate::{
             tap::DelayTap,
         },
         control::map::Map,
+        modular::{quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate},
     },
     persample::PerSampleNode,
     ports::Ports,
@@ -47,6 +48,9 @@ pub enum KernelNode {
     Householder(HouseholderMixer),
     Hadamard(HadamardMixer),
     Pan(Pan),
+    SampleAndHold(SampleAndHold),
+    Quantize(Quantize),
+    TrigToGate(TrigToGate),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -65,6 +69,9 @@ macro_rules! dispatch {
             KernelNode::Householder($inner) => $body,
             KernelNode::Hadamard($inner) => $body,
             KernelNode::Pan($inner) => $body,
+            KernelNode::SampleAndHold($inner) => $body,
+            KernelNode::Quantize($inner) => $body,
+            KernelNode::TrigToGate($inner) => $body,
         }
     };
 }
@@ -118,6 +125,9 @@ pub fn build_kernel_node(
         "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
         "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
         "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
+        "sample_and_hold" => KernelNode::SampleAndHold(SampleAndHold::from_params(rb, p)?),
+        "quantize" => KernelNode::Quantize(Quantize::from_params(rb, p)?),
+        "trig_to_gate" => KernelNode::TrigToGate(TrigToGate::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
         "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
@@ -781,8 +791,8 @@ mod tests {
         let def = kernel_def(src, "fb_loop");
         let mut kg = build(&def, Object::new()).expect("kernel should build");
 
-        assert_eq!(PerSampleNode::ports(&kg).audio_in.len(), 1);
-        assert_eq!(PerSampleNode::ports(&kg).audio_out.len(), 1);
+        assert_eq!(PerSampleNode::ports(&kg).ports_in.len(), 1);
+        assert_eq!(PerSampleNode::ports(&kg).ports_out.len(), 1);
 
         let input = [1.0f32, 0.0, 0.0, 0.0, 2.0, 0.0];
         let mut expected_state = 0.0f32;
@@ -901,8 +911,8 @@ mod tests {
         let def = kernel_def(&src, "plate");
         let mut kg = build(&def, Object::new()).expect("plate kernel should lower");
 
-        assert_eq!(PerSampleNode::ports(&kg).audio_in.len(), 2);
-        assert_eq!(PerSampleNode::ports(&kg).audio_out.len(), 2);
+        assert_eq!(PerSampleNode::ports(&kg).ports_in.len(), 2);
+        assert_eq!(PerSampleNode::ports(&kg).ports_out.len(), 2);
 
         // Impulse in, then run the tank for a while: output stays finite and
         // the reverb tail is actually audible.
@@ -929,8 +939,8 @@ mod tests {
         let def = kernel_def(&src, "modtap4");
         let mut kg = build(&def, Object::new()).expect("modtap kernel should lower");
 
-        assert_eq!(PerSampleNode::ports(&kg).audio_in.len(), 1);
-        assert_eq!(PerSampleNode::ports(&kg).audio_out.len(), 2);
+        assert_eq!(PerSampleNode::ports(&kg).ports_in.len(), 1);
+        assert_eq!(PerSampleNode::ports(&kg).ports_out.len(), 2);
 
         let mut out = [0.0f32; 2];
         let mut energy = 0.0f32;

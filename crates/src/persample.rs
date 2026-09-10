@@ -43,8 +43,8 @@ pub struct PerSample<T: PerSampleNode> {
 impl<T: PerSampleNode> PerSample<T> {
     pub fn new(inner: T) -> Self {
         let ports = inner.ports();
-        let n_in = ports.audio_in.len();
-        let n_out = ports.audio_out.len();
+        let n_in = ports.ports_in.len();
+        let n_out = ports.ports_out.len();
         assert!(
             n_in <= MAX_FRAME_PORTS && n_out <= MAX_FRAME_PORTS,
             "PerSample supports up to {MAX_FRAME_PORTS} ports per side (got {n_in} in, {n_out} out)"

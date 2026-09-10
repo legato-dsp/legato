@@ -52,13 +52,13 @@ impl AudioGraph {
     }
 
     pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
-        // Insert the node
         let key = self.nodes.insert(node);
 
         self.indegree.insert(key, 0);
 
         self.incoming_edges
             .insert(key, IndexSet::with_capacity(INITIAL_INPUTS));
+
         self.outgoing_edges
             .insert(key, IndexSet::with_capacity(INITIAL_INPUTS));
 
@@ -95,7 +95,7 @@ impl AudioGraph {
     pub fn total_ports(&self) -> usize {
         self.nodes
             .values()
-            .fold(0, |acc, x| acc + x.get_node().ports().audio_out.len())
+            .fold(0, |acc, x| acc + x.get_node().ports().ports_out.len())
     }
 
     pub fn nodes(&self) -> Vec<&LegatoNode> {
@@ -318,12 +318,12 @@ mod test {
         fn default() -> Self {
             Self {
                 ports: Ports {
-                    audio_in: vec![PortMeta {
+                    ports_in: vec![PortMeta {
                         name: "in",
                         index: 0,
                         default: true,
                     }],
-                    audio_out: vec![PortMeta {
+                    ports_out: vec![PortMeta {
                         name: "out",
                         index: 0,
                         default: true,

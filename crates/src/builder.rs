@@ -16,6 +16,7 @@ use crate::{
     ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
+        modular_registry_factory,
     },
     resources::{
         AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
@@ -144,11 +145,13 @@ impl LegatoBuilder<Unconfigured> {
         let audio_registry = audio_registry_factory();
         let control_registry = control_registry_factory();
         let midi_registry = midi_registry_factory();
+        let modular_registry = modular_registry_factory();
 
         // Default namespaces
         namespaces.insert("audio".into(), audio_registry);
         namespaces.insert("control".into(), control_registry);
         namespaces.insert("midi".into(), midi_registry);
+        namespaces.insert("modular".into(), modular_registry);
 
         namespaces.insert("user".into(), NodeRegistry::new());
 
@@ -312,7 +315,7 @@ where
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.source);
                 let index = ports
-                    .audio_out
+                    .ports_out
                     .iter()
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
@@ -342,7 +345,7 @@ where
             Port::Named(ref port) => {
                 let ports = self.runtime.get_node_ports(&connection.sink);
                 let index = ports
-                    .audio_in
+                    .ports_in
                     .iter()
                     .find(|x| x.name == port)
                     .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
@@ -437,8 +440,8 @@ where
     fn assert_ports_in_range(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
         let ports = self.runtime.get_node_ports(key);
         let available = match dir {
-            PortDir::In => ports.audio_in.len(),
-            PortDir::Out => ports.audio_out.len(),
+            PortDir::In => ports.ports_in.len(),
+            PortDir::Out => ports.ports_out.len(),
         };
         if let Some(&bad) = indices.iter().find(|&&i| i >= available) {
             let (alias, kind) = self
@@ -465,7 +468,7 @@ where
             Port::Index(i) => vec![*i],
             Port::Named(name) => vec![
                 ports
-                    .audio_out
+                    .ports_out
                     .iter()
                     .find(|p| p.name == name)
                     .unwrap_or_else(|| panic!("Could not find index for named port {name}"))

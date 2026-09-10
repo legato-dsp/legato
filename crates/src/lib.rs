@@ -39,6 +39,7 @@ pub mod ports;
 pub mod registry;
 pub mod resources;
 pub mod ring;
+pub mod rng;
 pub mod runtime;
 pub mod simd;
 pub mod spec;

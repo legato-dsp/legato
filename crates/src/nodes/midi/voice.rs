@@ -87,9 +87,36 @@ impl Node for Voice {
     }
 }
 
+/// MIDI note number -> frequency in Hz.
+///
+/// This is the whole pitch convention of the framework in one line: a *pitch*
+/// is a MIDI note number, 69 is A4, and A4 is 440 Hz. Note 0 is C-1, so
+/// `note % 12 == 0` is always a C — which is what lets the quantizer treat
+/// bit 0 of its scale mask as C. See [`crate::nodes::modular::quantize`].
 #[inline(always)]
 pub fn mtof(note: u8) -> f32 {
-    440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+    mtof_f32(note as f32)
+}
+
+/// The continuous form of [`mtof`]: fractional and out-of-MIDI-range notes are
+/// meaningful, so pitch stays a real-valued signal all the way to the
+/// oscillator. `mtof_f32(69.5)` is the quarter-tone above A4, and negative
+/// notes descend below C-1 rather than clamping at zero the way `as u8` would.
+#[inline(always)]
+pub fn mtof_f32(note: f32) -> f32 {
+    440.0 * 2.0_f32.powf((note - 69.0) / 12.0)
+}
+
+/// Frequency in Hz -> MIDI note number, the inverse of [`mtof_f32`].
+///
+/// Non-positive frequencies have no pitch; they come back as `f32::NEG_INFINITY`
+/// rather than a `NaN` that would poison a signal path.
+#[inline(always)]
+pub fn ftom(freq: f32) -> f32 {
+    if freq <= 0.0 {
+        return f32::NEG_INFINITY;
+    }
+    69.0 + 12.0 * (freq / 440.0).log2()
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]

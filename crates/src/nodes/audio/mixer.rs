@@ -100,7 +100,7 @@ impl MonoFanOut {
 impl Node for MonoFanOut {
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // TODO: Chunks + SIMD
-        let chans_out = self.ports.audio_out.len();
+        let chans_out = self.ports.ports_out.len();
         let gain = 1.0 / f32::sqrt(chans_out as f32);
 
         for (i, sample) in ai[0].unwrap().iter().enumerate() {

@@ -26,7 +26,7 @@ impl Oversampler2X {
     pub fn new(node: LegatoNode, buffer_size: usize) -> Self {
         let ports = node.get_node().ports();
 
-        let chans = max(ports.audio_in.len(), ports.audio_out.len());
+        let chans = max(ports.ports_in.len(), ports.ports_out.len());
 
         let upsamplers = (0..chans)
             .map(|_| Upsampler16::default())

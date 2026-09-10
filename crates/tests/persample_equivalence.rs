@@ -22,6 +22,10 @@ use legato::{
             tap::DelayTap,
         },
         control::map::Map,
+        modular::{
+            quantize::{Quantize, Quantizer},
+            sample_and_hold::SampleAndHold,
+        },
     },
     persample::{PerSample, PerSampleNode},
 };
@@ -63,7 +67,7 @@ fn assert_tick_equivalence<T>(node: T, inputs: &[Option<Vec<f32>>], tol: f32, na
 where
     T: Node + PerSampleNode + Clone + Send + 'static,
 {
-    let n_out = Node::ports(&node).audio_out.len();
+    let n_out = Node::ports(&node).ports_out.len();
 
     let mut block_node = node.clone();
     let mut per_sample = PerSample::new(node);
@@ -233,6 +237,52 @@ fn map_matches() {
         &[Some(noise(20))],
         0.0,
         "map",
+    );
+}
+
+// ── Modular ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn sample_and_hold_static_matches() {
+    assert_tick_equivalence(
+        SampleAndHold::new(SR as u32 / 100, SR as f32),
+        &[Some(noise(21)), None],
+        0.0,
+        "sample_and_hold static",
+    );
+}
+
+#[test]
+fn sample_and_hold_modulated_matches() {
+    assert_tick_equivalence(
+        SampleAndHold::new(SR as u32 / 100, SR as f32),
+        &[Some(noise(22)), Some(ramp(1.0, 40.0))],
+        0.0,
+        "sample_and_hold modulated",
+    );
+}
+
+#[test]
+fn quantize_matches() {
+    // A pitch sweep across five octaves, so the wrap between B and the next C
+    // is exercised in both paths.
+    assert_tick_equivalence(
+        Quantize::new(Quantizer::new(0b1010_1101_0101).unwrap()),
+        &[Some(ramp(24.0, 84.0))],
+        0.0,
+        "quantize sweep",
+    );
+}
+
+/// Noise straight into the quantizer: every sample lands somewhere different in
+/// the mask, including the negative pitches a raw `-1..1` signal produces.
+#[test]
+fn quantize_noise_matches() {
+    assert_tick_equivalence(
+        Quantize::new(Quantizer::chromatic()),
+        &[Some(noise(23))],
+        0.0,
+        "quantize noise",
     );
 }
 
