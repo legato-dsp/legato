@@ -1,0 +1,76 @@
+// title: Karplus
+// desc: A kernel node (this feature is for prototyping), with a karplus voice, played generatively
+
+kernel karplus(
+    damping = 0.5,
+    decay = 0.99,
+    pluck = 0.995
+) {
+    in gate freq
+
+    audio {
+        // The noise excitation
+        noise: exc_src {},
+        onepole: gate_follow { a: $pluck, chans: 1 },
+        sub: env { val: 0.0, chans: 1 },
+        mult: burst { val: 1.0, chans: 1 },
+        mult: exc { val: 1.0, chans: 1 },
+
+        // tuning
+        sine: one { freq: 0.0, phase: 0.25 },
+        div: period_s { val: 220.0 },
+        mult: period_ms { val: 1000.0 },
+
+        // the string loop
+        add: mix { val: 0.0, chans: 1 },
+        tap: string { delay_length: 4.5, chans: 1, capacity: 48000 },
+        onepole: loop_lp { a: $damping, chans: 1 },
+        mult: fb { val: $decay },
+    }
+
+    gate >> gate_follow[0]
+    gate >> env[0]
+    gate_follow >> env[1]
+    exc_src >> burst[0]
+    env >> burst[1]
+    burst >> exc[0]
+    gate >> exc[1]
+
+    // 1.0 / freq -> * 1000 -> ms into the delay length port
+    one >> period_s[0]
+    freq >> period_s[1]
+    period_s >> period_ms[0]
+    period_ms >> string.delay_length
+
+    exc >> mix[0]
+    fb  >> mix[1]
+    mix >> string[0] >> loop_lp[0] >> fb[0]
+
+    { string }
+}
+
+patches {
+    karplus: string1 { damping: 0.4, decay: 0.996, pluck: 0.99 },
+}
+
+audio {
+    svf { chans: 1, cutoff: 6000.0, q: 0.4, type: "lowpass" },
+    mono_fan_out { chans: 2 },
+    plate480 { mix: 0.35, decay: 0.6, damping: 0.4 },
+}
+
+modular {
+    random { rate: 260.0, prob: 0.7, range: [40.0, 76.0] },
+    quantize { notes: [0, 2, 4, 7, 9] },
+    trig_to_gate { gate_time: 12.0 },
+}
+
+// Sampling random values and quantizing them to notes for generation
+random.stepped >> quantize
+quantize.trig >> trig_to_gate >> string1.gate
+quantize.freq >> string1.freq
+
+string1 >> svf
+svf >> mono_fan_out >> plate480
+
+{ plate480 }

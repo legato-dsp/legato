@@ -10,7 +10,9 @@ repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [features]
+default = ["jack"]
 docs = ["dep:serde", "dep:serde_json"]
+jack = ["cpal/jack"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
@@ -30,7 +32,7 @@ crossbeam = "0.8.4"
 halfband = "0.2.0"
 ariadne = "0.6.0"
 chumsky = { version = "0.12.0", default-features = false, features = ["std"] }
-cpal = { version = "0.16.0", features = ["jack"] }
+cpal = { version = "0.16.0" }
 rtrb = "0.3.3"
 
 [dev-dependencies]
@@ -38,6 +40,7 @@ legato-macros = { path = "legato-macros" }
 criterion = { version = "0.5", features = ["html_reports"] }
 rustfft = "6"
 proptest = "1"
+ratatui = "0.29"
 
 [[bin]]
 name = "export-docs"

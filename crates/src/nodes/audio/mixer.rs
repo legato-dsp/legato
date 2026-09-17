@@ -69,6 +69,7 @@ impl Node for TrackMixer {
                 }
             }
         }
+
         for chan in ao {
             for chunk in chan.chunks_exact_mut(LANES) {
                 chunk.copy_from_slice(fast_tanh_vf32(Vf32::from_slice(chunk)).as_array());
@@ -99,7 +100,6 @@ impl MonoFanOut {
 
 impl Node for MonoFanOut {
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
-        // TODO: Chunks + SIMD
         let chans_out = self.ports.ports_out.len();
         let gain = 1.0 / f32::sqrt(chans_out as f32);
 

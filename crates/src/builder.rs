@@ -28,6 +28,9 @@ use crate::{
 };
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
+// TODO: This was honestly way overdone, and a handful of structs with certain
+// capabilities would have been fine...
+
 /// ValidationError covers logical issues
 /// when lowering from the AST to the IR.
 ///

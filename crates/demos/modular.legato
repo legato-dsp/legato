@@ -1,0 +1,63 @@
+// title: Modular
+// desc: Five generative voices, using sample and hold over noise for melody generation.
+
+patch voice(
+    attack = 1.0,
+    decay = 12.0,
+    sustain = 0.0,
+    release = 60.0
+) {
+    in freq gate
+
+    audio {
+        saw { chans: 1 },
+        adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+    }
+
+    freq >> saw
+    gate >> adsr.gate
+    saw >> adsr[1]
+
+    { adsr }
+}
+
+patch generative_voice {
+    patches {
+        voice { },
+    }
+
+    audio {
+        svf { chans: 1, cutoff: 2400.0, q: 0.4, type: "lowpass" },
+    }
+
+    modular {
+        random { rate: 120.0, prob: 0.3, range: [ 32.0, 96.0] },
+        quantize { notes: [0, 2, 3, 9, 10, 5] },
+        trig_to_gate { gate_time: 30.0 }
+    }
+
+    random.stepped >> quantize
+
+    quantize.trig >> trig_to_gate >> voice.gate
+    quantize.freq >> voice.freq
+
+    voice >> svf
+
+    { svf }
+}
+
+patches {
+    generative_voice * 5 {}
+}
+
+audio {
+    track_mixer { tracks: 5, chans_per_track: 1 },
+    mono_fan_out { chans: 2 },
+    plate480 { mix: 0.4 }
+}
+
+generative_voice(*) >> track_mixer
+
+track_mixer >> mono_fan_out >> plate480
+
+{ plate480 }
