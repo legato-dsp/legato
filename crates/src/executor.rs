@@ -2,7 +2,6 @@ use crate::{
     builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
-    node,
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
@@ -20,8 +19,6 @@ pub enum ExecutorState {
 
 /// We use this struct to easily slice in other contexts,
 /// and we can slice later with this owned array.
-///
-/// Otherwise,
 pub struct OutputView<'a> {
     pub channels: [&'a [f32]; MAX_ARITY],
     pub chans: usize,

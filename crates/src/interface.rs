@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use assert_no_alloc::assert_no_alloc;
 use cpal::{
-    BuildStreamError, Device, FromSample, Host, SizedSample, Stream, StreamConfig,
+    Device, FromSample, Host, SizedSample, Stream, StreamConfig,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 
@@ -14,9 +14,9 @@ use crate::{LegatoApp, input::build_input_stream};
 pub enum InterfaceError {
     NoDefaultOutputDevice,
     OutputDeviceNotFound(String),
-    EnumerateDevices(cpal::DevicesError),
-    BuildOutputStream(BuildStreamError),
-    PlayOutputStream(cpal::PlayStreamError),
+    EnumerateDevices(cpal::Error),
+    BuildOutputStream(cpal::Error),
+    PlayOutputStream(cpal::Error),
     Input(CpalInputError),
 }
 
@@ -92,7 +92,7 @@ impl<'a> AudioInterfaceBuilder<'a> {
 
         let stream_config = StreamConfig {
             channels: self.config.channels as u16,
-            sample_rate: cpal::SampleRate(self.config.sample_rate as u32),
+            sample_rate: self.config.sample_rate as u32,
             buffer_size: cpal::BufferSize::Fixed(self.config.block_size as u32),
         };
 
@@ -150,11 +150,7 @@ fn resolve_output_device(host: &Host, sel: &DeviceSelection) -> Result<Device, I
             let lower = name.to_lowercase();
             host.output_devices()
                 .map_err(InterfaceError::EnumerateDevices)?
-                .find(|d| {
-                    d.name()
-                        .map(|n| n.to_lowercase().contains(&lower))
-                        .unwrap_or(false)
-                })
+                .find(|d| d.to_string().to_lowercase().contains(&lower))
                 .ok_or_else(|| InterfaceError::OutputDeviceNotFound(name.clone()))
         }
     }
@@ -169,7 +165,7 @@ fn build_output_stream(
     let cfg = stream_config.clone();
     device
         .build_output_stream(
-            stream_config,
+            stream_config.clone(),
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 assert_no_alloc(|| write_block(data, &cfg, &mut app, viz.as_mut()))
             },

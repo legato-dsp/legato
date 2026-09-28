@@ -40,7 +40,7 @@ use crate::{
             voice::{PolyVoice, Voice},
         },
         modular::{
-            quantize::Quantize, random::Random, sample_and_hold::SampleAndHold,
+            env::Env, quantize::Quantize, random::Random, sample_and_hold::SampleAndHold,
             trig_to_gate::TrigToGate,
         },
     },
@@ -155,5 +155,6 @@ pub fn modular_registry_factory() -> NodeRegistry {
     registry.register_node::<Quantize>();
     registry.register_node::<TrigToGate>();
     registry.register_node::<Random>();
+    registry.register_node::<Env>();
     registry
 }

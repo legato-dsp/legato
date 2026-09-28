@@ -18,11 +18,11 @@ pub enum DeviceSelection {
 pub enum CpalInputError {
     NoDefaultDevice,
     DeviceNotFound(String),
-    DevicesEnumerationFailed(cpal::DevicesError),
-    UnsupportedConfig(cpal::SupportedStreamConfigsError),
+    DevicesEnumerationFailed(cpal::Error),
+    UnsupportedConfig(cpal::Error),
     NoMatchingConfig(String),
-    BuildStreamFailed(cpal::BuildStreamError),
-    PlayStreamFailed(cpal::PlayStreamError),
+    BuildStreamFailed(cpal::Error),
+    PlayStreamFailed(cpal::Error),
     ChannelMismatch { requested: usize, available: usize },
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn build_input_stream(
     let err_fn = |e| eprintln!("[cpal_input] stream error: {e}");
     let stream = device
         .build_input_stream(
-            &stream_config,
+            stream_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 assert_no_alloc(|| {
                     // Write up to the incoming block size
@@ -101,11 +101,7 @@ fn select_device(host: &Host, selection: &DeviceSelection) -> Result<Device, Cpa
             let lower = name.to_lowercase();
             host.input_devices()
                 .map_err(CpalInputError::DevicesEnumerationFailed)?
-                .find(|d| {
-                    d.name()
-                        .map(|n| n.to_lowercase().contains(&lower))
-                        .unwrap_or(false)
-                })
+                .find(|d| d.to_string().to_lowercase().contains(&lower))
                 .ok_or_else(|| CpalInputError::DeviceNotFound(name.clone()))
         }
     }
@@ -123,7 +119,7 @@ fn choose_config(
         .collect::<Vec<_>>();
 
     let chans_u16 = chans as u16;
-    let sr = cpal::SampleRate(sample_rate);
+    let sr = sample_rate;
 
     let exact = supported.iter().find(|c| {
         c.channels() == chans_u16

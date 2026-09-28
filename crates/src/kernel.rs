@@ -376,9 +376,6 @@ pub fn lower_kernel(
 }
 
 pub const EXAMPLE_PLATE_KERNEL_PATCH: &str = r#"
-    // mod_range_l/r: LFO excursion of the two modulated tank allpasses, in
-    // ms. Whole-array values template fine ($mod_range_l below); only
-    // per-element templates inside an array literal do not.
     kernel plate(
         predelay = 10.0,
         bandwidth_a = 0.0005,
@@ -392,7 +389,7 @@ pub const EXAMPLE_PLATE_KERNEL_PATCH: &str = r#"
         in in_l in_r
 
         audio {
-            // input chain: mono sum -> predelay -> bandwidth one-pole -> 4 diffusers
+            // input chain: mono sum -> predelay -> one-pole -> 4 diffusers
             mult: mono { val: 0.5 },
             tap: pre { delay_length: $predelay, chans: 1 },
             onepole: bw { a: $bandwidth_a, chans: 1 },
@@ -599,25 +596,6 @@ pub const EXAMPLE_KARPLUS_KERNEL_PATCH: &str = r#"
 "#;
 
 pub const EXAMPLE_MODTAP_KERNEL_PATCH: &str = r#"
-    // Four modulated normalized-feedback comb taps -> stereo (mono in, 2 out).
-    // Odd taps pan left, even taps pan right; distinct delays + independent LFO
-    // phases decorrelate the two sides for width.
-    //
-    // Each tap is its OWN feedback loop, written as a crossfade comb:
-    //     m_i = (1 - feedback) * in + feedback * t_i
-    //         = in + feedback * (t_i - in)
-    // The second form is what the graph builds (feed the feedback gain the
-    // DIFFERENCE t_i - in, via a `sub`, so no param arithmetic is needed). Its
-    // DC gain is exactly 1 for ANY feedback, so turning feedback up makes the
-    // echoes denser without making the output louder -- energy-conserving, like
-    // a real delay. That keeps the LINEAR 1/4 output near full scale at all
-    // settings (no soft-clip / saturation needed), while feedback is still
-    // per-tap so the loop gain is exactly `feedback` with no shared-feedback
-    // coherent-mode trap and no mixing matrix.
-    //
-    //   depth    - modulation excursion in ms (one shared 4-chan mult)
-    //   rate     - LFO frequency in Hz (sine.freq)
-    //   feedback - per-tap loop gain 0..~0.95 (regeneration / echo density)
     kernel modtap4(
         depth = 3.0,
         rate = 0.35,
@@ -663,14 +641,6 @@ pub const EXAMPLE_MODTAP_KERNEL_PATCH: &str = r#"
             // one shared per-tap feedback gain (4 independent channels).
             mult: fb { val: $feedback, chans: 4 },
 
-            // stereo wet output: odd taps (t1,t3) -> left, even taps (t2,t4) ->
-            // right. each side scales its 2-tap sum by 0.35 -- lower than a
-            // naive 1/2 because summing only two normalized combs lets their
-            // echo trains align transiently (a 2-tap side has a higher crest
-            // factor than the mono 4, and it grows with feedback), so 0.35
-            // keeps the peak <= ~0.96 even at feedback 0.95. the taps have
-            // distinct delays and independent LFO phases, so L/R are
-            // decorrelated -> real width. `out` is a 2-channel collector.
             mult: out_l { val: 0.35, chans: 1 },
             mult: out_r { val: 0.35, chans: 1 },
             add: out { val: 0.0, chans: 2 },
@@ -700,8 +670,6 @@ pub const EXAMPLE_MODTAP_KERNEL_PATCH: &str = r#"
         m4 >> t4[0]
 
         // normalized per-tap feedback: d_i = t_i - in; then
-        // m_i = in + feedback * d_i = (1-feedback)*in + feedback*t_i.
-        // the d_i -> fb -> m_i edges close the four loops (implicit z-1 here).
         t1 >> d1[0]
         t2 >> d2[0]
         t3 >> d3[0]

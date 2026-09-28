@@ -370,7 +370,7 @@ mod parse_and_lower {
                 chans = 2,
                 gain = 1.0
             ) {
-                in audio_in 
+                in audio_in
 
                 audio {
                     allpass * 4 { delay_length: 20, feedback: 0.5, chans: $chans },
@@ -381,7 +381,7 @@ mod parse_and_lower {
                 allpass(0) >> allpass(1)
                 allpass(1) >> allpass(2)
                 allpass(2) >> allpass(3)
-                
+
                 // TODO: Return sink by node selector index
                 allpass(3) >> gain
 
@@ -1422,6 +1422,8 @@ mod build_dsl_delay {
 }
 
 mod build_dsl_automap {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
     use legato::{
         builder::{LegatoBuilder, Unconfigured},
         config::Config,
