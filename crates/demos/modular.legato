@@ -1,5 +1,5 @@
-// title: Modular
-// desc: Five generative voices, using sample and hold over noise for melody generation.
+// title: Modular Poly
+// desc: Five generative voices using quantized sampled noise for melody generation.
 
 patch voice(
     attack = 1.0,

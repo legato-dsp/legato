@@ -1,5 +1,5 @@
-// title: Karplus
-// desc: A kernel node (this feature is for prototyping), with a karplus voice, played generatively
+// title: Karplus Kernel
+// desc: An interpreted kernel node (this feature is generally for prototyping), with a karplus voice, played generatively
 
 kernel karplus(
     damping = 0.5,

@@ -370,7 +370,7 @@ mod parse_and_lower {
                 chans = 2,
                 gain = 1.0
             ) {
-                in audio_in 
+                in audio_in
 
                 audio {
                     allpass * 4 { delay_length: 20, feedback: 0.5, chans: $chans },
@@ -381,7 +381,7 @@ mod parse_and_lower {
                 allpass(0) >> allpass(1)
                 allpass(1) >> allpass(2)
                 allpass(2) >> allpass(3)
-                
+
                 // TODO: Return sink by node selector index
                 allpass(3) >> gain
 
@@ -1422,6 +1422,8 @@ mod build_dsl_delay {
 }
 
 mod build_dsl_automap {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
     use legato::{
         builder::{LegatoBuilder, Unconfigured},
         config::Config,
@@ -1653,5 +1655,77 @@ mod build_dsl_automap {
         ch1.sort_unstable();
         assert_eq!(ch0, vec![0, 2, 4]);
         assert_eq!(ch1, vec![1, 3, 5]);
+    }
+
+    const M: usize = 3;
+    const N: usize = 7;
+
+    #[test]
+    fn example_leetcode() {
+        let mut stack = VecDeque::new();
+        stack.push_front((0, 0));
+
+        let mut routes: HashSet<Vec<(usize, usize)>> = HashSet::new();
+
+        while stack.len() > 0 {
+            // Length already checked
+            let cur = stack.pop_front().unwrap();
+
+            dbg!(cur);
+
+            // Add next checks
+            if cur.0 + 1 < M {
+                stack.push_back((cur.0 + 1, cur.1));
+            }
+
+            if cur.1 + 1 < N {
+                stack.push_back((cur.0, cur.1 + 1));
+            }
+
+            // Cull this eventually
+            if cur.0 == M - 1 && cur.1 == N - 1 {
+                routes.insert(stack.clone().into());
+            }
+        }
+
+        assert_eq!(routes.len(), 28);
+    }
+
+    #[test]
+    fn leetcode_two() {
+        use std::collections::{HashSet, VecDeque};
+
+        pub fn unique_paths(m: i32, n: i32) -> i32 {
+            let mut stack = VecDeque::new();
+            stack.push_front((0, 0));
+
+            let mut count = 0;
+
+            while stack.len() > 0 {
+                // Length already checked
+                let cur = stack.pop_front().unwrap();
+
+                dbg!(cur);
+
+                // Add next checks
+                if cur.0 + 1 < m {
+                    stack.push_front((cur.0 + 1, cur.1));
+                }
+
+                if cur.1 + 1 < n {
+                    stack.push_front((cur.0, cur.1 + 1));
+                }
+
+                // Cull this eventually
+                if cur.0 == m - 1 && cur.1 == n - 1 {
+                    count += 1;
+                }
+            }
+
+            count
+        }
+
+        assert_eq!(unique_paths(3, 7), 28);
+        assert_eq!(unique_paths(3, 2), 3);
     }
 }
