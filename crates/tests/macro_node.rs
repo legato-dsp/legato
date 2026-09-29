@@ -40,9 +40,7 @@ fn macro_generated_node_registers_and_renders() {
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
-    let (mut app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (mut app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .register_node("audio", Modtap4::spec())
         .build_dsl(
             r#"
@@ -229,7 +227,6 @@ fn instantiation_params_apply_through_the_graph() {
             channels: 2,
             rt_capacity: 0,
         };
-        let ports = PortBuilder::default().audio_out(2).build();
         let graph = format!(
             r#"
             audio {{
@@ -243,7 +240,7 @@ fn instantiation_params_apply_through_the_graph() {
         "#
         );
 
-        let (mut app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        let (mut app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
             .register_node("audio", Modtap4::spec())
             .build_dsl(&graph)
             .expect("modtap graph should build");

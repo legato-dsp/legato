@@ -13,7 +13,6 @@ use crate::{
     midi::{MidiRuntimeFrontend, MidiStore},
     node::LegatoNode,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
-    ports::Ports,
     registry::{
         NodeRegistry, audio_registry_factory, control_registry_factory, midi_registry_factory,
         modular_registry_factory,

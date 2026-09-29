@@ -86,8 +86,6 @@ fn main() {
         rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
     let midi_rt_fe = start_midi_thread(
         256,
         "my_port",
@@ -97,7 +95,7 @@ fn main() {
     )
     .unwrap();
 
-    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .set_midi_runtime(midi_rt_fe)
         .build_dsl(&graph)
         .expect("graph should build");
