@@ -4,7 +4,6 @@ use legato::{
     input::DeviceSelection,
     interface::{AudioInterface, InputSpec},
     kernel::EXAMPLE_PLATE_KERNEL_PATCH,
-    ports::PortBuilder,
 };
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
