@@ -41,9 +41,7 @@ fn main() {
         rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .register_node("audio", Modtap4::spec())
         .build_dsl(graph)
         .expect("modtap graph should build");

@@ -30,10 +30,10 @@ pub fn build_placeholder_context(config: Config) -> AudioContext {
     )
 }
 
-fn build_placeholder_runtime(config: Config, ports: Ports) -> Runtime {
+fn build_placeholder_runtime(config: Config) -> Runtime {
     let temporary_context = build_placeholder_context(config);
 
-    Runtime::new(temporary_context, ports)
+    Runtime::new(temporary_context)
 }
 
 pub fn get_node_test_harness_stereo_4096(node: Box<dyn DynNode>) -> Runtime {
@@ -44,9 +44,7 @@ pub fn get_node_test_harness_stereo_4096(node: Box<dyn DynNode>) -> Runtime {
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
-    let mut runtime = build_placeholder_runtime(config, ports);
+    let mut runtime = build_placeholder_runtime(config);
 
     let id = runtime.add_node(LegatoNode::new("test node".into(), "test".into(), node));
 
@@ -69,9 +67,7 @@ pub fn get_node_test_harness_stereo(
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
-    let mut runtime = build_placeholder_runtime(config, ports);
+    let mut runtime = build_placeholder_runtime(config);
 
     let id = runtime.add_node(LegatoNode::new("test node".into(), "test".into(), node));
 

@@ -35,7 +35,7 @@ fn main() {
         }
 
         audio {
-            svf { chans: 2, cutoff: 5400.0, q: 0.4, type: "lowpass" },
+            svf { chans: 1, cutoff: 5400.0, q: 0.4, type: "lowpass" },
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
         }
@@ -48,7 +48,7 @@ fn main() {
         poly_voice[1:13:3] >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
-        osc_mixer >> svf // audio-only auto-map skips svf's cutoff/q control ports
+        osc_mixer >> svf
 
         svf >> mono_fan_out
 
@@ -57,13 +57,11 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 44_100,
+        sample_rate: 48_000,
         block_size: 4096,
         channels: 2,
         rt_capacity: 0,
     };
-
-    let ports = PortBuilder::default().audio_out(2).build();
 
     let midi_rt_fe = start_midi_thread(
         256,
@@ -74,7 +72,7 @@ fn main() {
     )
     .unwrap();
 
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .set_midi_runtime(midi_rt_fe)
         .build_dsl(&graph)
         .expect("graph should build");
