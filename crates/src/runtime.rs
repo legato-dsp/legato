@@ -20,17 +20,12 @@ new_key_type! {
 pub struct Runtime {
     context: AudioContext,
     executor: Executor,
-    ports: Ports,
 }
 impl Runtime {
-    pub fn new(context: AudioContext, ports: Ports) -> Self {
+    pub fn new(context: AudioContext) -> Self {
         let executor = Executor::default();
 
-        Self {
-            context,
-            executor,
-            ports,
-        }
+        Self { context, executor }
     }
     pub fn add_node(&mut self, node: LegatoNode) -> NodeKey {
         self.executor.graph.add_node(node)
@@ -142,7 +137,6 @@ impl Debug for Runtime {
             .entry(&"config", &self.context.get_config())
             .key(&"graph")
             .value(&self.executor.graph)
-            .entry(&"graph_ports", &self.ports)
             .entry(&"sink_key", self.executor.sink())
             .finish()
     }

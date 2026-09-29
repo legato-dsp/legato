@@ -54,7 +54,7 @@ fn main() {
         patches {
             voice * 3 { },
         }
-        
+
         audio {
             track_mixer { tracks: 3, chans_per_track: 2 },
         }
@@ -80,7 +80,7 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
+        sample_rate: env_or("LEGATO_SAMPLE_RATE", 48_000),
         block_size: env_or("LEGATO_BLOCK_SIZE", 256),
         channels: env_or("LEGATO_CHANNELS", 2),
         rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
@@ -107,7 +107,7 @@ fn main() {
     frontend
         .load_sample(
             &String::from("main"),
-            Path::new("../samples/guitar.wav"),
+            Path::new("../samples/string.wav"),
             2,
             config.sample_rate as u32,
         )

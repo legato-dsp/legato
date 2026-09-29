@@ -143,7 +143,7 @@ pub struct LegatoBuilder<State> {
 }
 
 impl LegatoBuilder<Unconfigured> {
-    pub fn new(config: Config, ports: Ports) -> LegatoBuilder<Configured> {
+    pub fn new(config: Config) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
         let audio_registry = audio_registry_factory();
         let control_registry = control_registry_factory();
@@ -178,7 +178,7 @@ impl LegatoBuilder<Unconfigured> {
             ),
         );
 
-        let placeholder_runtime = Runtime::new(temporary_context, ports);
+        let placeholder_runtime = Runtime::new(temporary_context);
 
         LegatoBuilder::<Configured> {
             runtime: placeholder_runtime,
