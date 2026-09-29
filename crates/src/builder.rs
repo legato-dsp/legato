@@ -226,6 +226,14 @@ where
             .register_audio_input(name, consumer, chans, block_size);
         self
     }
+    /// Register an AudioInput that the caller writes directly on the audio thread,
+    /// e.g. a plugin's main or sidechain input. See [`crate::block_adapter::BlockAdapter`].
+    pub fn register_host_audio_input(mut self, name: &'static str, chans: usize) -> Self {
+        let block_size = self.runtime.get_config().block_size;
+        self.resource_builder
+            .register_host_audio_input(name, chans, block_size);
+        self
+    }
 }
 
 impl<S> LegatoBuilder<S>
@@ -516,6 +524,8 @@ where
 
         let cfg = runtime.get_config();
 
+        let audio_input_keys = self.resource_builder.audio_input_keys().clone();
+
         // IMPORTANT: Swap out the dummy resources for the actual ones
         let (resources_frontend, resources) = self
             .resource_builder
@@ -534,7 +544,7 @@ where
 
         let (producer, consumer) = rtrb::RingBuffer::new(512);
 
-        let app = LegatoApp::new(runtime, consumer);
+        let app = LegatoApp::new(runtime, consumer, audio_input_keys);
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 

@@ -9,12 +9,14 @@ use crate::{
     graph::Connection,
     msg::{LegatoMsg, NodeMessage},
     resources::{
+        AudioInputKey,
         buffer::AudioSampleError,
         params::{ParamError, ParamKey},
     },
     runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
+pub mod block_adapter;
 pub mod builder;
 pub mod config;
 pub mod connection;
@@ -58,14 +60,40 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     msg_consumer: rtrb::Consumer<LegatoMsg>,
+    audio_input_keys: HashMap<String, AudioInputKey>,
 }
 
 impl LegatoApp {
-    pub fn new(runtime: Runtime, receiver: rtrb::Consumer<LegatoMsg>) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        receiver: rtrb::Consumer<LegatoMsg>,
+        audio_input_keys: HashMap<String, AudioInputKey>,
+    ) -> Self {
         Self {
             runtime,
             msg_consumer: receiver,
+            audio_input_keys,
         }
+    }
+
+    pub fn audio_input_key(&self, name: &str) -> Option<AudioInputKey> {
+        self.audio_input_keys.get(name).copied()
+    }
+
+    /// Write host audio into a host-fed input, starting at frame `offset` of the next block.
+    #[inline]
+    pub fn write_audio_input(
+        &mut self,
+        key: AudioInputKey,
+        chan: usize,
+        offset: usize,
+        src: &[f32],
+    ) {
+        self.runtime
+            .get_context_mut()
+            .get_resources_mut()
+            .get_audio_input_mut(key)
+            .write(chan, offset, src);
     }
     /// Pull the next block from the runtime, if you choose to manage the
     /// runtime yourself.
