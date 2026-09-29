@@ -142,6 +142,13 @@ impl Resources {
             .channel(chan)
     }
 
+    #[inline(always)]
+    pub fn get_audio_input_mut(&mut self, key: AudioInputKey) -> &mut AudioInput {
+        self.audio_inputs
+            .get_mut(key)
+            .expect("Invalid AudioInputKey")
+    }
+
     pub fn drain(&mut self) {
         // Drain external buffers
         while let Ok(incoming) = self.external_buffer_update_receiver.pop() {
@@ -223,7 +230,19 @@ impl ResourceBuilder {
         chans: usize,
         block_size: usize,
     ) -> AudioInputKey {
-        let input = AudioInput::new(chans, block_size, consumer);
+        self.insert_audio_input(name, AudioInput::new(chans, block_size, consumer))
+    }
+
+    pub fn register_host_audio_input(
+        &mut self,
+        name: &str,
+        chans: usize,
+        block_size: usize,
+    ) -> AudioInputKey {
+        self.insert_audio_input(name, AudioInput::host_fed(chans, block_size))
+    }
+
+    fn insert_audio_input(&mut self, name: &str, input: AudioInput) -> AudioInputKey {
         let key = self.audio_inputs.insert(input);
         self.audio_input_key_lookup.insert(name.into(), key);
         key
@@ -232,6 +251,10 @@ impl ResourceBuilder {
     /// Look up an audio input key by name (for use in node factories).
     pub fn get_audio_input_key(&self, name: &str) -> Option<AudioInputKey> {
         self.audio_input_key_lookup.get(name).copied()
+    }
+
+    pub fn audio_input_keys(&self) -> &HashMap<String, AudioInputKey> {
+        &self.audio_input_key_lookup
     }
 
     pub fn build(
