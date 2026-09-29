@@ -77,8 +77,7 @@ fn render(src: &str, block_size: usize) -> Vec<f32> {
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_out(1).build();
-    let (mut app, _frontend): (LegatoApp, _) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (mut app, _frontend): (LegatoApp, _) = LegatoBuilder::<Unconfigured>::new(config)
         .build_dsl(src)
         .expect("graph should build");
 

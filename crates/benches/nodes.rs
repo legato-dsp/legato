@@ -149,9 +149,7 @@ fn bench_stereo_delay(c: &mut Criterion) {
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
-
-    let (mut app, _) = LegatoBuilder::new(config, ports)
+    let (mut app, _) = LegatoBuilder::new(config)
         .build_dsl(&String::from(
             r#"
             { delay_write }
@@ -183,7 +181,6 @@ fn bench_delay_quality(c: &mut Criterion) {
     };
 
     let build = |quality: &str| {
-        let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
         let graph = format!(
             r#"
                 audio {{
@@ -194,7 +191,7 @@ fn bench_delay_quality(c: &mut Criterion) {
                 {{ delay_read }}
             "#
         );
-        let (app, _) = LegatoBuilder::new(config, ports)
+        let (app, _) = LegatoBuilder::new(config)
             .build_dsl(&graph)
             .expect("graph should build");
         app
@@ -270,9 +267,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
         rt_capacity: 0,
     };
 
-    let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
-
-    let (mut app, _) = LegatoBuilder::new(config, ports).build_dsl(&String::from(
+    let (mut app, _) = LegatoBuilder::new(config).build_dsl(&String::from(
        r#"
         patch voice(
             freq_m = 440.0,
@@ -369,8 +364,7 @@ fn bench_plate_rust_vs_kernel(c: &mut Criterion) {
     };
 
     let build = |graph: &str| {
-        let ports = PortBuilder::default().audio_out(2).build();
-        let (app, _) = LegatoBuilder::new(config, ports)
+        let (app, _) = LegatoBuilder::new(config)
             .build_dsl(graph)
             .expect("graph should build");
         app

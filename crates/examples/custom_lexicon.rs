@@ -49,11 +49,9 @@ fn main() {
         rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
-    let ports = PortBuilder::default().audio_out(2).build();
-
     let (producer, consumer) = rtrb::RingBuffer::new(4096 * 4); // 4 frames of headroom
 
-    let (app, _) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, _) = LegatoBuilder::<Unconfigured>::new(config)
         .register_audio_input("one", consumer, 1, config.block_size)
         .build_dsl(&graph)
         .expect("graph should build");
