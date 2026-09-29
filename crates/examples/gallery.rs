@@ -5,7 +5,6 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     interface::AudioInterface,
-    ports::PortBuilder,
     spec::NodeDefinition,
 };
 use ratatui::{
@@ -95,8 +94,7 @@ fn build_interface<'a>(
     config: Config,
     source: &str,
 ) -> Result<AudioInterface<'a>, String> {
-    let ports = PortBuilder::default().audio_out(2).build();
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .register_node("audio", Modtap4::spec())
         .build_dsl(source)
         .map_err(|e| format!("{e:?}"))?;

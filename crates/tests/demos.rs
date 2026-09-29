@@ -6,7 +6,6 @@ use std::{fs, path::PathBuf};
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
-    ports::PortBuilder,
     spec::NodeDefinition,
 };
 
@@ -31,9 +30,8 @@ fn all_demos_build() {
             channels: 2,
             rt_capacity: 0,
         };
-        let ports = PortBuilder::default().audio_out(2).build();
 
-        let result = LegatoBuilder::<Unconfigured>::new(config, ports)
+        let result = LegatoBuilder::<Unconfigured>::new(config)
             .register_node("audio", Modtap4::spec())
             .build_dsl(&source);
         assert!(

@@ -1306,11 +1306,10 @@ mod build_dsl {
             channels: 2,
             rt_capacity: 0,
         };
-        let ports = PortBuilder::default().audio_out(2).build();
 
         // Builds the whole graph end-to-end (pipeline + builder + prepare).
         // No MIDI runtime / audio device is required to construct the app.
-        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
             .build_dsl(POLY_GRAPH)
             .expect("graph should build");
     }
@@ -1386,7 +1385,6 @@ mod build_dsl_delay {
             channels: 2,
             rt_capacity: 0,
         };
-        let ports = PortBuilder::default().audio_out(2).build();
 
         let graph = r#"
             audio {
@@ -1399,7 +1397,7 @@ mod build_dsl_delay {
             { feedback }
         "#;
 
-        let _ = LegatoBuilder::<Unconfigured>::new(config, ports)
+        let _ = LegatoBuilder::<Unconfigured>::new(config)
             .build_dsl(graph)
             .expect("graph should build");
     }
@@ -1412,10 +1410,9 @@ mod build_dsl_delay {
             channels: 2,
             rt_capacity: 0,
         };
-        let ports = PortBuilder::default().audio_out(2).build();
 
         // Sample data is loaded later via the frontend; the graph builds without it.
-        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config, ports)
+        let (_app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
             .build_dsl(DELAY_GRAPH)
             .expect("graph should build");
     }
@@ -1453,8 +1450,7 @@ mod build_dsl_automap {
             svf >> track_mixer
             { track_mixer }
         "#;
-        let ports = PortBuilder::default().audio_out(2).build();
-        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
 
@@ -1482,8 +1478,7 @@ mod build_dsl_automap {
             sampler >> gain
             { gain }
         "#;
-        let ports = PortBuilder::default().audio_out(2).build();
-        let _ = LegatoBuilder::<Unconfigured>::new(config(), ports)
+        let _ = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
     }
@@ -1539,8 +1534,7 @@ mod build_dsl_automap {
 
             { verb }
         "#;
-        let ports = PortBuilder::default().audio_out(2).build();
-        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
         let registry = frontend.clone_registry();
@@ -1619,8 +1613,7 @@ mod build_dsl_automap {
 
             { verb }
         "#;
-        let ports = PortBuilder::default().audio_out(2).build();
-        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config(), ports)
+        let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
         let registry = frontend.clone_registry();
