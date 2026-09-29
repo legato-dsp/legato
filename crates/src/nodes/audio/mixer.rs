@@ -69,12 +69,6 @@ impl Node for TrackMixer {
                 }
             }
         }
-
-        for chan in ao {
-            for chunk in chan.chunks_exact_mut(LANES) {
-                chunk.copy_from_slice(fast_tanh_vf32(Vf32::from_slice(chunk)).as_array());
-            }
-        }
     }
     fn ports(&self) -> &Ports {
         &self.ports
