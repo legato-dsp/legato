@@ -4,7 +4,7 @@ use slotmap::new_key_type;
 
 use crate::{
     config::Config,
-    midi::{MidiError, MidiMessage, MidiRuntimeFrontend, MidiStore},
+    midi::{MidiError, MidiEvent, MidiMessage, MidiRuntimeFrontend, MidiStore, frame_since},
     resources::{
         Resources,
         params::{ParamError, ParamKey},
@@ -13,6 +13,8 @@ use crate::{
 
 new_key_type! { struct ExternalAudioKey; }
 
+const MIDI_STORE_CAPACITY: usize = 256;
+
 /// The AudioContext struct contains information about the current audio graph, as well as
 /// some resources that are hosted up for nodes to access within a specific runtime.
 ///
@@ -20,7 +22,9 @@ new_key_type! { struct ExternalAudioKey; }
 /// for delay lines or samples.
 pub struct AudioContext {
     config: Config,
-    midi_store: Option<MidiStore>,
+    midi_store: MidiStore,
+    // Filled by the host while the next block accumulates, see [`AudioContext::write_midi`]
+    midi_pending: MidiStore,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     resources: Resources,
     block_start: Instant,
@@ -30,7 +34,8 @@ impl AudioContext {
     pub fn new(config: Config, resources: Resources) -> Self {
         Self {
             config,
-            midi_store: None,
+            midi_store: MidiStore::new(MIDI_STORE_CAPACITY),
+            midi_pending: MidiStore::new(MIDI_STORE_CAPACITY),
             resources,
             midi_runtime_frontend: None,
             block_start: Instant::now(),
@@ -41,20 +46,35 @@ impl AudioContext {
         self.config.sample_rate = sr;
     }
 
-    pub(crate) fn update_midi(&mut self) {
-        self.clear_midi();
+    /// Make the host-written events current, then add live events stamped against the
+    /// end of the previous block, trading one block of latency for jitter-free timing.
+    pub(crate) fn begin_midi_block(&mut self) {
+        std::mem::swap(&mut self.midi_store, &mut self.midi_pending);
+        self.midi_pending.clear();
 
-        let Some(runtime) = self.midi_runtime_frontend.take() else {
+        let Some(runtime) = &self.midi_runtime_frontend else {
             return;
         };
 
-        while let Some(msg) = runtime.recv() {
-            if let Err(e) = self.insert_midi_msg(msg) {
+        let Config {
+            sample_rate,
+            block_size,
+            ..
+        } = self.config;
+
+        while let Some((msg, at)) = runtime.recv() {
+            let frame = frame_since(self.block_start, at, sample_rate, block_size);
+            if let Err(e) = self.midi_store.insert(MidiEvent { frame, msg }) {
                 eprintln!("{:?}", e);
             }
         }
+    }
 
-        self.midi_runtime_frontend = Some(runtime);
+    /// Queue an event for frame `frame` of the next block.
+    #[inline(always)]
+    pub fn write_midi(&mut self, frame: usize, msg: MidiMessage) -> Result<(), MidiError> {
+        let frame = frame.min(self.config.block_size.saturating_sub(1)) as u32;
+        self.midi_pending.insert(MidiEvent { frame, msg })
     }
 
     /// For a time being, this is a quick hack inside oversampling. I would recommend not using, as it does not reflex internal state!!!
@@ -91,11 +111,6 @@ impl AudioContext {
         self.config.sample_rate
     }
 
-    // Add a midi store to the runtime.
-    pub fn set_midi_store(&mut self, store: MidiStore) {
-        self.midi_store = Some(store);
-    }
-
     pub fn set_midi_runtime_frontend(&mut self, frontend: MidiRuntimeFrontend) {
         self.midi_runtime_frontend = Some(frontend)
     }
@@ -113,8 +128,8 @@ impl AudioContext {
     }
 
     #[inline(always)]
-    pub fn get_midi_store(&self) -> Option<&MidiStore> {
-        self.midi_store.as_ref()
+    pub fn get_midi_store(&self) -> &MidiStore {
+        &self.midi_store
     }
 
     #[inline(always)]
@@ -125,19 +140,5 @@ impl AudioContext {
     #[inline(always)]
     pub fn get_instant(&self) -> Instant {
         self.block_start
-    }
-
-    /// Insert a midi message into the store.
-    #[inline(always)]
-    pub fn insert_midi_msg(&mut self, msg: MidiMessage) -> Result<(), MidiError> {
-        let store = self.midi_store.as_mut().unwrap();
-        store.insert(msg)
-    }
-
-    #[inline(always)]
-    pub fn clear_midi(&mut self) {
-        if let Some(store) = &mut self.midi_store {
-            store.clear();
-        }
     }
 }

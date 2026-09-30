@@ -1,6 +1,5 @@
 use crate::{
     context::AudioContext,
-    math::fast_tanh_vf32,
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     simd::{LANES, Vf32},
@@ -67,12 +66,6 @@ impl Node for TrackMixer {
                     out += gained;
                     chunk_out.copy_from_slice(&out.to_array());
                 }
-            }
-        }
-
-        for chan in ao {
-            for chunk in chan.chunks_exact_mut(LANES) {
-                chunk.copy_from_slice(fast_tanh_vf32(Vf32::from_slice(chunk)).as_array());
             }
         }
     }

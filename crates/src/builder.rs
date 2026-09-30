@@ -10,7 +10,7 @@ use crate::{
         pipeline::Pipeline,
     },
     graph::{Connection, ConnectionEntry},
-    midi::{MidiRuntimeFrontend, MidiStore},
+    midi::MidiRuntimeFrontend,
     node::LegatoNode,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
     registry::{
@@ -541,7 +541,6 @@ where
 
         if let Some(fe) = self.midi_runtime_frontend.take() {
             let ctx = runtime.get_context_mut();
-            ctx.set_midi_store(MidiStore::new(256));
             ctx.set_midi_runtime_frontend(fe);
         }
 

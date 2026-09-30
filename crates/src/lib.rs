@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     executor::OutputView,
     graph::Connection,
+    midi::{MidiError, MidiMessage},
     msg::{LegatoMsg, NodeMessage},
     resources::{
         AudioInputKey,
@@ -95,6 +96,12 @@ impl LegatoApp {
             .get_audio_input_mut(key)
             .write(chan, offset, src);
     }
+    /// Queue a MIDI message at frame `frame` of the next block, e.g. from a plugin's note events.
+    /// See [`crate::block_adapter::BlockAdapter`].
+    #[inline]
+    pub fn write_midi(&mut self, frame: usize, msg: MidiMessage) -> Result<(), MidiError> {
+        self.runtime.get_context_mut().write_midi(frame, msg)
+    }
     /// Pull the next block from the runtime, if you choose to manage the
     /// runtime yourself.
     ///
@@ -103,7 +110,7 @@ impl LegatoApp {
     /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
     pub fn next_block(&mut self) -> OutputView<'_> {
         let ctx = self.runtime.get_context_mut();
-        ctx.update_midi();
+        ctx.begin_midi_block();
 
         // Drain messages for sample update
         self.runtime.drain_external_sample_msg();
