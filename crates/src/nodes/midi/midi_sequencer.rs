@@ -99,7 +99,6 @@ impl Node for MidiSequencer {
                                 note: prev_note,
                                 velocity: 0,
                             },
-                            instant: when,
                             channel_idx: self.midi_chan,
                         },
                         when,
@@ -115,7 +114,6 @@ impl Node for MidiSequencer {
                                 note,
                                 velocity: (step.vel * 127.0) as u8,
                             },
-                            instant: when,
                             channel_idx: self.midi_chan,
                         },
                         when,
@@ -134,7 +132,6 @@ impl Node for MidiSequencer {
                         let _ = ctx.send_to_system_midi(
                             MidiMessage {
                                 data: MidiMessageKind::NoteOff { note, velocity: 0 },
-                                instant: when,
                                 channel_idx: self.midi_chan,
                             },
                             when,

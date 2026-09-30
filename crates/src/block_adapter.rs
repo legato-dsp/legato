@@ -1,4 +1,4 @@
-use crate::{LegatoApp, resources::AudioInputKey};
+use crate::{LegatoApp, midi::MidiMessage, resources::AudioInputKey};
 
 /// Runs a fixed block size graph under a host that calls with arbitrary block sizes,
 /// e.g. a plugin `process` callback.
@@ -6,7 +6,8 @@ use crate::{LegatoApp, resources::AudioInputKey};
 /// This will incur some latency, so the adapter adds
 /// [`BlockAdapter::latency_samples`] of latency.
 ///
-/// This can then reported back to the host for delay compensation (common in VSTs)
+/// This can then reported back to the host for delay compensation (common in VSTs).
+/// MIDI is delayed by the same amount, so it stays sample-aligned with the audio.
 pub struct BlockAdapter {
     block_size: usize,
     chans: usize,
@@ -36,19 +37,32 @@ impl BlockAdapter {
 
     /// Process `io` in place: it is read as the `main` input (if given), then overwritten
     /// with graph output. `aux` inputs, such as sidechains, must be `io`'s length.
+    ///
+    /// `midi` yields `(frame in io, message)` in frame order; late frames land on the last one.
     pub fn process(
         &mut self,
         app: &mut LegatoApp,
         main: Option<AudioInputKey>,
         io: &mut [&mut [f32]],
         aux: &[(AudioInputKey, &[&[f32]])],
+        midi: impl IntoIterator<Item = (usize, MidiMessage)>,
     ) {
         let frames = io.first().map_or(0, |c| c.len());
+        let mut midi = midi.into_iter().peekable();
         let mut done = 0;
 
         while done < frames {
             let n = (self.block_size - self.pos).min(frames - done);
             let range = done..done + n;
+            let last_chunk = done + n == frames;
+
+            while let Some((frame, msg)) =
+                midi.next_if(|&(frame, _)| frame < range.end || last_chunk)
+            {
+                let offset = frame.clamp(done, range.end - 1) - done;
+                // A full store drops the event; there is nothing better to do on the audio thread
+                let _ = app.write_midi(self.pos + offset, msg);
+            }
 
             // Map the specific inputs to their corresponding keys
             // This allows us to use all the inputs as graph nodes
@@ -99,6 +113,7 @@ mod tests {
     use crate::{
         builder::{LegatoBuilder, Unconfigured},
         config::Config,
+        midi::MidiMessageKind,
     };
     use proptest::prelude::*;
 
@@ -128,6 +143,70 @@ mod tests {
         app
     }
 
+    fn voice() -> LegatoApp {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: BLOCK_SIZE,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let src = r#"
+            midi {
+                voice { chan: 0 },
+            }
+
+            { voice }
+            "#;
+        let (app, _) = LegatoBuilder::<Unconfigured>::new(config)
+            .build_dsl(src)
+            .expect("graph should build");
+        app
+    }
+
+    fn note(data: MidiMessageKind) -> MidiMessage {
+        MidiMessage {
+            data,
+            channel_idx: 0,
+        }
+    }
+
+    /// Renders the voice's gate with a note held over `[on, off)` in absolute frames.
+    fn render_gate(host_blocks: &[usize], on: usize, off: usize) -> (Vec<f32>, usize) {
+        let mut app = voice();
+        let mut adapter = BlockAdapter::new(&app);
+        let events = [
+            (
+                on,
+                note(MidiMessageKind::NoteOn {
+                    note: 60,
+                    velocity: 100,
+                }),
+            ),
+            (
+                off,
+                note(MidiMessageKind::NoteOff {
+                    note: 60,
+                    velocity: 0,
+                }),
+            ),
+        ];
+        let mut gate = Vec::new();
+
+        let mut at = 0;
+        for &n in host_blocks {
+            let mut l = vec![0.0; n];
+            let mut r = vec![0.0; n];
+            let midi = events
+                .iter()
+                .filter(|(t, _)| (at..at + n).contains(t))
+                .map(|&(t, msg)| (t - at, msg));
+            adapter.process(&mut app, None, &mut [&mut l, &mut r], &[], midi);
+            gate.extend(l);
+            at += n;
+        }
+        (gate, adapter.latency_samples())
+    }
+
     fn signal(chan: usize, len: usize) -> Vec<f32> {
         (0..len).map(|i| (chan * 100_000 + i + 1) as f32).collect()
     }
@@ -153,11 +232,11 @@ mod tests {
             {
                 let mut io = [l.as_mut_slice(), r.as_mut_slice()];
                 if input == "main" {
-                    adapter.process(&mut app, Some(key), &mut io, &[]);
+                    adapter.process(&mut app, Some(key), &mut io, &[], []);
                 } else {
                     let sc = [&inputs[0][at..at + n], &inputs[1][at..at + n]];
                     io.iter_mut().for_each(|c| c.fill(-1.0));
-                    adapter.process(&mut app, None, &mut io, &[(key, &sc)]);
+                    adapter.process(&mut app, None, &mut io, &[(key, &sc)], []);
                 }
             }
             outputs[0].extend(l);
@@ -182,6 +261,46 @@ mod tests {
         }
     }
 
+    proptest! {
+        #[test]
+        fn midi_is_delayed_by_the_same_latency_as_audio(
+            host_blocks in prop::collection::vec(1usize..300, 1..40),
+            on_frac in 0.0f64..1.0,
+            len_frac in 0.0f64..1.0,
+        ) {
+            let total: usize = host_blocks.iter().sum();
+            let on = (on_frac * total as f64) as usize;
+            let off = on + 1 + (len_frac * (total - on) as f64) as usize;
+            let (gate, latency) = render_gate(&host_blocks, on, off);
+            let expected: Vec<f32> = (0..total)
+                .map(|i| if (on + latency..off + latency).contains(&i) { 1.0 } else { 0.0 })
+                .collect();
+            prop_assert_eq!(gate, expected);
+        }
+    }
+
+    #[test]
+    fn late_midi_lands_on_the_last_frame() {
+        let mut app = voice();
+        let mut adapter = BlockAdapter::new(&app);
+        let on = note(MidiMessageKind::NoteOn {
+            note: 60,
+            velocity: 100,
+        });
+        let mut l = vec![0.0; BLOCK_SIZE];
+        let mut r = l.clone();
+        adapter.process(
+            &mut app,
+            None,
+            &mut [&mut l, &mut r],
+            &[],
+            [(BLOCK_SIZE * 9, on)],
+        );
+        adapter.process(&mut app, None, &mut [&mut l, &mut r], &[], []);
+        assert_eq!(l[BLOCK_SIZE - 2], 0.0);
+        assert_eq!(l[BLOCK_SIZE - 1], 1.0);
+    }
+
     #[test]
     fn reset_clears_pending_output() {
         let mut app = passthrough("main");
@@ -189,12 +308,12 @@ mod tests {
         let key = app.audio_input_key("main");
         let mut l = vec![1.0; BLOCK_SIZE + 10];
         let mut r = l.clone();
-        adapter.process(&mut app, key, &mut [&mut l, &mut r], &[]);
+        adapter.process(&mut app, key, &mut [&mut l, &mut r], &[], []);
 
         adapter.reset();
         let mut l = vec![0.0; BLOCK_SIZE];
         let mut r = l.clone();
-        adapter.process(&mut app, key, &mut [&mut l, &mut r], &[]);
+        adapter.process(&mut app, key, &mut [&mut l, &mut r], &[], []);
         assert!(l.iter().chain(&r).all(|&s| s == 0.0));
     }
 }

@@ -30,56 +30,40 @@ impl Voice {
 
 impl Node for Voice {
     fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
-        let block_start = ctx.get_instant();
-
-        let cfg = ctx.get_config();
-        let block_size = cfg.block_size;
-        let fs = cfg.sample_rate as f32;
+        let block_size = ctx.get_config().block_size;
 
         let mut last_sample = 0;
 
-        if let Some(store) = ctx.get_midi_store() {
-            let res = store.get_channel(self.midi_channel);
+        for event in ctx.get_midi_store().get_channel(self.midi_channel) {
+            let end_sample = (event.frame as usize).min(block_size);
 
-            for item in res {
-                if item.data == MidiMessageKind::Dummy {
-                    continue;
-                }
-
-                let offset_duration = item.instant - block_start;
-
-                let idx = (offset_duration.as_secs_f32() * fs) as usize;
-
-                let end_sample = idx.min(block_size);
-
-                // Update state from past to now
-                if end_sample > last_sample {
-                    outputs[0][last_sample..end_sample].fill(self.cur_gate);
-                    outputs[1][last_sample..end_sample].fill(self.cur_freq);
-                    outputs[2][last_sample..end_sample].fill(self.cur_vel);
-                }
-
-                match item.data {
-                    MidiMessageKind::NoteOn { note, velocity } => {
-                        self.cur_freq = mtof(note);
-                        self.cur_gate = 1.0;
-                        self.cur_vel = velocity as f32 / 127.0;
-                    }
-                    // Keep velocity and frequency here, as there may be a synth with aftertouch logic
-                    MidiMessageKind::NoteOff { .. } => {
-                        self.cur_gate = 0.0;
-                    }
-                    // TODO: Pitch bend? Aftertouch logic
-                    _ => {}
-                }
-
-                last_sample = end_sample;
+            // Update state from past to now
+            if end_sample > last_sample {
+                outputs[0][last_sample..end_sample].fill(self.cur_gate);
+                outputs[1][last_sample..end_sample].fill(self.cur_freq);
+                outputs[2][last_sample..end_sample].fill(self.cur_vel);
             }
-            if last_sample < block_size {
-                outputs[0][last_sample..block_size].fill(self.cur_gate);
-                outputs[1][last_sample..block_size].fill(self.cur_freq);
-                outputs[2][last_sample..block_size].fill(self.cur_vel);
+
+            match event.msg.data {
+                MidiMessageKind::NoteOn { note, velocity } => {
+                    self.cur_freq = mtof(note);
+                    self.cur_gate = 1.0;
+                    self.cur_vel = velocity as f32 / 127.0;
+                }
+                // Keep velocity and frequency here, as there may be a synth with aftertouch logic
+                MidiMessageKind::NoteOff { .. } => {
+                    self.cur_gate = 0.0;
+                }
+                // TODO: Pitch bend? Aftertouch logic
+                _ => {}
             }
+
+            last_sample = end_sample;
+        }
+        if last_sample < block_size {
+            outputs[0][last_sample..block_size].fill(self.cur_gate);
+            outputs[1][last_sample..block_size].fill(self.cur_freq);
+            outputs[2][last_sample..block_size].fill(self.cur_vel);
         }
     }
     fn ports(&self) -> &Ports {
@@ -251,88 +235,73 @@ impl PolyVoice {
 
 impl Node for PolyVoice {
     fn process(&mut self, ctx: &mut AudioContext, _: &Inputs, outputs: &mut [&mut [f32]]) {
-        let block_start = ctx.get_instant();
-
-        let cfg = ctx.get_config();
-        let block_size = cfg.block_size;
-        let fs = cfg.sample_rate as f32;
+        let block_size = ctx.get_config().block_size;
 
         // Reset last sample buffer. This buffer helps create the slices.
         for idx in self.last_index_buffers.iter_mut() {
             *idx = 0;
         }
 
-        if let Some(store) = ctx.get_midi_store() {
-            let res = store.get_channel(self.midi_channel);
+        for event in ctx.get_midi_store().get_channel(self.midi_channel) {
+            // Here, we use the voice allocator to figure out which voice we are going to write to.
+            // You can think of voices in the same way that tracks are used in the mixer.
+            // If we have 3 midi channels here, and 3 voice, we end up with 9 total channels.
+            let chan_option = match event.msg.data {
+                MidiMessageKind::NoteOn { note, velocity } => {
+                    self.voice_allocator.on_note_on(note, velocity)
+                }
+                MidiMessageKind::NoteOff { note, velocity } => {
+                    self.voice_allocator.on_note_off(note, velocity)
+                }
+                _ => None,
+            };
 
-            for item in res {
-                if item.data == MidiMessageKind::Dummy {
-                    continue;
+            if let Some(chan_idx) = chan_option {
+                let idx = (event.frame as usize).min(block_size);
+
+                let start = chan_idx * PER_VOICE_CHANS;
+
+                let last_index = &mut self.last_index_buffers[chan_idx];
+
+                let state = &mut self.port_caches[chan_idx];
+
+                // Update state from past to now
+                if idx > *last_index {
+                    outputs[start][*last_index..idx].fill(state.gate);
+                    outputs[start + 1][*last_index..idx].fill(state.freq);
+                    outputs[start + 2][*last_index..idx].fill(state.vel);
                 }
 
-                // Here, we use the voice allocator to figure out which voice we are going to write to.
-                // You can think of voices in the same way that tracks are used in the mixer.
-                // If we have 3 midi channels here, and 3 voice, we end up with 9 total channels.
-                let chan_option = match item.data {
+                match event.msg.data {
                     MidiMessageKind::NoteOn { note, velocity } => {
-                        self.voice_allocator.on_note_on(note, velocity)
+                        state.freq = mtof(note);
+                        state.gate = 1.0;
+                        state.vel = velocity as f32 / 127.0;
                     }
-                    MidiMessageKind::NoteOff { note, velocity } => {
-                        self.voice_allocator.on_note_off(note, velocity)
+                    // TODO: Keep velocity and frequency here, as there may be a synth with aftertouch logic
+                    MidiMessageKind::NoteOff { note: _, velocity } => {
+                        state.gate = 0.0;
+                        state.vel = velocity as f32 / 127.0;
                     }
-                    _ => None,
-                };
-
-                if let Some(chan_idx) = chan_option {
-                    let offset_duration = item.instant - block_start;
-
-                    let idx =
-                        (offset_duration.as_secs_f32() * fs).clamp(0.0, block_size as f32) as usize;
-
-                    let start = chan_idx * PER_VOICE_CHANS;
-
-                    let last_index = &mut self.last_index_buffers[chan_idx];
-
-                    let state = &mut self.port_caches[chan_idx];
-
-                    // Update state from past to now
-                    if idx > *last_index {
-                        outputs[start][*last_index..idx].fill(state.gate);
-                        outputs[start + 1][*last_index..idx].fill(state.freq);
-                        outputs[start + 2][*last_index..idx].fill(state.vel);
-                    }
-
-                    match item.data {
-                        MidiMessageKind::NoteOn { note, velocity } => {
-                            state.freq = mtof(note);
-                            state.gate = 1.0;
-                            state.vel = velocity as f32 / 127.0;
-                        }
-                        // TODO: Keep velocity and frequency here, as there may be a synth with aftertouch logic
-                        MidiMessageKind::NoteOff { note: _, velocity } => {
-                            state.gate = 0.0;
-                            state.vel = velocity as f32 / 127.0;
-                        }
-                        // TODO: Pitch bend? Aftertouch logic
-                        _ => {}
-                    }
-
-                    *last_index = idx;
+                    // TODO: Pitch bend? Aftertouch logic
+                    _ => {}
                 }
+
+                *last_index = idx;
             }
+        }
 
-            // Finish the slices to the end of the buffer with the current state
+        // Finish the slices to the end of the buffer with the current state
 
-            for (i, state) in self.port_caches.iter().enumerate() {
-                let last_sample = self.last_index_buffers[i];
+        for (i, state) in self.port_caches.iter().enumerate() {
+            let last_sample = self.last_index_buffers[i];
 
-                let start = i * PER_VOICE_CHANS;
+            let start = i * PER_VOICE_CHANS;
 
-                if last_sample < block_size {
-                    outputs[start][last_sample..block_size].fill(state.gate);
-                    outputs[start + 1][last_sample..block_size].fill(state.freq);
-                    outputs[start + 2][last_sample..block_size].fill(state.vel);
-                }
+            if last_sample < block_size {
+                outputs[start][last_sample..block_size].fill(state.gate);
+                outputs[start + 1][last_sample..block_size].fill(state.freq);
+                outputs[start + 2][last_sample..block_size].fill(state.vel);
             }
         }
     }
