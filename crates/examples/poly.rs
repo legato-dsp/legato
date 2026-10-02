@@ -11,10 +11,10 @@ fn main() {
     let graph = String::from(
         r#"
         patch voice(
-            attack = 50.0,
-            decay = 30.0,
-            sustain = 0.3,
-            release = 50.0
+            attack = 200.0,
+            decay = 200.0,
+            sustain = 0.2,
+            release = 120.0
         ) {
             in freq gate
 
