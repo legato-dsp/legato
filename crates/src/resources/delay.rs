@@ -1,3 +1,4 @@
+use std::simd::cmp::SimdOrd;
 use std::simd::num::{SimdFloat, SimdUint};
 
 use crate::{
@@ -86,6 +87,7 @@ impl ResourceDelay {
 
         let floor = offsets.simd_max(Vf32::splat(0.0)).cast::<u32>();
         let frac = offsets - floor.cast::<f32>();
+        let floor = floor.simd_min(mask);
 
         let base = (cursor + mask - floor) & mask;
         let prev = (base + mask) & mask;
@@ -108,6 +110,7 @@ impl ResourceDelay {
 
         let floor = offsets.simd_max(Vf32::splat(0.0)).cast::<u32>();
         let frac = offsets - floor.cast::<f32>();
+        let floor = floor.simd_min(mask);
 
         let i1 = (cursor + mask - floor) & mask;
         let i0 = (i1 + ONE_VIDX) & mask;
@@ -267,5 +270,139 @@ mod tests {
         // Requesting a delay of 100 should be clamped to the max buffer size (mask)
         let val = delay.get_offset(&buffer, 100);
         assert!(val > 0.0);
+    }
+
+    use proptest::prelude::*;
+
+    fn arb_log2_size() -> impl Strategy<Value = usize> {
+        (2u32..=10).prop_map(|p| 1usize << p)
+    }
+
+    proptest! {
+        // push(i) followed by get_offset(delay) must return the value pushed
+        // `delay` steps before the most recent one, for every in-range delay.
+        #[test]
+        fn push_then_get_offset_round_trips(
+            size in arb_log2_size(),
+            num_pushes in 1usize..64,
+            extra_delay in 0usize..256,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..num_pushes {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let max_delay = num_pushes.min(size) - 1;
+            let requested = extra_delay % (max_delay + 1);
+            let expected = (num_pushes - 1 - requested) as f32;
+            prop_assert_eq!(delay.get_offset(&buffer, requested), expected);
+        }
+
+        // get_offset must clamp any out-of-range delay to the oldest sample
+        // in the buffer (delay == mask) rather than wrapping around.
+        #[test]
+        fn get_offset_clamps_out_of_range_delay(
+            size in arb_log2_size(),
+            huge_delay in 0usize..usize::MAX,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..size {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let clamped = delay.get_offset(&buffer, size - 1);
+            let huge = delay.get_offset(&buffer, huge_delay.max(size - 1));
+            prop_assert_eq!(huge, clamped);
+        }
+
+        // Linear interpolation at an integer offset must reproduce the
+        // exact sample (no interpolation drift), for any in-range delay.
+        #[test]
+        fn linear_integer_offset_is_exact(
+            size in arb_log2_size(),
+            delay_idx in 0usize..1024,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..size {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let d = delay_idx % size;
+            let expected = delay.get_offset(&buffer, d);
+            let got = delay.get_delay_linear(&buffer, d as f32);
+            prop_assert_eq!(got, expected);
+        }
+
+        // Scalar and SIMD linear reads must agree for both in-range and
+        // out-of-range (clamped) offsets.
+        #[test]
+        fn linear_scalar_matches_simd(
+            size in arb_log2_size(),
+            offset in 0f32..4096.0,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..size {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let scalar = delay.get_delay_linear(&buffer, offset);
+            let simd = delay.get_delay_linear_simd(&buffer, Vf32::splat(offset));
+            for lane in simd.as_array() {
+                prop_assert!(
+                    (lane - scalar).abs() < 1e-3,
+                    "linear SIMD mismatch: scalar={scalar}, simd={lane}, offset={offset}, size={size}"
+                );
+            }
+        }
+
+        // Scalar and SIMD cubic reads must agree for both in-range and
+        // out-of-range (clamped) offsets.
+        #[test]
+        fn cubic_scalar_matches_simd(
+            size in arb_log2_size(),
+            offset in 0f32..4096.0,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..size {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let scalar = delay.get_delay_cubic(&buffer, offset);
+            let simd = delay.get_delay_cubic_simd(&buffer, Vf32::splat(offset));
+            for lane in simd.as_array() {
+                prop_assert!(
+                    (lane - scalar).abs() < 1e-3,
+                    "cubic SIMD mismatch: scalar={scalar}, simd={lane}, offset={offset}, size={size}"
+                );
+            }
+        }
+
+        // get_offset must never read outside the backing buffer, regardless
+        // of delay magnitude.
+        #[test]
+        fn get_offset_never_out_of_bounds(
+            size in arb_log2_size(),
+            num_pushes in 0usize..64,
+            delay_samples in 0usize..usize::MAX,
+        ) {
+            let mut buffer = vec![0.0; size];
+            let mut delay = ResourceDelay::new(Window { len: size, start: 0 });
+
+            for i in 0..num_pushes {
+                delay.push(&mut buffer, i as f32);
+            }
+
+            let _ = delay.get_offset(&buffer, delay_samples);
+        }
     }
 }
