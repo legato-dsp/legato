@@ -28,7 +28,7 @@ fn allpass(ring: &mut RingBuffer, x: f32, g: f32, delay: f32) -> f32 {
 ///
 /// Would highly suggest this resource for understanding:
 ///
-/// https://www.youtube.com/watch?v=Il_qdtQKnqk
+/// <https://www.youtube.com/watch?v=Il_qdtQKnqk>
 #[derive(Clone)]
 pub struct Plate480 {
     ports: Ports,
