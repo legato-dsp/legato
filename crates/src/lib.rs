@@ -1,4 +1,5 @@
-#![feature(portable_simd)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![doc = include_str!("../README.md")]
 
 use std::{collections::HashMap, fmt::Debug, path::Path};
 

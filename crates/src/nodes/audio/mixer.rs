@@ -1,8 +1,9 @@
+#[cfg(feature = "simd")]
+use crate::simd::{LANES, Vf32};
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
-    simd::{LANES, Vf32},
 };
 
 // TODO: More mixers, matrix, panning, etc.
@@ -16,7 +17,7 @@ use crate::{
 pub struct TrackMixer {
     chans_per_track: usize,
     ports: Ports,
-    gain: Vec<Vf32>,
+    gain: Vec<f32>,
 }
 
 impl TrackMixer {
@@ -37,7 +38,7 @@ impl TrackMixer {
         };
         Self {
             chans_per_track,
-            gain: gain.into_iter().map(Vf32::splat).collect(),
+            gain,
             ports: PortBuilder::default()
                 .audio_in(chans_per_track * tracks)
                 .audio_out(chans_per_track)
@@ -47,14 +48,15 @@ impl TrackMixer {
 }
 
 impl Node for TrackMixer {
-    fn process<'a>(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+    #[cfg(feature = "simd")]
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // Note: the graph does not explicity clear ao. So, if you are going to do multiple passes, you have to clear it first
         for buffer in ao.iter_mut() {
             buffer.fill(0.0);
         }
 
         for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
-            let gain = self.gain[i];
+            let gain = Vf32::splat(self.gain[i]);
             for (chan_idx, chan) in track.iter().enumerate() {
                 for (chunk_in, chunk_out) in chan
                     .unwrap()
@@ -69,6 +71,23 @@ impl Node for TrackMixer {
             }
         }
     }
+
+    #[cfg(not(feature = "simd"))]
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+        for buffer in ao.iter_mut() {
+            buffer.fill(0.0);
+        }
+
+        for (i, track) in ai.chunks_exact(self.chans_per_track).enumerate() {
+            let gain = self.gain[i];
+            for (chan_idx, chan) in track.iter().enumerate() {
+                for (&x, out) in chan.unwrap().iter().zip(ao[chan_idx].iter_mut()) {
+                    *out += x * gain;
+                }
+            }
+        }
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

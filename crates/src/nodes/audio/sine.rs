@@ -32,15 +32,17 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#[cfg(feature = "simd")]
 use std::simd::{Simd, StdFloat};
 
+#[cfg(feature = "simd")]
+use crate::simd::{LANES, Vf32};
 use crate::{
     context::AudioContext,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
-    simd::{LANES, Vf32},
 };
 
 /// Polynomial order used for the sine approximation. Higher is more spectrally
@@ -100,6 +102,7 @@ impl Sine {
         self
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     fn tick_inner<const ORDER: usize>(&mut self, freq: f32) -> f32 {
         // Multiply by the reciprocal, like the block path, so the phase
@@ -108,6 +111,14 @@ impl Sine {
         sin_turns::<ORDER, 1>(Simd::splat(self.phase)).as_array()[0]
     }
 
+    #[cfg(not(feature = "simd"))]
+    #[inline(always)]
+    fn tick_inner<const ORDER: usize>(&mut self, freq: f32) -> f32 {
+        self.phase = self.phase.fract() + freq * (1.0 / self.sr);
+        sin_turns_scalar::<ORDER>(self.phase)
+    }
+
+    #[cfg(feature = "simd")]
     fn process_external_freq<const ORDER: usize>(
         &mut self,
         ctx: &mut AudioContext,
@@ -142,6 +153,27 @@ impl Sine {
         }
     }
 
+    #[cfg(not(feature = "simd"))]
+    fn process_external_freq<const ORDER: usize>(
+        &mut self,
+        ctx: &mut AudioContext,
+        fm_in: &[f32],
+        ao: &mut [&mut [f32]],
+    ) {
+        let config = ctx.get_config();
+        let fs_recip = 1.0 / config.sample_rate as f32;
+
+        for (n, &freq) in fm_in.iter().enumerate() {
+            self.phase = self.phase.fract() + freq * fs_recip;
+            let sample = sin_turns_scalar::<ORDER>(self.phase);
+
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
+            }
+        }
+    }
+
+    #[cfg(feature = "simd")]
     fn process_internal_freq<const ORDER: usize>(
         &mut self,
         ctx: &mut AudioContext,
@@ -172,6 +204,26 @@ impl Sine {
 
             for chan in ao.iter_mut() {
                 chan[start..end].copy_from_slice(sample.as_array());
+            }
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_internal_freq<const ORDER: usize>(
+        &mut self,
+        ctx: &mut AudioContext,
+        ao: &mut [&mut [f32]],
+    ) {
+        let config = ctx.get_config();
+        let fs_recip = 1.0 / config.sample_rate as f32;
+        let dt = self.freq * fs_recip;
+
+        for n in 0..config.block_size {
+            self.phase = self.phase.fract() + dt;
+            let sample = sin_turns_scalar::<ORDER>(self.phase);
+
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
             }
         }
     }
@@ -271,11 +323,58 @@ impl NodeDefinition for Sine {
 
 // Start of BSD-3 Code
 
+// Only used by the scalar fallback and by equivalence tests; dead code when
+// the `simd` feature is active, which is expected.
+#[cfg_attr(feature = "simd", allow(dead_code))]
+#[inline(always)]
+fn fast_mod_mhalf_half_scalar(x: f32) -> f32 {
+    x - x.round()
+}
+
+#[cfg_attr(feature = "simd", allow(dead_code))]
+#[inline(always)]
+fn sin_turns_mhalfpi_halfpi_scalar<const ORDER: usize>(x: f32) -> f32 {
+    let x_sq = x * x;
+
+    let y = match ORDER {
+        3 => {
+            // -24.6941916306 x + 50.1403295328 x^3
+            let x_1_3 = -24.694_19_f32 + 50.140_33_f32 * x_sq;
+            x * x_1_3
+        }
+        5 => {
+            // -25.1167285815 x + 63.6615119634 x^3 - 54.0847297225 x^5
+            let x_3_5 = 63.661_51_f32 + -54.084_73_f32 * x_sq;
+            let x_1_3_5 = -25.116_73_f32 + x_3_5 * x_sq;
+            x * x_1_3_5
+        }
+        _ => {
+            // order-7: -25.1323666662 x + 64.7874540567 x^3 - 66.0947787168 x^5 + 32.0267973181 x^7
+            let x_q = x_sq * x_sq;
+            let x_5_7 = -66.094_78_f32 + 32.026_8_f32 * x_sq;
+            let x_1_3 = -25.132_366_f32 + 64.787_45_f32 * x_sq;
+            let x_1_3_5_7 = x_1_3 + x_5_7 * x_q;
+            x * x_1_3_5_7
+        }
+    };
+
+    y * (x + 0.5) * (x - 0.5)
+}
+
+#[cfg_attr(feature = "simd", allow(dead_code))]
+#[inline(always)]
+fn sin_turns_scalar<const ORDER: usize>(x: f32) -> f32 {
+    let x_wrapped = fast_mod_mhalf_half_scalar(x);
+    sin_turns_mhalfpi_halfpi_scalar::<ORDER>(x_wrapped)
+}
+
+#[cfg(feature = "simd")]
 #[inline(always)]
 fn fast_mod_mhalf_half<const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     x - x.round()
 }
 
+#[cfg(feature = "simd")]
 #[inline(always)]
 fn sin_turns_mhalfpi_halfpi<const ORDER: usize, const LANES: usize>(
     x: Simd<f32, LANES>,
@@ -307,12 +406,14 @@ fn sin_turns_mhalfpi_halfpi<const ORDER: usize, const LANES: usize>(
     y * (x + Simd::splat(0.5)) * (x - Simd::splat(0.5))
 }
 
+#[cfg(feature = "simd")]
 #[inline(always)]
 fn sin_turns<const ORDER: usize, const LANES: usize>(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     let x_wrapped = fast_mod_mhalf_half(x);
     sin_turns_mhalfpi_halfpi::<ORDER, LANES>(x_wrapped)
 }
 
+#[cfg(feature = "simd")]
 pub fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES> {
     // TODO: a nicer way
     let t1 = x.shift_elements_right::<1>(0.0);
@@ -334,9 +435,9 @@ pub fn simd_scan<const LANES: usize>(mut x: Simd<f32, LANES>) -> Simd<f32, LANES
     x
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "simd"))]
 mod test {
-    use super::{simd_scan, sin_turns};
+    use super::{simd_scan, sin_turns, sin_turns_scalar};
 
     #[test]
     fn check_prefix_sum_block_simd() {
@@ -380,5 +481,50 @@ mod test {
         assert!(max_err::<7>() < 1e-3, "order-7 too inaccurate");
         assert!(max_err::<5>() < 1e-2, "order-5 too inaccurate");
         assert!(max_err::<3>() < 1e-1, "order-3 too inaccurate");
+    }
+
+    // Only compiled with --features simd, since that's the only time both
+    // paths exist in the same binary: proves the scalar fallback used by
+    // default (stable) builds agrees with the vectorized path.
+    #[test]
+    fn scalar_matches_simd_approximation() {
+        fn check<const ORDER: usize>() {
+            for i in 0..2000 {
+                let turns = i as f32 / 2000.0 - 0.5;
+                let scalar = sin_turns_scalar::<ORDER>(turns);
+                let simd = sin_turns::<ORDER, 1>(std::simd::Simd::splat(turns)).as_array()[0];
+                assert!(
+                    (scalar - simd).abs() < 1e-6,
+                    "order-{ORDER} mismatch at turns={turns}: scalar={scalar}, simd={simd}"
+                );
+            }
+        }
+
+        check::<3>();
+        check::<5>();
+        check::<7>();
+    }
+}
+
+#[cfg(test)]
+mod scalar_test {
+    use super::sin_turns_scalar;
+
+    fn max_err_scalar<const ORDER: usize>() -> f32 {
+        let mut worst = 0.0f32;
+        for i in 0..1000 {
+            let turns = i as f32 / 1000.0 - 0.5;
+            let approx = sin_turns_scalar::<ORDER>(turns);
+            let exact = (turns * std::f32::consts::TAU).sin();
+            worst = worst.max((approx - exact).abs());
+        }
+        worst
+    }
+
+    #[test]
+    fn quality_orders_bounded_scalar() {
+        assert!(max_err_scalar::<7>() < 1e-3, "order-7 too inaccurate");
+        assert!(max_err_scalar::<5>() < 1e-2, "order-5 too inaccurate");
+        assert!(max_err_scalar::<3>() < 1e-1, "order-3 too inaccurate");
     }
 }

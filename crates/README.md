@@ -31,14 +31,12 @@ Legato still needs a bit more polish before a 0.1.0 release.
 
 For the time being, a barebones sine wave synthesizer with a delay, and CPAL output, could look like the following:
 
-```rust
-use cpal::{SampleRate, StreamConfig, traits::HostTrait};
+```rust,no_run
 use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
+    interface::AudioInterface,
     midi::{MidiPortKind, start_midi_thread},
-    out::start_application_audio_thread,
-    ports::PortBuilder,
 };
 
 fn main() {
@@ -117,7 +115,7 @@ fn main() {
         rt_capacity: 0,
     };
 
-    let (midi_rt_fe, _writer_fe) = start_midi_thread(
+    let midi_rt_fe = start_midi_thread(
         256,
         "my_port",
         MidiPortKind::Index(0),
@@ -128,23 +126,19 @@ fn main() {
 
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .set_midi_runtime(midi_rt_fe)
-        .build_dsl(&graph);
+        .build_dsl(&graph)
+        .unwrap();
 
     #[cfg(target_os = "macos")]
-    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("JACK host not available");
+    let host = cpal::host_from_id(cpal::HostId::CoreAudio).expect("CoreAudio host not available");
 
     #[cfg(target_os = "linux")]
     let host = cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available");
 
-    let device = host.default_output_device().unwrap();
-
-    let stream_config = StreamConfig {
-        channels: config.channels as u16,
-        sample_rate: SampleRate(config.sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
-    };
-
-    start_application_audio_thread(&device, stream_config, app).expect("Audio thread panic!");
+    AudioInterface::builder(&host, config)
+        .build(app)
+        .expect("Failed to start audio")
+        .run_forever();
 }
 ```
 
@@ -152,9 +146,17 @@ fn main() {
 
 In order to design a custom node, you need to meet the following criteria:
 
-1. Design the node and `impl Node` for your node. The Sweep node is a relatively uncomplicated example.
+1. Design the node and `impl Node` for it. The Sweep node (shipped in `legato::nodes::audio::sweep`) is a relatively uncomplicated example.
 
 ```rust
+use std::time::Duration;
+
+use legato::{
+    context::AudioContext,
+    node::{Inputs, Node},
+    ports::{PortBuilder, Ports},
+};
+
 #[derive(Clone)]
 pub struct Sweep {
     phase: f32,
@@ -212,32 +214,69 @@ impl Node for Sweep {
 }
 ```
 
-2. It then needs to be added to the node_registry with the builder, along with the specification.
+2. Implement `NodeDefinition`, which gives the node a name, its required/optional DSL
+   parameters, and a factory function that builds it from parsed params. This is also
+   what makes the node self-registering: `Sweep::spec()` is derived from the consts below
+   for free.
 
 ```rust
-use legato::node::node_spec;
+# use std::time::Duration;
+# use legato::{
+#     context::AudioContext,
+#     node::{Inputs, Node},
+#     ports::{PortBuilder, Ports},
+# };
+# #[derive(Clone)]
+# pub struct Sweep {
+#     phase: f32,
+#     range: [f32; 2],
+#     duration: Duration,
+#     elapsed: usize,
+#     ports: Ports,
+# }
+# impl Sweep {
+#     pub fn new(range: &[f32], duration: Duration, chans: usize) -> Self {
+#         let mut new_range = [0.0; 2];
+#         new_range.copy_from_slice(range);
+#         Self { phase: 0.0, range: new_range, duration, elapsed: 0, ports: PortBuilder::default().audio_out(chans).build() }
+#     }
+# }
+# impl Node for Sweep {
+#     fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut [&mut [f32]]) {}
+#     fn ports(&self) -> &Ports { &self.ports }
+# }
+use legato::{
+    builder::{ResourceBuilderView, ValidationError},
+    dsl::ir::DSLParams,
+    node::DynNode,
+    spec::NodeDefinition,
+};
 
-let spec = node_spec!(
-    "sweep".into(),
-    required = [], // Must be pased via the DSL
-    optional = ["duration", "range", "chans"], // Optional params
-    // See the [`NodeFactory`] type for more details
-    build = |_, p| {
+impl NodeDefinition for Sweep {
+    const NAME: &'static str = "sweep";
+    const DESCRIPTION: &'static str = "Frequency sweep oscillator over a configurable range";
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["duration", "range", "chans"];
+
+    fn create(
+        _rb: &mut ResourceBuilderView,
+        p: &DSLParams,
+    ) -> Result<Box<dyn DynNode>, ValidationError> {
         let chans = p.get_usize("chans").unwrap_or(2);
         let duration = p
             .get_duration_ms("duration")
             .unwrap_or(Duration::from_secs_f32(5.0));
         let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
-
-        let node = Sweep::new(&range, duration, chans);
-        Ok(Box::new(node))
+        Ok(Box::new(Self::new(&range, duration, chans)))
     }
-);
+}
+```
 
-builder.register_node(
-    &"audio", // The namespace of the node
-    spec
-);
+3. Register it on the builder, under whichever namespace it should live in (built-in
+   oscillators live under `"audio"`, for example).
+
+```rust,ignore
+let builder = builder.register_node("audio", Sweep::spec());
 ```
 
 ## License

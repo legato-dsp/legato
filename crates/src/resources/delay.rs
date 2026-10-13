@@ -1,10 +1,16 @@
+#[cfg(feature = "simd")]
 use std::simd::cmp::SimdOrd;
+#[cfg(feature = "simd")]
 use std::simd::num::{SimdFloat, SimdUint};
 
+#[cfg(feature = "simd")]
 use crate::{
-    math::{ONE_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
-    resources::window::Window,
+    math::{ONE_VIDX, cubic_hermite_simd, lerp_simd},
     simd::{Vf32, Vidx},
+};
+use crate::{
+    math::{cubic_hermite, lerp},
+    resources::window::Window,
 };
 
 #[derive(Clone)]
@@ -78,6 +84,7 @@ impl ResourceDelay {
         cubic_hermite(a, b, c, d, offset - floor as f32)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn get_delay_linear_simd(&self, data: &[f32], offsets: Vf32) -> Vf32 {
         debug_assert_eq!(self.window.len, data.len());
@@ -101,6 +108,7 @@ impl ResourceDelay {
         lerp_simd(gather(base), gather(prev), frac)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn get_delay_cubic_simd(&self, data: &[f32], offsets: Vf32) -> Vf32 {
         debug_assert_eq!(self.window.len, data.len());
@@ -155,11 +163,13 @@ impl<'a> DelayLineView<'a> {
         self.delay.get_delay_cubic(self.data, offset)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn read_linear_simd(&self, offsets: Vf32) -> Vf32 {
         self.delay.get_delay_linear_simd(self.data, offsets)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn read_cubic_simd(&self, offsets: Vf32) -> Vf32 {
         self.delay.get_delay_cubic_simd(self.data, offsets)
@@ -232,6 +242,7 @@ mod tests {
         let _ = ResourceDelay::new(Window { len: 3, start: 0 });
     }
 
+    #[cfg(feature = "simd")]
     #[test]
     fn linear_scalar_and_simd_match() {
         let size = 4096;
@@ -341,6 +352,7 @@ mod tests {
 
         // Scalar and SIMD linear reads must agree for both in-range and
         // out-of-range (clamped) offsets.
+        #[cfg(feature = "simd")]
         #[test]
         fn linear_scalar_matches_simd(
             size in arb_log2_size(),
@@ -365,6 +377,7 @@ mod tests {
 
         // Scalar and SIMD cubic reads must agree for both in-range and
         // out-of-range (clamped) offsets.
+        #[cfg(feature = "simd")]
         #[test]
         fn cubic_scalar_matches_simd(
             size in arb_log2_size(),

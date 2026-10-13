@@ -1,11 +1,13 @@
+#[cfg(feature = "simd")]
 use std::simd::{StdFloat, num::SimdFloat};
 
+#[cfg(feature = "simd")]
+use crate::simd::{LANES, Vf32};
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     ring::RingBuffer,
-    simd::{LANES, Vf32},
 };
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ impl FirFilter {
 }
 
 impl Node for FirFilter {
+    #[cfg(feature = "simd")]
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // These checks are important because we are using this elsewhere for oversampling
         if let Some(inner) = ai[0] {
@@ -65,6 +68,30 @@ impl Node for FirFilter {
             }
         }
     }
+
+    #[cfg(not(feature = "simd"))]
+    fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
+        if let Some(inner) = ai[0] {
+            debug_assert_eq!(ai.len(), ao.len());
+            debug_assert_eq!(inner.len(), inner.len());
+        }
+
+        for ((chan_in, out), state) in ai.iter().zip(ao.iter_mut()).zip(self.state.iter_mut()) {
+            if let Some(input) = chan_in {
+                for (n, x) in input.iter().enumerate() {
+                    state.push(*x);
+
+                    let mut acc = 0.0;
+                    for (k, h) in self.coeffs.iter().enumerate() {
+                        acc += h * state.get_offset(k);
+                    }
+
+                    out[n] = acc;
+                }
+            }
+        }
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -72,13 +99,14 @@ impl Node for FirFilter {
 
 #[cfg(test)]
 mod test {
+    use crate::{nodes::audio::fir::FirFilter, simd::LANES};
+
+    #[cfg(feature = "simd")]
+    use crate::simd::Vf32;
+    #[cfg(feature = "simd")]
     use std::simd::{StdFloat, num::SimdFloat};
 
-    use crate::{
-        nodes::audio::fir::FirFilter,
-        simd::{LANES, Vf32},
-    };
-
+    #[cfg(feature = "simd")]
     impl FirFilter {
         fn process_mono_block(&mut self, input: &[f32]) -> Vec<f32> {
             assert_eq!(self.state.len(), 1);
@@ -105,6 +133,29 @@ mod test {
                 }
 
                 out[n] = scalar;
+            }
+
+            out
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    impl FirFilter {
+        fn process_mono_block(&mut self, input: &[f32]) -> Vec<f32> {
+            assert_eq!(self.state.len(), 1);
+
+            let mut out = vec![0.0; input.len()];
+            let state = &mut self.state[0];
+
+            for (n, x) in input.iter().enumerate() {
+                state.push(*x);
+
+                let mut acc = 0.0;
+                for (k, h) in self.coeffs.iter().enumerate() {
+                    acc += h * state.get_offset(k);
+                }
+
+                out[n] = acc;
             }
 
             out

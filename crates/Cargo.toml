@@ -13,6 +13,11 @@ license = "AGPL-3.0"
 default = ["jack"]
 docs = ["dep:serde", "dep:serde_json"]
 jack = ["cpal/jack"]
+# Enables std::simd (portable_simd)-based vectorized processing for a handful
+# of hot paths (oscillators, FIR, delay-line interpolation). Requires a
+# nightly compiler. The default (this feature off) is a pure-scalar
+# implementation that builds on stable Rust.
+simd = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
