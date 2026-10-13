@@ -4,7 +4,7 @@ members = ["legato-macros"]
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.0.50"
+version = "0.0.51"
 edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
@@ -13,10 +13,6 @@ license = "AGPL-3.0"
 default = ["jack"]
 docs = ["dep:serde", "dep:serde_json"]
 jack = ["cpal/jack"]
-# Enables std::simd (portable_simd)-based vectorized processing for a handful
-# of hot paths (oscillators, FIR, delay-line interpolation). Requires a
-# nightly compiler. The default (this feature off) is a pure-scalar
-# implementation that builds on stable Rust.
 simd = []
 
 [dependencies]
