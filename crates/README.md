@@ -41,6 +41,8 @@ spawn this same shape in the graph 5 times. These patches can nest within each o
 `/examples` directory for more examples, and the parent repository for various integrations.
 
 ```rust,no_run
+use legato::prelude::*;
+
 let graph = String::from(
     r#"
     patch voice(
@@ -133,11 +135,7 @@ Custom nodes have the following requirements:
 ```rust
 use std::time::Duration;
 
-use legato::{
-    context::AudioContext,
-    node::{Inputs, Node},
-    ports::{PortBuilder, Ports},
-};
+use legato::prelude::*;
 
 /// Keep all of the owned state for the node here
 #[derive(Clone)]
@@ -209,11 +207,7 @@ impl Node for Sweep {
 
 ```rust
 # use std::time::Duration;
-# use legato::{
-#     context::AudioContext,
-#     node::{Inputs, Node},
-#     ports::{PortBuilder, Ports},
-# };
+# use legato::prelude::*;
 # #[derive(Clone)]
 # pub struct Sweep {
 #     phase: f32,
@@ -233,12 +227,6 @@ impl Node for Sweep {
 #     fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut [&mut [f32]]) {}
 #     fn ports(&self) -> &Ports { &self.ports }
 # }
-use legato::{
-    builder::{ResourceBuilderView, ValidationError},
-    dsl::ir::DSLParams,
-    node::DynNode,
-    spec::NodeDefinition,
-};
 
 impl NodeDefinition for Sweep {
     const NAME: &'static str = "sweep";

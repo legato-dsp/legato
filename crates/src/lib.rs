@@ -40,6 +40,7 @@ pub mod node;
 pub mod out;
 pub mod persample;
 pub mod ports;
+pub mod prelude;
 pub mod registry;
 pub mod resources;
 pub mod ring;

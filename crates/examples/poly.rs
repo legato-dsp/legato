@@ -1,10 +1,4 @@
-use legato::{
-    builder::{LegatoBuilder, Unconfigured},
-    config::Config,
-    interface::AudioInterface,
-    midi::{MidiPortKind, start_midi_thread},
-    ports::PortBuilder,
-};
+use legato::prelude::*;
 
 /// A five voice sawtooth example
 fn main() {

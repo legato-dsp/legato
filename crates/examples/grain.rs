@@ -1,13 +1,7 @@
 use std::path::Path;
 
-use legato::{
-    builder::{LegatoBuilder, Unconfigured},
-    config::Config,
-    interface::AudioInterface,
-    kernel::EXAMPLE_PLATE_KERNEL_PATCH,
-    midi::{MidiPortKind, start_midi_thread},
-    ports::PortBuilder,
-};
+use legato::kernel::EXAMPLE_PLATE_KERNEL_PATCH;
+use legato::prelude::*;
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
