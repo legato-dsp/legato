@@ -34,7 +34,7 @@
             root = ./crates;
             fileset = nixpkgs.lib.fileset.unions [
               (craneLib.fileset.commonCargoSources ./crates)
-              (nixpkgs.lib.fileset.fileFilter (file: file.hasExt "legato") ./crates)
+              (nixpkgs.lib.fileset.fileFilter (file: file.hasExt "legato" || file.hasExt "md") ./crates)
             ];
           };
 
