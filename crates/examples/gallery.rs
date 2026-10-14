@@ -1,12 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use cpal::Host;
-use legato::{
-    builder::{LegatoBuilder, Unconfigured},
-    config::Config,
-    interface::AudioInterface,
-    spec::NodeDefinition,
-};
+use legato::prelude::*;
 use ratatui::{
     Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},

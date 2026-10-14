@@ -1,10 +1,13 @@
+#[cfg(feature = "simd")]
 use std::simd::{
     StdFloat,
     num::{SimdFloat, SimdUint},
 };
 
+use crate::math::{cubic_hermite, lerp};
+#[cfg(feature = "simd")]
 use crate::{
-    math::{ONE_VIDX, TWO_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    math::{ONE_VIDX, TWO_VIDX, cubic_hermite_simd, lerp_simd},
     simd::{LANES, Vf32, Vidx},
 };
 
@@ -53,6 +56,7 @@ impl<'a> Window<'a> {
         }
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn read_linear_simd(&self, offsets: Vf32) -> Vf32 {
         let floor_float = offsets.floor();
@@ -63,6 +67,7 @@ impl<'a> Window<'a> {
         lerp_simd(a, b, t)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn read_cubic_simd(&self, offsets: Vf32) -> Vf32 {
         let floor_float = offsets.floor();
@@ -75,6 +80,7 @@ impl<'a> Window<'a> {
         cubic_hermite_simd(a, b, c, d, t)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     fn gather(&self, indices: Vidx) -> Vf32 {
         let mut out = [0.0f32; LANES];

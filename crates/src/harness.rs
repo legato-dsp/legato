@@ -6,7 +6,6 @@ use crate::{
     config::Config,
     context::AudioContext,
     node::{DynNode, LegatoNode},
-    ports::{PortBuilder, Ports},
     resources::{Resources, arena::RuntimeArena, params::ParamStore},
     runtime::Runtime,
 };

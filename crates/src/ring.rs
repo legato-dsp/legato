@@ -1,10 +1,13 @@
+#[cfg(feature = "simd")]
 use std::simd::{
     Simd, StdFloat,
     num::{SimdFloat, SimdUint},
 };
 
+use crate::math::{cubic_hermite, lerp};
+#[cfg(feature = "simd")]
 use crate::{
-    math::{ONE_VIDX, TWO_VIDX, cubic_hermite, cubic_hermite_simd, lerp, lerp_simd},
+    math::{ONE_VIDX, TWO_VIDX, cubic_hermite_simd, lerp_simd},
     simd::{LANES, Vf32},
 };
 
@@ -30,6 +33,7 @@ impl RingBuffer {
         self.write_pos = (self.write_pos + 1) % self.capacity;
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn push_simd(&mut self, v: &Vf32) {
         let start = self.write_pos;
@@ -64,6 +68,7 @@ impl RingBuffer {
         &self.data
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn get_chunk_by_offset(&self, k: usize) -> Vf32 {
         let len = self.capacity;
@@ -129,6 +134,7 @@ impl RingBuffer {
         cubic_hermite(a, b, c, d, t)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn get_delay_linear_simd(&self, offset: Vf32) -> Vf32 {
         let floor_float = offset.floor();
@@ -139,6 +145,7 @@ impl RingBuffer {
         lerp_simd(a, b, t)
     }
 
+    #[cfg(feature = "simd")]
     #[inline(always)]
     pub fn get_delay_cubic_simd(&self, offset: Vf32) -> Vf32 {
         let floor_float = offset.floor();
@@ -151,6 +158,7 @@ impl RingBuffer {
         cubic_hermite_simd(a, b, c, d, t)
     }
 
+    #[cfg(feature = "simd")]
     fn gather_simd<const N: usize>(&self, indices: Simd<u32, N>) -> Simd<f32, N> {
         let mut out = [0.0; N];
         let len = self.capacity;
@@ -164,6 +172,7 @@ impl RingBuffer {
     }
 }
 
+#[cfg(feature = "simd")]
 mod test {
     use crate::math::{one_u32_simd, two_u32_simd};
 
@@ -207,26 +216,6 @@ mod test {
     }
 
     #[test]
-    fn offset_sanity() {
-        let mut rb = RingBuffer::new(8);
-
-        for i in 0..12 {
-            rb.push(i as f32);
-        }
-        // v
-        // 0 0 0 0  0 0 0 0
-        // V
-        // 0 1 2 3  4 5 6 7
-        //           v
-        // 8 9 10 11 4 5 6 7
-
-        assert_eq!(rb.get_offset(0), 11.0);
-        assert_eq!(rb.get_offset(1), 10.0);
-        assert_eq!(rb.get_offset(5), 6.0);
-        assert_eq!(rb.get_offset(7), 4.0);
-    }
-
-    #[test]
     fn test_push_chunk_no_wrap() {
         let mut rb = RingBuffer::new(32);
 
@@ -257,20 +246,6 @@ mod test {
 
         assert_eq!(rb.get_chunk_by_offset(0), Vf32::splat(3.0));
         assert_eq!(rb.get_chunk_by_offset(LANES), Vf32::splat(2.0));
-    }
-
-    #[test]
-    fn test_clear() {
-        let mut rb = RingBuffer::new(16);
-
-        rb.push(1.0);
-        rb.push(2.0);
-        rb.push(3.0);
-
-        rb.clear();
-
-        assert_eq!(rb.write_pos, 0);
-        assert!(rb.data.iter().all(|&x| x == 0.0));
     }
 
     #[test]
@@ -441,5 +416,44 @@ mod test {
 
             assert_eq!(scalar_val, chunk_val, "Mismatch at offset {}", i);
         }
+    }
+}
+
+#[cfg(test)]
+mod scalar_test {
+    use super::*;
+
+    #[test]
+    fn offset_sanity() {
+        let mut rb = RingBuffer::new(8);
+
+        for i in 0..12 {
+            rb.push(i as f32);
+        }
+        // v
+        // 0 0 0 0  0 0 0 0
+        // V
+        // 0 1 2 3  4 5 6 7
+        //           v
+        // 8 9 10 11 4 5 6 7
+
+        assert_eq!(rb.get_offset(0), 11.0);
+        assert_eq!(rb.get_offset(1), 10.0);
+        assert_eq!(rb.get_offset(5), 6.0);
+        assert_eq!(rb.get_offset(7), 4.0);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut rb = RingBuffer::new(16);
+
+        rb.push(1.0);
+        rb.push(2.0);
+        rb.push(3.0);
+
+        rb.clear();
+
+        assert_eq!(rb.write_pos, 0);
+        assert!(rb.data.iter().all(|&x| x == 0.0));
     }
 }

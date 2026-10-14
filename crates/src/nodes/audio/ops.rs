@@ -1,17 +1,23 @@
 use crate::{
     context::AudioContext,
-    math::fast_tanh_vf32,
+    math::fast_tanh,
     msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
+};
+#[cfg(feature = "simd")]
+use crate::{
+    math::fast_tanh_vf32,
     simd::{LANES, Vf32},
 };
 
 #[derive(Clone)]
 pub struct ApplyOp {
     val: f32,
-    apply_op: fn(Vf32, Vf32) -> Vf32,
+    apply_op: fn(f32, f32) -> f32,
+    #[cfg(feature = "simd")]
+    apply_op_simd: fn(Vf32, Vf32) -> Vf32,
     ports: Ports,
     chans: usize,
 }
@@ -22,10 +28,12 @@ impl ApplyOp {
     ///
     /// However, we can also pass in multiple channels that are operated against
     /// the current val, which is convenient for say mc gain
-    pub fn new(val: f32, chans: usize, apply_op: fn(Vf32, Vf32) -> Vf32) -> Self {
+    pub fn new(val: f32, chans: usize, op_kind: ApplyOpKind) -> Self {
         Self {
             val,
-            apply_op,
+            apply_op: op_kind.scalar_fn(),
+            #[cfg(feature = "simd")]
+            apply_op_simd: op_kind.simd_fn(),
             chans,
             ports: PortBuilder::default()
                 .audio_in(chans)
@@ -35,6 +43,8 @@ impl ApplyOp {
                 .build(),
         }
     }
+
+    #[cfg(feature = "simd")]
     fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut [&mut [f32]]) {
         let chunk_size = LANES;
 
@@ -46,11 +56,22 @@ impl ApplyOp {
                 .chunks_exact(chunk_size)
                 .zip(out_channel.chunks_exact_mut(chunk_size))
             {
-                let result = (self.apply_op)(Vf32::from_slice(in_chunk), val);
+                let result = (self.apply_op_simd)(Vf32::from_slice(in_chunk), val);
                 out_chunk.copy_from_slice(result.as_array());
             }
         }
     }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_no_input_val(&mut self, ai: &Inputs, ao: &mut [&mut [f32]]) {
+        for (in_channel, out_channel) in ai.iter().zip(ao.iter_mut()) {
+            for (&x, out) in in_channel.unwrap().iter().zip(out_channel.iter_mut()) {
+                *out = (self.apply_op)(x, self.val);
+            }
+        }
+    }
+
+    #[cfg(feature = "simd")]
     fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut [&mut [f32]]) {
         let audio_inputs = &ai[0..self.chans];
 
@@ -62,8 +83,24 @@ impl ApplyOp {
                 .zip(val.chunks_exact(LANES))
             {
                 let result =
-                    (self.apply_op)(Vf32::from_slice(in_chunk), Vf32::from_slice(val_chunk));
+                    (self.apply_op_simd)(Vf32::from_slice(in_chunk), Vf32::from_slice(val_chunk));
                 out_chunk.copy_from_slice(result.as_array());
+            }
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_with_input_val(&mut self, val: &[f32], ai: &Inputs, ao: &mut [&mut [f32]]) {
+        let audio_inputs = &ai[0..self.chans];
+
+        for (in_chan, out_chan) in audio_inputs.iter().zip(ao) {
+            for ((&x, out), &v) in in_chan
+                .unwrap()
+                .iter()
+                .zip(out_chan.iter_mut())
+                .zip(val.iter())
+            {
+                *out = (self.apply_op)(x, v);
             }
         }
     }
@@ -75,13 +112,11 @@ impl PerSampleNode for ApplyOp {
     }
 
     fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
-        // The op fns are typed on the full-width Vf32; splatting one sample
-        // through them keeps tick bit-identical to the block path.
-        let val = Vf32::splat(in_frame[self.chans].unwrap_or(self.val));
+        let val = in_frame[self.chans].unwrap_or(self.val);
 
         for c in 0..self.chans {
             if let Some(sample) = in_frame[c] {
-                out_frame[c] = (self.apply_op)(Vf32::splat(sample), val).as_array()[0];
+                out_frame[c] = (self.apply_op)(sample, val);
             }
         }
     }
@@ -123,24 +158,50 @@ impl Node for ApplyOp {
     }
 }
 
-fn add(a: Vf32, b: Vf32) -> Vf32 {
+fn add(a: f32, b: f32) -> f32 {
     a + b
 }
 
-fn subtract(a: Vf32, b: Vf32) -> Vf32 {
+fn subtract(a: f32, b: f32) -> f32 {
     a - b
 }
 
-fn mult(a: Vf32, b: Vf32) -> Vf32 {
+fn mult(a: f32, b: f32) -> f32 {
     a * b
 }
 
-fn gain(a: Vf32, b: Vf32) -> Vf32 {
+fn gain(a: f32, b: f32) -> f32 {
+    // Fast soft clip
+    fast_tanh(a * b)
+}
+
+fn div(a: f32, b: f32) -> f32 {
+    a / b
+}
+
+#[cfg(feature = "simd")]
+fn add_simd(a: Vf32, b: Vf32) -> Vf32 {
+    a + b
+}
+
+#[cfg(feature = "simd")]
+fn subtract_simd(a: Vf32, b: Vf32) -> Vf32 {
+    a - b
+}
+
+#[cfg(feature = "simd")]
+fn mult_simd(a: Vf32, b: Vf32) -> Vf32 {
+    a * b
+}
+
+#[cfg(feature = "simd")]
+fn gain_simd(a: Vf32, b: Vf32) -> Vf32 {
     // Fast soft clip
     fast_tanh_vf32(a * b)
 }
 
-fn div(a: Vf32, b: Vf32) -> Vf32 {
+#[cfg(feature = "simd")]
+fn div_simd(a: Vf32, b: Vf32) -> Vf32 {
     a / b
 }
 
@@ -152,15 +213,31 @@ pub enum ApplyOpKind {
     Gain,
 }
 
+impl ApplyOpKind {
+    fn scalar_fn(&self) -> fn(f32, f32) -> f32 {
+        match self {
+            ApplyOpKind::Add => add,
+            ApplyOpKind::Subtract => subtract,
+            ApplyOpKind::Mult => mult,
+            ApplyOpKind::Gain => gain,
+            ApplyOpKind::Div => div,
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    fn simd_fn(&self) -> fn(Vf32, Vf32) -> Vf32 {
+        match self {
+            ApplyOpKind::Add => add_simd,
+            ApplyOpKind::Subtract => subtract_simd,
+            ApplyOpKind::Mult => mult_simd,
+            ApplyOpKind::Gain => gain_simd,
+            ApplyOpKind::Div => div_simd,
+        }
+    }
+}
+
 pub fn mult_node_factory(val: f32, chans: usize, op_kind: ApplyOpKind) -> ApplyOp {
-    let op = match op_kind {
-        ApplyOpKind::Add => add,
-        ApplyOpKind::Subtract => subtract,
-        ApplyOpKind::Mult => mult,
-        ApplyOpKind::Gain => gain,
-        ApplyOpKind::Div => div,
-    };
-    ApplyOp::new(val, chans, op)
+    ApplyOp::new(val, chans, op_kind)
 }
 
 use crate::{
@@ -292,6 +369,51 @@ mod test {
             for sample in chan.iter() {
                 assert!(sample.abs() < 1e-6);
             }
+        }
+    }
+
+    // Only compiled with --features simd, since that's the only time both
+    // the scalar fallback and the vectorized path exist in the same binary.
+    #[cfg(feature = "simd")]
+    #[test]
+    fn scalar_ops_match_simd_ops() {
+        use super::{
+            ApplyOpKind, add, add_simd, div, div_simd, gain, gain_simd, mult, mult_simd, subtract,
+            subtract_simd,
+        };
+        use crate::simd::Vf32;
+
+        let pairs: [(fn(f32, f32) -> f32, fn(Vf32, Vf32) -> Vf32); 5] = [
+            (add, add_simd),
+            (subtract, subtract_simd),
+            (mult, mult_simd),
+            (gain, gain_simd),
+            (div, div_simd),
+        ];
+
+        for (scalar_op, simd_op) in pairs {
+            for i in 0..50 {
+                let a = (i as f32 - 25.0) * 0.1;
+                let b = 0.3 + (i as f32) * 0.01;
+                let scalar = scalar_op(a, b);
+                let simd = simd_op(Vf32::splat(a), Vf32::splat(b)).as_array()[0];
+                assert!(
+                    (scalar - simd).abs() < 1e-5,
+                    "mismatch for a={a}, b={b}: scalar={scalar}, simd={simd}"
+                );
+            }
+        }
+
+        // Keep the ApplyOpKind -> fn mapping exercised too.
+        for kind in [
+            ApplyOpKind::Add,
+            ApplyOpKind::Subtract,
+            ApplyOpKind::Mult,
+            ApplyOpKind::Gain,
+            ApplyOpKind::Div,
+        ] {
+            let _ = kind.scalar_fn();
+            let _ = kind.simd_fn();
         }
     }
 }

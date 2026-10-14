@@ -1,4 +1,5 @@
-#![feature(portable_simd)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![doc = include_str!("../README.md")]
 
 use std::{collections::HashMap, fmt::Debug, path::Path};
 
@@ -39,6 +40,7 @@ pub mod node;
 pub mod out;
 pub mod persample;
 pub mod ports;
+pub mod prelude;
 pub mod registry;
 pub mod resources;
 pub mod ring;

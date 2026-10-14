@@ -1,3 +1,4 @@
+#[cfg(feature = "simd")]
 use std::simd::{Select, Simd, StdFloat, cmp::SimdPartialOrd};
 
 use crate::{
@@ -6,11 +7,14 @@ use crate::{
     dsl::ir::DSLParams,
     msg::{NodeMessage, RtValue},
     node::{DynNode, Inputs, Node},
-    nodes::audio::sine::simd_scan,
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
-    simd::{LANES, Vf32},
     spec::NodeDefinition,
+};
+#[cfg(feature = "simd")]
+use crate::{
+    nodes::audio::sine::simd_scan,
+    simd::{LANES, Vf32},
 };
 
 /// A Bandlimited PolyBlep Saw
@@ -40,6 +44,7 @@ impl Saw {
         }
     }
 
+    #[cfg(feature = "simd")]
     fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let fs_recip = 1.0 / config.sample_rate as f32;
@@ -72,6 +77,25 @@ impl Saw {
         }
     }
 
+    #[cfg(not(feature = "simd"))]
+    fn process_internal_freq(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+        let config = ctx.get_config();
+        let fs_recip = 1.0 / config.sample_rate as f32;
+        let dt = self.freq * fs_recip;
+
+        for n in 0..config.block_size {
+            self.phase = self.phase.fract() + dt;
+            let t = self.phase - self.phase.floor();
+            let naive = 2.0 * t - 1.0;
+            let sample = naive - poly_blep(t, dt);
+
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
+            }
+        }
+    }
+
+    #[cfg(feature = "simd")]
     fn process_external_freq(
         &mut self,
         ctx: &mut AudioContext,
@@ -105,6 +129,29 @@ impl Saw {
             }
         }
     }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_external_freq(
+        &mut self,
+        ctx: &mut AudioContext,
+        fm_in: &[f32],
+        ao: &mut [&mut [f32]],
+    ) {
+        let config = ctx.get_config();
+        let fs_recip = 1.0 / config.sample_rate as f32;
+
+        for (n, &freq) in fm_in.iter().enumerate() {
+            let dt = freq * fs_recip;
+            self.phase = self.phase.fract() + dt;
+            let t = self.phase - self.phase.floor();
+            let naive = 2.0 * t - 1.0;
+            let sample = naive - poly_blep(t, dt);
+
+            for chan in ao.iter_mut() {
+                chan[n] = sample;
+            }
+        }
+    }
 }
 
 impl PerSampleNode for Saw {
@@ -121,8 +168,7 @@ impl PerSampleNode for Saw {
         self.phase = self.phase.fract() + dt;
         let t = self.phase - self.phase.floor();
         let naive = 2.0 * t - 1.0;
-        let blep = poly_blep_simd::<1>(Simd::splat(t), Simd::splat(dt)).as_array()[0];
-        let sample = naive - blep;
+        let sample = naive - poly_blep(t, dt);
 
         for out in out_frame.iter_mut() {
             *out = sample;
@@ -157,6 +203,31 @@ impl Node for Saw {
     }
 }
 
+#[inline(always)]
+/// A branchless scalar poly_blep implementation
+///
+/// Credit to this resource here:
+/// https://www.metafunction.co.uk/post/all-about-digital-oscillators-part-2-blits-bleps
+fn poly_blep(t: f32, dt: f32) -> f32 {
+    let u0 = t / dt;
+    let u1 = (t - 1.0) / dt;
+
+    let rising = if u0 >= 0.0 && u0 < 1.0 {
+        u0 + u0 - u0 * u0 - 1.0
+    } else {
+        0.0
+    };
+
+    let falling = if u1 > -1.0 && u1 <= 0.0 {
+        u1 * u1 + u1 + u1 + 1.0
+    } else {
+        0.0
+    };
+
+    rising + falling
+}
+
+#[cfg(feature = "simd")]
 #[inline(always)]
 /// A branchless SIMD poly_blep implementation
 ///
@@ -209,5 +280,28 @@ impl NodeDefinition for Saw {
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         Ok(Box::new(Self::from_params(rb, p)?))
+    }
+}
+
+// Only compiled with --features simd, since that's the only time both the
+// scalar fallback and the vectorized path exist in the same binary.
+#[cfg(all(test, feature = "simd"))]
+mod test {
+    use super::poly_blep;
+
+    #[test]
+    fn poly_blep_scalar_matches_simd() {
+        for i in 0..200 {
+            let t = i as f32 / 200.0;
+            let dt = 0.01 + (i as f32 / 200.0) * 0.09;
+            let scalar = poly_blep(t, dt);
+            let simd =
+                super::poly_blep_simd::<1>(std::simd::Simd::splat(t), std::simd::Simd::splat(dt))
+                    .as_array()[0];
+            assert!(
+                (scalar - simd).abs() < 1e-6,
+                "poly_blep mismatch at t={t}, dt={dt}: scalar={scalar}, simd={simd}"
+            );
+        }
     }
 }

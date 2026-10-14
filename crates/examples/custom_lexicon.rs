@@ -1,10 +1,5 @@
-use legato::{
-    builder::{LegatoBuilder, Unconfigured},
-    config::Config,
-    input::DeviceSelection,
-    interface::{AudioInterface, InputSpec},
-    kernel::EXAMPLE_PLATE_KERNEL_PATCH,
-};
+use legato::prelude::*;
+use legato::{input::DeviceSelection, interface::InputSpec, kernel::EXAMPLE_PLATE_KERNEL_PATCH};
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)

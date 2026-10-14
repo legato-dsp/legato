@@ -1,8 +1,9 @@
+#[cfg(feature = "simd")]
+use crate::simd::{LANES, Vf32};
 use crate::{
     node::Node,
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
-    simd::{LANES, Vf32},
 };
 
 /// Map let's you map one range to another.
@@ -12,26 +13,55 @@ use crate::{
 /// This is useful for making LFOs control certain ranges.
 #[derive(Clone)]
 pub struct Map {
-    min: Vf32,
-    max: Vf32,
-    mapped_min: Vf32,
-    mapped_max: Vf32,
+    min: f32,
+    max: f32,
+    mapped_min: f32,
+    mapped_max: f32,
     ports: Ports,
 }
 
 impl Map {
     pub fn new(range: [f32; 2], new_range: [f32; 2]) -> Self {
         Self {
-            min: Vf32::splat(range[0]),
-            max: Vf32::splat(range[1]),
-            mapped_min: Vf32::splat(new_range[0]),
-            mapped_max: Vf32::splat(new_range[1]),
+            min: range[0],
+            max: range[1],
+            mapped_min: new_range[0],
+            mapped_max: new_range[1],
             ports: PortBuilder::default().control_in(1).control_out(1).build(),
         }
     }
 }
 
 impl Node for Map {
+    #[cfg(feature = "simd")]
+    fn process(
+        &mut self,
+        _: &mut crate::context::AudioContext,
+        inputs: &crate::node::Inputs,
+        outputs: &mut [&mut [f32]],
+    ) {
+        debug_assert!(self.max >= self.min);
+        debug_assert!(self.mapped_max >= self.mapped_min);
+
+        let min = Vf32::splat(self.min);
+        let max = Vf32::splat(self.max);
+        let mapped_min = Vf32::splat(self.mapped_min);
+        let mapped_max = Vf32::splat(self.mapped_max);
+
+        if let Some(in_chan) = inputs[0] {
+            let out_chan = &mut outputs[0];
+            for (in_chunk, out_chunk) in in_chan
+                .chunks_exact(LANES)
+                .zip(out_chan.chunks_exact_mut(LANES))
+            {
+                let res =
+                    map_range_simd(Vf32::from_slice(in_chunk), min, max, mapped_min, mapped_max);
+                out_chunk.copy_from_slice(res.as_array());
+            }
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
     fn process(
         &mut self,
         _: &mut crate::context::AudioContext,
@@ -43,18 +73,8 @@ impl Node for Map {
 
         if let Some(in_chan) = inputs[0] {
             let out_chan = &mut outputs[0];
-            for (in_chunk, out_chunk) in in_chan
-                .chunks_exact(LANES)
-                .zip(out_chan.chunks_exact_mut(LANES))
-            {
-                let res = map_range_simd(
-                    Vf32::from_slice(in_chunk),
-                    self.min,
-                    self.max,
-                    self.mapped_min,
-                    self.mapped_max,
-                );
-                out_chunk.copy_from_slice(res.as_array());
+            for (&x, out) in in_chan.iter().zip(out_chan.iter_mut()) {
+                *out = map_range(x, self.min, self.max, self.mapped_min, self.mapped_max);
             }
         }
     }
@@ -71,20 +91,19 @@ impl PerSampleNode for Map {
 
     fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]) {
         if let Some(x) = in_frame[0] {
-            // Splat one sample through the SIMD path so tick is bit-identical
-            // to the block-rate `process`.
-            out_frame[0] = map_range_simd(
-                Vf32::splat(x),
-                self.min,
-                self.max,
-                self.mapped_min,
-                self.mapped_max,
-            )
-            .as_array()[0];
+            out_frame[0] = map_range(x, self.min, self.max, self.mapped_min, self.mapped_max);
         }
     }
 }
 
+fn map_range(x: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {
+    let original_range = in_max - in_min;
+    let new_range = out_max - out_min;
+
+    out_min + ((x - in_min) * (new_range / original_range))
+}
+
+#[cfg(feature = "simd")]
 fn map_range_simd(x: Vf32, in_min: Vf32, in_max: Vf32, out_min: Vf32, out_max: Vf32) -> Vf32 {
     let original_range = in_max - in_min;
     let new_range = out_max - out_min;
@@ -135,6 +154,28 @@ impl NodeDefinition for Map {
 }
 
 #[cfg(test)]
+mod scalar_tests {
+    use super::map_range;
+
+    #[test]
+    fn identity_mapping() {
+        for i in 0..8 {
+            let x = i as f32 / 8.0;
+            assert!((map_range(x, 0.0, 1.0, 0.0, 1.0) - x).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn negative_to_positive_range() {
+        let x = 0.5;
+        let y = map_range(x, -1.0, 1.0, 120.0, 240.0);
+        assert!((y - 210.0).abs() < 1e-6);
+    }
+}
+
+// Only compiled with --features simd, since that's the only time both the
+// scalar fallback and the vectorized path exist in the same binary.
+#[cfg(all(test, feature = "simd"))]
 mod tests {
     use super::*;
 
@@ -203,6 +244,23 @@ mod tests {
         );
 
         assert_simd_eq(y, Vf32::splat(15.0));
+    }
+
+    #[test]
+    fn scalar_matches_simd() {
+        for i in 0..LANES {
+            let x = -1.0 + 2.0 * (i as f32) / (LANES as f32).max(1.0);
+            let scalar = map_range(x, -1.0, 1.0, 10.0, 500.0);
+            let simd = map_range_simd(
+                Vf32::splat(x),
+                Vf32::splat(-1.0),
+                Vf32::splat(1.0),
+                Vf32::splat(10.0),
+                Vf32::splat(500.0),
+            )
+            .as_array()[0];
+            assert!((scalar - simd).abs() < 1e-5, "mismatch: {scalar} vs {simd}");
+        }
     }
 
     #[test]

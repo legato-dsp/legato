@@ -1,11 +1,12 @@
 use std::time::Duration;
 
+#[cfg(feature = "simd")]
+use crate::simd::{LANES, Vf32};
 use crate::{
     context::AudioContext,
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
     resources::DelayLineKey,
-    simd::{LANES, Vf32},
 };
 
 #[derive(Clone)]
@@ -75,6 +76,7 @@ impl DelayRead {
         }
     }
 
+    #[cfg(feature = "simd")]
     fn process_linear(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let block_size = config.block_size;
@@ -99,6 +101,27 @@ impl DelayRead {
             }
         }
     }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_linear(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+        let config = ctx.get_config();
+        let block_size = config.block_size;
+        let sr = config.sample_rate as f32;
+
+        let resources = ctx.get_resources();
+
+        for (c, chan) in ao.iter_mut().enumerate() {
+            let delay_time = self.len.as_secs_f32();
+            let view = resources.delay_line_view(self.delay_line_keys[c]);
+
+            for (n, out) in chan.iter_mut().enumerate() {
+                let offset = delay_time * sr + (block_size - n) as f32;
+                *out = view.read_linear(offset);
+            }
+        }
+    }
+
+    #[cfg(feature = "simd")]
     fn process_cubic(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let block_size = config.block_size;
@@ -120,6 +143,25 @@ impl DelayRead {
             for (cidx, chunk) in chan.chunks_exact_mut(LANES).enumerate() {
                 let out = view.read_cubic_simd(offsets(cidx));
                 chunk.copy_from_slice(out.as_array());
+            }
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    fn process_cubic(&mut self, ctx: &mut AudioContext, ao: &mut [&mut [f32]]) {
+        let config = ctx.get_config();
+        let block_size = config.block_size;
+        let sr = config.sample_rate as f32;
+
+        let resources = ctx.get_resources();
+
+        for (c, chan) in ao.iter_mut().enumerate() {
+            let delay_time = self.len.as_secs_f32();
+            let view = resources.delay_line_view(self.delay_line_keys[c]);
+
+            for (n, out) in chan.iter_mut().enumerate() {
+                let offset = delay_time * sr + (block_size - n) as f32;
+                *out = view.read_cubic(offset);
             }
         }
     }

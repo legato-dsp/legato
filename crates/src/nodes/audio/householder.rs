@@ -5,7 +5,7 @@ use crate::{
     ports::{PortBuilder, Ports},
 };
 
-/// As suggested in https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb/
+/// As suggested in <https://signalsmith-audio.co.uk/writing/2021/lets-write-a-reverb>
 ///
 /// Allegedly a bit lower density than saw a hadamard mixer
 #[derive(Clone)]
