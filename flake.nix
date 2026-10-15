@@ -55,6 +55,7 @@
     {
       devShells = forEachSystem ({ pkgs, nightly, commonArgs, ... }: {
         default = pkgs.mkShell {
+          inherit (commonArgs) RUSTFLAGS;
           nativeBuildInputs = commonArgs.nativeBuildInputs;
           buildInputs = commonArgs.buildInputs ++ [
             nightly
@@ -62,6 +63,18 @@
             pkgs.nodejs
             pkgs.pnpm
           ];
+
+          # AFAIK cargo has no way to default-enable an optional feature
+          shellHook = ''
+            cargo() {
+              case "$1" in
+                build|check|run|test|bench|clippy)
+                  command cargo "$1" --features simd "''${@:2}" ;;
+                *)
+                  command cargo "$@" ;;
+              esac
+            }
+          '';
         };
       });
 
