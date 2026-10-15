@@ -1,3 +1,6 @@
+//! The [`NodeSpec`] creates a factory specification allowing
+//! Legato nodes or custom nodes to be instantiated by the DSL
+
 #![allow(unused_mut)]
 
 use std::collections::BTreeSet;

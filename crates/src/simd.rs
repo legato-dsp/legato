@@ -1,3 +1,5 @@
+//! Various SIMD lane size constants used when the "simd" feature is enabled
+
 #[cfg(feature = "simd")]
 #[cfg(target_feature = "avx512f")]
 pub const LANES: usize = 16;

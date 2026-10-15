@@ -1,3 +1,6 @@
+//! A Block adapter that can be used for synchronizing with external
+//! audio applications. This can be used for VST development.
+
 use crate::{LegatoApp, midi::MidiMessage, resources::AudioInputKey};
 
 /// Runs a fixed block size graph under a host that calls with arbitrary block sizes,

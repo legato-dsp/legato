@@ -1,11 +1,11 @@
+//! The config that determines the interior application
+//! sample rate, as well as a few other settings.
+
 use crate::simd::LANES;
 
-/// The config that determines the interior application
-/// sample rate, as well as a few other settings.
-///
-/// Note: The audio block size is the internal graph rate.
-/// This does not need to match the audio callback rate of your end device, as you can adapt if needed
-/// with a ringbuffer, double buffer, etc.
+/// The audio block size is the internal graph rate.
+/// This does not need to match the audio callback rate of your end device,
+/// as you can adapt if needed with the [`BlockAdapter`] or a custom SPSC implementation.
 ///
 /// In summary, depending on your latency requirements,
 /// you may need to change the blocksize somewhat.

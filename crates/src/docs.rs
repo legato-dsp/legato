@@ -1,3 +1,5 @@
+//! Export [`NodeSpec`] recipes for all of the various Legato nodes
+
 use crate::{
     nodes::{
         audio::{

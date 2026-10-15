@@ -1,3 +1,4 @@
+//! A shared struct to give node's access to shared resources and configuration.
 use std::time::Instant;
 
 use slotmap::new_key_type;

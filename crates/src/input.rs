@@ -6,9 +6,10 @@ use cpal::{
 
 /// The different kinds of device selection available.
 ///
-/// Default just hands off to cpal default
+/// Default just hands off to cpal default.
 ///
-/// By name tries to find a match
+/// [`DeviceSelection::ByName`] allows you to match an interface
+/// by the name.
 pub enum DeviceSelection {
     Default,
     ByName(String),

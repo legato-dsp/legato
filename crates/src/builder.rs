@@ -1,3 +1,9 @@
+//! This builder is in-charge of creating a ['LegatoApp'].
+//!
+//! The DSL maps to builder instructions, and this can be used to
+//! bypass the DSL if end users desire. You can additionally configure
+//! external inputs, register nodes, and setup midi devices.
+
 use slotmap::SlotMap;
 
 use crate::{
@@ -142,6 +148,10 @@ pub struct LegatoBuilder<State> {
 }
 
 impl LegatoBuilder<Unconfigured> {
+    /// Initialize a new [`LegatoBuilder`], this contains a number of
+    /// methods that can be used to set up an application.
+    ///
+    /// This is a public interface, so users can sidestep the DSL if desired.
     pub fn new(config: Config) -> LegatoBuilder<Configured> {
         let mut namespaces = HashMap::new();
         let audio_registry = audio_registry_factory();

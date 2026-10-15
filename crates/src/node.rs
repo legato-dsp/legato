@@ -1,3 +1,5 @@
+//! The traits that any Legato Nodes must implement to be used for audio processing.
+
 use std::fmt::Debug;
 
 use crate::{context::AudioContext, msg::NodeMessage, ports::Ports};

@@ -1,3 +1,7 @@
+//! Resources are shared storage and functionality amongst a runtime.
+//!
+//! These can be accessed on the [`AudioContext`] passed to each node.
+
 use rtrb::{PushError, RingBuffer};
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
@@ -124,7 +128,7 @@ impl Resources {
         self.param_store.get(param_key)
     }
 
-    /// The entire buffer [l,l,l,r,r,r] for an audio input
+    /// The entire buffer LLL RRR for an audio input
     #[inline(always)]
     pub fn get_audio_input(&self, key: AudioInputKey) -> &[f32] {
         self.audio_inputs

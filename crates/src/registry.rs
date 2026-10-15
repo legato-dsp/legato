@@ -1,3 +1,8 @@
+//! Registries are simply named HashMaps with recipies for Node construction
+//!
+//! This was pragmatic, users can register new nodes at application startup,
+//! without complicated `build.rs` and linking logic.
+
 #![allow(unused_mut)]
 
 use std::collections::HashMap;

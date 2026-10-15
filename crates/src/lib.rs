@@ -109,7 +109,7 @@ impl LegatoApp {
     ///
     /// This is useful for tests, or compatability with different audio backends.
     ///
-    /// This gives the data in a [[L,L,L], [R,R,R], etc] layout
+    /// This gives the data in a LLL,RRR layout
     pub fn next_block(&mut self) -> OutputView<'_> {
         let ctx = self.runtime.get_context_mut();
         ctx.begin_midi_block();

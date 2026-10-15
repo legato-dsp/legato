@@ -1,3 +1,10 @@
+//! `kernel` nodes are capable of utilizing sample accurate feedback loops.
+//!
+//! This means that `kernel` nodes do NOT have to be a DAG.
+//!
+//! This is helpful for Karplus-Strong, FM with feedback, certain reverb
+//! algorithms, and more.
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     config::Config,

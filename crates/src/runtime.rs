@@ -1,3 +1,9 @@
+//! The [`Runtime`] is responsbile for running all of the underlying nodes
+//! using the [`Executor`] for audio processing.
+//!
+//! The [`Runtime`] then has a [`RuntimeFrontend`] that can be used from a control
+//! thread to change params or pass messages to the [`Runtime`].
+
 use crate::builder::ValidationError;
 use crate::config::Config;
 use crate::context::AudioContext;
