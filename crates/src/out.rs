@@ -1,3 +1,7 @@
+//! A somewhat half-baked .wav exporter. In the future,
+//! this will likely live as another dedicated thread.
+//! For the time being, this is mostly used for testing.
+
 use std::{path::Path, time::Duration};
 
 use hound::{WavSpec, WavWriter};

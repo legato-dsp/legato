@@ -1,3 +1,5 @@
+//! Various harnesses for testing and benchmarking
+
 use std::sync::Arc;
 
 use slotmap::SlotMap;
@@ -10,6 +12,9 @@ use crate::{
     runtime::Runtime,
 };
 
+/// We need a placeholder context for testing, this just mockes a few
+/// [`rtrb::RingBuffer`]s needed for construction. This is a bit of
+/// a smell but it is rleatively convenient for now.
 pub fn build_placeholder_context(config: Config) -> AudioContext {
     let (_, dummy_sample_cons) = rtrb::RingBuffer::new(64);
     let (dummy_garbage_prod, _) = rtrb::RingBuffer::new(64);

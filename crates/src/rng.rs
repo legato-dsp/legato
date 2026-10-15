@@ -1,3 +1,7 @@
+//! Fast PRNG for audio applications. These are not cryptographically safe.
+//!
+//! These do use a seed that is random, to avoid generative patches sounding identical.
+
 /// A fast, non-cryptographic xorshift PRNG for audio-rate use.
 #[derive(Clone)]
 pub struct XorShift {

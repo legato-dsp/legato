@@ -1,3 +1,8 @@
+//! A somewhat minimal directed-acyclical-graph implementation.
+//!
+//! I generally found `petgraph` to be somewhat annoying and un-ergonomic.
+//! The topological sorting
+
 use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
@@ -26,6 +31,7 @@ pub struct Connection {
 pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
 
 const INITIAL_INPUTS: usize = 8;
+
 /// A DAG for grabbing nodes and their dependencies via topological sort.
 #[derive(Clone, Default)]
 pub struct AudioGraph {
@@ -205,6 +211,11 @@ impl AudioGraph {
         }
     }
 
+    /// Generate a new topographical sort and collect it into a [`Vec<NodeKey>`]
+    ///
+    /// This will return an [`Err<GraphError>`] if a cycle is detected.
+    ///
+    /// TODO: this is a bit old and should be validated with property-based testing
     pub fn invalidate_topo_sort(&mut self) -> Result<Vec<NodeKey>, GraphError> {
         // Reset indegrees
         for key in self.nodes.keys() {

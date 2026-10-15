@@ -1,3 +1,8 @@
+//! Nodes that require feedback smaller than the block size can
+//! be constructed using the `kernel` feature. [`PerSampleNode`]
+//! compatible nodes can be used for per-sample processing, rather
+//! than block rate processing.
+
 use crate::{context::AudioContext, msg::NodeMessage, node::Node, ports::Ports};
 
 pub const MAX_FRAME_PORTS: usize = 64;

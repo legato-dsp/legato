@@ -1,3 +1,6 @@
+//! A minimal midi runtime. This is currently missing support
+//! for things like system messages and clock support.
+
 use std::{
     fmt::Debug,
     thread::JoinHandle,
@@ -60,7 +63,7 @@ const SONG_POSITION_POINTER: u8 = 0xF2;
 
 /// Limited subset of midi functionality for now.
 ///
-/// Spec taken from this nice overview: https://github.com/mixxxdj/mixxx/wiki/MIDI-Crash-Course
+/// Spec taken from this nice overview: <https://github.com/mixxxdj/mixxx/wiki/MIDI-Crash-Course>
 ///
 /// Currently not using more complicated system messages as this may require
 /// a dedicated parser and is a bit more complicated. Basically, some messages

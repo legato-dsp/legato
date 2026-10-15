@@ -1,3 +1,7 @@
+//! A set of common message values used to pass to nodes.
+//! These should not require allocation, as we don't want to
+//! affect realtime safety when something is dropped.
+
 use crate::runtime::NodeKey;
 
 /// A subset of the Values used in the AST that are realtime safe

@@ -8,7 +8,7 @@ use crate::{
 /// The Hadamard mixer applies a fast Walsh-Hadamard
 /// transform (FWHT).
 ///
-/// https://en.wikipedia.org/wiki/Fast_Walsh%E2%80%93Hadamard_transform
+/// <https://en.wikipedia.org/wiki/Fast_Walsh%E2%80%93Hadamard_transform>
 ///
 /// These mixers are generally good at creating more
 /// density in FDN.

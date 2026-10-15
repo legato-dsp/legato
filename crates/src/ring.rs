@@ -1,3 +1,6 @@
+//! TODO: Strong candidate for replacement. The [`ResourceDelay`] is likely better constructed and
+//! more performant.
+
 #[cfg(feature = "simd")]
 use std::simd::{
     Simd, StdFloat,

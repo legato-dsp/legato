@@ -36,7 +36,7 @@ fn selection_of(graph: &IRGraph, node: NodeId, sel: &NodeSelector) -> Vec<usize>
     sel.selected_indices(count as usize)
 }
 
-/// This pass expands all [`IRMacros`] into the interior nodes,
+/// This pass expands all [`IRMacro`]s into the interior nodes,
 /// wires the new interior connections, then handles connections
 /// in and out to the macro instance.
 #[derive(Default)]

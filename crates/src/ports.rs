@@ -1,3 +1,19 @@
+//! Ports define the inputs and outputs for a [`Node`].
+//!
+//! Default ports can be automapped to. This is generally used
+//! if your node has an audio input that you want to be
+//! "higher priority" than a control input.
+//!
+//! For example, here we probably want our audio output from `stereo_node`
+//! to flow into the `stereo_filter` inputs, if say `stereo_filter` had a
+//! third `cutoff` parameter:
+//!
+//! stereo_node >> stereo_filter
+//!
+//! This is nicer IMO than writing:
+//!
+//! stereo_node[0..2] >> stereo_filter[0..2]
+
 #[derive(Clone, Debug)]
 pub struct PortMeta {
     pub name: &'static str,

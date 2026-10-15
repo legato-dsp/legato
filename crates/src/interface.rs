@@ -1,3 +1,5 @@
+//! A wrapper around `cpal` for generic input and output devices, as well as visualization streams.
+
 use std::marker::PhantomData;
 
 use assert_no_alloc::assert_no_alloc;
@@ -47,6 +49,11 @@ pub struct InputSpec {
     pub device: DeviceSelection,
 }
 
+/// A builder that can construct an [`AudioInterface`] struct.
+///
+/// This is used to conveniently add various features, such as
+/// adding a visualization producter/receiver pair, or adding
+/// external input devices.
 pub struct AudioInterfaceBuilder<'a> {
     host: &'a Host,
     config: Config,

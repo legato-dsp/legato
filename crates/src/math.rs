@@ -1,3 +1,7 @@
+//! Various SIMD implementations used throughout the application.
+//!
+//! This requires the "simd" feature to be enabled.
+
 #[cfg(feature = "simd")]
 use std::simd::{Simd, StdFloat};
 
