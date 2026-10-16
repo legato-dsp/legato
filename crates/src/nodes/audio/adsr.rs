@@ -27,6 +27,7 @@ pub struct Adsr {
     state_delta_t: f32,
     attack_starting_level: f32,
     release_starting_level: f32,
+    gate_open: bool,
     ports: Ports,
 }
 
@@ -42,6 +43,7 @@ impl Adsr {
             state_delta_t: 0.0,
             attack_starting_level: 0.0,
             release_starting_level: 0.0,
+            gate_open: false,
             ports: PortBuilder::default()
                 .control_in_named(&["gate"])
                 .audio_in(chans)
@@ -124,21 +126,14 @@ impl Node for Adsr {
 
         // TODO: A lot of branches here. May be worth writing branchless or with a simple LUT
         for n in 0..block_size {
-            let gate_sample = gate_chan[n];
-            // If we are released or idle, gate on
-            if gate_sample == 1.0 {
-                match self.state {
-                    AdsrState::Idle
-                    | AdsrState::Release
-                    | AdsrState::Attack
-                    | AdsrState::Decay
-                    | AdsrState::Sustain => self.on_gate(),
-                }
-            }
-            // If we are active and get a release
-            if gate_sample == 0.0 && self.state != AdsrState::Idle {
+            // Only act on gate edges, so a held gate runs the full attack/decay/sustain.
+            let gate_open = gate_chan[n] > 0.5;
+            if gate_open && !self.gate_open {
+                self.on_gate();
+            } else if !gate_open && self.gate_open {
                 self.on_gate_release();
             }
+            self.gate_open = gate_open;
 
             let gain = self.get_gain();
 
@@ -194,3 +189,4 @@ impl NodeDefinition for Adsr {
         Ok(Box::new(Self::new(chans, attack, decay, sustain, release)))
     }
 }
+
