@@ -1,0 +1,78 @@
+patch voice(
+    attack = 5.0,
+    decay = 250.0,
+    sustain = 0.6,
+    release = 400.0
+) {
+    in freq gate
+
+    audio {
+        saw { chans: 1 },
+        adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
+    }
+
+    freq >> saw
+    gate >> adsr.gate
+    saw >> adsr[1]
+
+    { adsr }
+}
+
+patches {
+    voice * 8 { },
+}
+
+audio {
+    track_mixer: osc_mixer { tracks: 8, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] },
+    svf: filter { chans: 1, cutoff: 2400.0, q: 0.7, type: "lowpass" },
+    mono_fan_out: fan { chans: 2 },
+
+    plate480: verb { predelay: 32.0, decay: 0.8, damping: 0.3, mix: 1.0 },
+    mult: dry_l { val: 0.7 },
+    mult: dry_r { val: 0.7 },
+    mult: wet_l { val: 0.3 },
+    mult: wet_r { val: 0.3 },
+    track_mixer: out { tracks: 2, chans_per_track: 2, gain: [1.0, 1.0] },
+
+    // dry_amount = 1 - mix
+    mult: negate_mix { val: -1.0 },
+    add: dry_amount { val: 1.0 },
+}
+
+midi {
+    // Host notes are all routed to MIDI channel 0, see `Engine::process`.
+    // Each voice gets 3 outputs: gate, freq, velocity.
+    poly_voice: poly { chan: 0, voices: 8 },
+}
+
+control {
+    signal: cutoff { name: "cutoff", min: 20.0, max: 20000.0, default: 2400.0, smoothing: 0.002 },
+    signal: q { name: "q", min: 0.1, max: 10.0, default: 0.7, smoothing: 0.002 },
+    signal: mix { name: "mix", min: 0.0, max: 1.0, default: 0.3, smoothing: 0.002 },
+}
+
+// Voices
+poly[0:24:3] >> voice(*).gate
+poly[1:24:3] >> voice(*).freq
+voice(*) >> osc_mixer[0..8]
+
+// Filter
+osc_mixer >> filter >> fan
+cutoff >> filter.cutoff
+q >> filter.q
+
+// Reverb, dry/wet
+fan >> verb
+
+fan[0] >> dry_l >> out[0]
+fan[1] >> dry_r >> out[1]
+verb[0] >> wet_l >> out[2]
+verb[1] >> wet_r >> out[3]
+
+mix >> wet_l.val
+mix >> wet_r.val
+mix >> negate_mix >> dry_amount
+dry_amount >> dry_l.val
+dry_amount >> dry_r.val
+
+{ out }

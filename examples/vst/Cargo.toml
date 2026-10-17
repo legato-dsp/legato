@@ -1,0 +1,17 @@
+[package]
+name = "legato-vst"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+legato = { version = "0.1.0", path = "../../crates", default-features = false }
+egui = { version = "0.36.1", features = ["default_fonts"] }
+nice-plug = { version = "0.4.2", features = [
+    "assert_process_allocs",
+    "standalone",
+    "unsafe_standalone_dpi_fix",
+] }
+nice-plug-egui = { version = "0.5.1" }
