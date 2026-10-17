@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const links = [
   { title: "Docs", to: "/docs" },
+  { title: "Blog", to: "/blog" },
   { title: "Contributing", to: "/contributing" },
   { title: "About", to: "/about" },
 ];
