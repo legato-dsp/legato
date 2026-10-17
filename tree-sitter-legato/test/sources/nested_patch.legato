@@ -1,0 +1,41 @@
+patch fm_osc(freq = 440.0, mod_freq = 880.0) {
+    in freq_in
+
+    audio {
+        sine: modulator { freq: $mod_freq },
+        sine: carrier   { freq: $freq }
+    }
+
+    freq_in    >> carrier.freq
+    modulator  >> carrier[0]
+
+    { carrier }
+}
+
+patch voice(freq = 440.0, attack = 100.0) {
+    in gate voice_freq
+
+    audio {
+        fm_osc: osc_inst { freq: $freq },
+        adsr:   env      { attack: $attack }
+    }
+
+    voice_freq >> osc_inst.freq_in
+    gate       >> env.gate
+    osc_inst   >> env[1]
+
+    { env }
+}
+
+patches {
+    voice: lead { freq: 880.0, attack: 200.0 }
+}
+
+midi {
+    poly_voice { chan: 0 }
+}
+
+poly_voice.freq >> lead.voice_freq
+poly_voice.gate >> lead.gate
+
+{ lead }

@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import legato from "../tree-sitter-legato/editors/textmate/legato.tmLanguage.json";
 
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
@@ -24,7 +25,7 @@ export default defineNuxtConfig({
     build: {
       markdown: {
         highlight: {
-          langs: ["rust", "shell", "typescript"],
+          langs: ["rust", "shell", "typescript", legato],
           theme: "vitesse-dark",
         },
       },

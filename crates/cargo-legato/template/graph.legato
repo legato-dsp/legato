@@ -1,0 +1,9 @@
+audio {
+    sine { freq: 440.0 },
+    mult: volume { val: 0.2 },
+    mono_fan_out: master { chans: 2 }
+}
+
+sine >> volume >> master
+
+{ master }
