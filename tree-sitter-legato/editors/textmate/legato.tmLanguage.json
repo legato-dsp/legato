@@ -1,0 +1,269 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "legato",
+  "displayName": "Legato",
+  "scopeName": "source.legato",
+  "fileTypes": [
+    "legato"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#macro"
+    },
+    {
+      "include": "#default-param"
+    },
+    {
+      "include": "#virtual-ports"
+    },
+    {
+      "include": "#scope"
+    },
+    {
+      "include": "#sink"
+    },
+    {
+      "include": "#literal"
+    },
+    {
+      "include": "#connection"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.legato",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.legato",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "macro": {
+      "match": "\\b(patch|kernel)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.legato"
+        },
+        "2": {
+          "name": "entity.name.function.legato"
+        }
+      }
+    },
+    "default-param": {
+      "match": "\\b([A-Za-z_]\\w*)\\s*(=)\\s*",
+      "captures": {
+        "1": {
+          "name": "variable.parameter.legato"
+        },
+        "2": {
+          "name": "keyword.operator.assignment.legato"
+        }
+      }
+    },
+    "virtual-ports": {
+      "match": "^\\s*(in)((?:[ \\t]+[A-Za-z_]\\w*)+)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.legato"
+        },
+        "2": {
+          "name": "variable.parameter.legato"
+        }
+      }
+    },
+    "scope": {
+      "begin": "^\\s*([A-Za-z_]\\w*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.namespace.legato"
+        },
+        "2": {
+          "name": "punctuation.definition.block.legato"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.block.legato"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#params"
+        },
+        {
+          "match": "([A-Za-z_]\\w*)\\s*(:)\\s*([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.legato"
+            },
+            "2": {
+              "name": "punctuation.separator.legato"
+            },
+            "3": {
+              "name": "variable.other.legato"
+            }
+          }
+        },
+        {
+          "match": "(\\*)\\s*(\\d+)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.legato"
+            },
+            "2": {
+              "name": "constant.numeric.integer.legato"
+            }
+          }
+        },
+        {
+          "match": "(\\|)\\s*([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.legato"
+            },
+            "2": {
+              "name": "entity.name.function.legato"
+            }
+          }
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "name": "entity.name.type.legato",
+          "match": "[A-Za-z_]\\w*"
+        }
+      ]
+    },
+    "params": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "match": "([A-Za-z_]\\w*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.other.property.legato"
+            },
+            "2": {
+              "name": "punctuation.separator.legato"
+            }
+          }
+        },
+        {
+          "include": "#value"
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "include": "#params"
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "begin": "\\[",
+          "end": "\\]",
+          "patterns": [
+            {
+              "include": "#value"
+            }
+          ]
+        }
+      ]
+    },
+    "sink": {
+      "match": "(\\{)\\s*([A-Za-z_]\\w*)\\s*(\\})",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.block.legato"
+        },
+        "2": {
+          "name": "variable.other.legato"
+        },
+        "3": {
+          "name": "punctuation.definition.block.legato"
+        }
+      }
+    },
+    "connection": {
+      "patterns": [
+        {
+          "name": "keyword.operator.legato",
+          "match": ">>"
+        },
+        {
+          "match": "(\\.)([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.legato"
+            },
+            "2": {
+              "name": "variable.other.property.legato"
+            }
+          }
+        },
+        {
+          "name": "constant.numeric.integer.legato",
+          "match": "\\b\\d+\\b"
+        },
+        {
+          "name": "keyword.operator.legato",
+          "match": "\\*|\\.\\.|:"
+        },
+        {
+          "name": "variable.other.legato",
+          "match": "[A-Za-z_]\\w*"
+        }
+      ]
+    },
+    "literal": {
+      "patterns": [
+        {
+          "name": "variable.parameter.legato",
+          "match": "\\$[A-Za-z_]\\w*"
+        },
+        {
+          "name": "constant.numeric.float.legato",
+          "match": "-?\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.legato",
+          "match": "-?\\b\\d+\\b"
+        },
+        {
+          "name": "constant.language.legato",
+          "match": "\\b(true|false|null)\\b"
+        },
+        {
+          "name": "string.quoted.double.legato",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.legato",
+              "match": "\\\\[\"\\\\/nrt]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+patch voice(freq = 440.0, attack = 100.0, release = 500.0) {
+    in gate freq_in
+
+    audio {
+        sine: osc { freq: $freq },
+        adsr: env { attack: $attack, release: $release }
+    }
+
+    freq_in >> osc.freq
+    gate    >> env.gate
+    osc     >> env[1]
+
+    { env }
+}
+
+patches {
+    voice: v1 { freq: 880.0, attack: 200.0, release: 300.0 }
+}
+
+{ v1 }

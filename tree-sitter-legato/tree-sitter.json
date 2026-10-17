@@ -1,0 +1,41 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "legato",
+      "camelcase": "Legato",
+      "title": "Legato",
+      "scope": "source.legato",
+      "file-types": [
+        "legato"
+      ],
+      "injection-regex": "^legato$",
+      "class-name": "TreeSitterLegato"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Legato grammar for tree-sitter",
+    "authors": [
+      {
+        "name": "Luke",
+        "url": ""
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/legato-dsp/legato",
+      "funding": ""
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "java": false,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true,
+    "zig": false
+  }
+}

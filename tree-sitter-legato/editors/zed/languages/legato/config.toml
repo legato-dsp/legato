@@ -1,0 +1,12 @@
+name = "Legato"
+grammar = "legato"
+path_suffixes = ["legato"]
+line_comments = ["// "]
+autoclose_before = ",:{}[]()"
+tab_size = 4
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false },
+]
