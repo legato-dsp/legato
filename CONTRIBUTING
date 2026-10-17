@@ -2,6 +2,8 @@
 
 Legato has a `flake.nix` for `nix` users that makes it fairly easy to get started.
 
+For non-nix users, you can use a modern (1.96+) Rust toolchain.
+
 The `simd` feature is recommended for stronger performance, developers will need to use
 a nightly toolchain > 1.96 for compatibility.
 
