@@ -1,13 +1,23 @@
 [workspace]
 members = ["legato-macros", "cargo-legato"]
 
+# Bump `version` here and in [workspace.dependencies] together; members inherit both.
+[workspace.package]
+version = "0.1.2"
+edition = "2024"
+repository = "https://github.com/legato-dsp/legato"
+license = "AGPL-3.0"
+
+[workspace.dependencies]
+legato = { version = "0.1.2", path = ".", default-features = false }
+
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.1.2"
-edition = "2024"
-repository="https://github.com/legato-dsp/legato"
-license = "AGPL-3.0"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [features]
 default = ["jack"]

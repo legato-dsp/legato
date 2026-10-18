@@ -55,7 +55,12 @@ fn init(dir: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("could not derive a package name from {}", dir.display()))?;
 
     let files = [
-        ("Cargo.toml", CARGO_TOML.replace("{{name}}", &name)),
+        (
+            "Cargo.toml",
+            CARGO_TOML
+                .replace("{{name}}", &name)
+                .replace("{{version}}", env!("CARGO_PKG_VERSION")),
+        ),
         ("src/main.rs", MAIN_RS.to_string()),
         ("graph.legato", GRAPH.to_string()),
         (".gitignore", GITIGNORE.to_string()),

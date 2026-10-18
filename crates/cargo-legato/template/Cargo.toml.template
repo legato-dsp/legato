@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-legato = { version = "0.1.2", default-features = false }
+legato = { version = "{{version}}", default-features = false }
 # Compiles `kernel` patches to Rust with `legato_macros::include_node!`
-legato-macros = "0.1.2"
+legato-macros = "{{version}}"
 cpal = "0.18"
 
 [features]
