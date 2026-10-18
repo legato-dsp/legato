@@ -11,7 +11,7 @@ const nodes = computed(() => data.value ?? []);
       class="border border-primary rounded-md p-3 flex flex-col"
       v-for="item in nodes"
     >
-      <h6>{{ item.name }}</h6>
+      <h6>{{ item.namespace }} {{ "{" }} {{ item.name }} {{ "}" }}</h6>
       <span>{{ item.description }}</span>
       <span>Required params: {{ item.required_params.join(" ") }}</span>
       <span>Optional params: {{ item.optional_params.join(" ") }}</span>

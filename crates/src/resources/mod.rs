@@ -2,13 +2,13 @@
 //!
 //! These can be accessed on the [`AudioContext`] passed to each node.
 
-use rtrb::{PushError, RingBuffer};
+use rtrb::RingBuffer;
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 
 use crate::resources::{
     arena::{Arena, RuntimeArena},
-    buffer::ExternalBuffer,
+    buffer::{AudioSampleError, ExternalBuffer},
     delay::{DelayLineView, DelayLineViewMut, ResourceDelay},
     input::AudioInput,
     params::{ParamError, ParamKey, ParamMeta, ParamStore, ParamStoreBuilder, ParamStoreFrontend},
@@ -329,14 +329,16 @@ impl ResourceFrontend {
         &mut self,
         name: &str,
         buffer: ExternalBuffer,
-    ) -> Result<(), PushError<ExternalBufferUpdate>> {
+    ) -> Result<(), AudioSampleError> {
         let key = self
             .external_buffer_key_lookup
             .get(name)
-            .unwrap_or_else(|| panic!("External buffer name {} not found!", name));
+            .ok_or_else(|| AudioSampleError::BufferNotFound(name.to_string()))?;
 
         let update = ExternalBufferUpdate { key: *key, buffer };
-        self.external_sample_producer.push(update)
+        self.external_sample_producer
+            .push(update)
+            .map_err(|_| AudioSampleError::FailedToSendToRuntime)
     }
 
     /// Garbage collect any external buffers that are no longer in use
@@ -358,7 +360,7 @@ impl ResourceFrontend {
         self.param_front_end.get_param(key)
     }
 
-    pub fn get_param_key(&self, name: &'static str) -> Result<ParamKey, ParamError> {
+    pub fn get_param_key(&self, name: &str) -> Result<ParamKey, ParamError> {
         self.param_front_end.get_key(name)
     }
 

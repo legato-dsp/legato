@@ -169,12 +169,12 @@ fn build_output_stream(
     mut app: LegatoApp,
     mut viz: Option<rtrb::Producer<f32>>,
 ) -> Result<Stream, InterfaceError> {
-    let cfg = stream_config.clone();
+    let mut cursor = BlockCursor::new(&app, stream_config.channels as usize);
     device
         .build_output_stream(
-            stream_config.clone(),
+            *stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                assert_no_alloc(|| write_block(data, &cfg, &mut app, viz.as_mut()))
+                assert_no_alloc(|| cursor.write(data, &mut app, viz.as_mut()))
             },
             |err| eprintln!("Output stream error: {err}"),
             None,
@@ -182,29 +182,73 @@ fn build_output_stream(
         .map_err(InterfaceError::BuildOutputStream)
 }
 
-#[inline(always)]
-fn write_block<T>(
-    output: &mut [T],
-    config: &StreamConfig,
-    app: &mut LegatoApp,
-    visualization_producer: Option<&mut rtrb::Producer<f32>>, // TODO: Something more eloquent for per node outputs?
-) where
-    T: SizedSample + FromSample<f64>,
-{
-    let next_block_view = app.next_block();
-    let next_block = &next_block_view.channels[0..next_block_view.chans];
-    let chans = config.channels as usize;
+/// Serves interleaved callbacks of any length from fixed-size graph blocks.
+///
+/// `BufferSize::Fixed` is a request, not a guarantee: devices may deliver
+/// shorter, longer or varying callbacks. Blocks are pulled on demand, so
+/// this adds no latency.
+struct BlockCursor {
+    block: Box<[f32]>, // graph chans * block_size, planar
+    block_size: usize,
+    graph_chans: usize,
+    device_chans: usize,
+    pos: usize,
+}
 
-    if let Some(producer) = visualization_producer
-        && next_block.len() >= 2
-    {
-        write_stereo_mixdown(producer, next_block[0], next_block[1]);
+impl BlockCursor {
+    fn new(app: &LegatoApp, device_chans: usize) -> Self {
+        let config = app.get_config();
+        Self {
+            block: vec![0.0; config.channels * config.block_size].into(),
+            block_size: config.block_size,
+            graph_chans: config.channels,
+            device_chans,
+            pos: config.block_size,
+        }
     }
 
-    for (frame_index, frame) in output.chunks_mut(chans).enumerate() {
-        for (channel, sample) in frame.iter_mut().enumerate() {
-            *sample = T::from_sample(next_block[channel][frame_index] as f64);
+    #[inline(always)]
+    fn write<T>(
+        &mut self,
+        output: &mut [T],
+        app: &mut LegatoApp,
+        mut visualization_producer: Option<&mut rtrb::Producer<f32>>, // TODO: Something more eloquent for per node outputs?
+    ) where
+        T: SizedSample + FromSample<f64>,
+    {
+        for frame in output.chunks_mut(self.device_chans) {
+            if self.pos == self.block_size {
+                self.pull(app, visualization_producer.as_deref_mut());
+            }
+            for (channel, sample) in frame.iter_mut().enumerate() {
+                let value = if channel < self.graph_chans {
+                    self.block[channel * self.block_size + self.pos]
+                } else {
+                    0.0
+                };
+                *sample = T::from_sample(value as f64);
+            }
+            self.pos += 1;
         }
+    }
+
+    fn pull(&mut self, app: &mut LegatoApp, viz: Option<&mut rtrb::Producer<f32>>) {
+        let view = app.next_block();
+        let chans = &view.channels[..view.chans];
+
+        if let Some(producer) = viz
+            && chans.len() >= 2
+        {
+            write_stereo_mixdown(producer, chans[0], chans[1]);
+        }
+
+        for (c, out) in self.block.chunks_exact_mut(self.block_size).enumerate() {
+            match chans.get(c) {
+                Some(chan) => out.copy_from_slice(chan),
+                None => out.fill(0.0),
+            }
+        }
+        self.pos = 0;
     }
 }
 
@@ -219,6 +263,53 @@ fn write_stereo_mixdown(producer: &mut rtrb::Producer<f32>, l: &[f32], r: &[f32]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::{LegatoBuilder, Unconfigured};
+
+    fn saw_app() -> LegatoApp {
+        let config = Config {
+            sample_rate: 48_000,
+            block_size: 64,
+            channels: 2,
+            rt_capacity: 0,
+        };
+        let src = r#"
+            audio {
+                saw { freq: 440.0, chans: 2 },
+            }
+
+            { saw }
+        "#;
+        LegatoBuilder::<Unconfigured>::new(config)
+            .build_dsl(src)
+            .expect("graph should build")
+            .0
+    }
+
+    fn render(callbacks: &[usize], device_chans: usize) -> Vec<f32> {
+        let mut app = saw_app();
+        let mut cursor = BlockCursor::new(&app, device_chans);
+        let mut out = Vec::new();
+        for &frames in callbacks {
+            let mut data = vec![f32::NAN; frames * device_chans];
+            cursor.write(&mut data, &mut app, None);
+            out.extend(data);
+        }
+        out
+    }
+
+    #[test]
+    fn callback_size_does_not_change_the_rendered_stream() {
+        let fixed = render(&[64; 5], 2);
+        let ragged = render(&[1, 37, 100, 3, 90, 89], 2);
+        assert_eq!(fixed, ragged);
+    }
+
+    #[test]
+    fn extra_device_channels_are_silent() {
+        let out = render(&[100], 3);
+        assert!(out.chunks(3).all(|frame| frame[2] == 0.0));
+        assert!(out.chunks(3).any(|frame| frame[0] != 0.0));
+    }
 
     #[test]
     fn stereo_mixdown_averages_channels() {

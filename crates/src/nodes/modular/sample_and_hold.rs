@@ -93,7 +93,7 @@ impl SampleAndHold {
     ) -> Result<Self, ValidationError> {
         let sr = rb.config.sample_rate as u32;
         let hold_time = p
-            .get_duration_ms("hold_time")
+            .get_duration_ms("hold_time")?
             .unwrap_or(Duration::from_secs(1));
 
         let hold_time_in_samples = hold_time.as_secs_f32() * sr as f32;
@@ -147,7 +147,7 @@ impl Node for SampleAndHold {
                 ("hold_time", RtValue::U32(val)) => val,
                 ("hold_time", RtValue::I32(val)) => val as u32,
                 ("hold_time", RtValue::F32(val)) => val.round() as u32, // TODO: Semantics?
-                _ => unimplemented!("Incorrect parameter passed to SampleAndHold!"),
+                _ => return,
             };
 
             // Process handles the updating of any state, set minimum as 1 sample

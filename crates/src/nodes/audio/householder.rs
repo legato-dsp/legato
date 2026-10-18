@@ -73,9 +73,7 @@ impl HouseholderMixer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to householder");
+        let chans = p.require_usize("chans")?;
         Ok(Self::new(chans))
     }
 }

@@ -151,13 +151,13 @@ impl Allpass {
         use std::time::Duration;
         let config = rb.get_config();
         let sr = config.sample_rate;
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
         let delay_length = p
-            .get_duration_ms("delay_length")
+            .get_duration_ms("delay_length")?
             .unwrap_or(Duration::from_millis(200));
         let delay_length_samples = sr as f32 * delay_length.as_secs_f32();
-        let feedback = p.get_f32("feedback").unwrap_or(0.5);
-        let mut capacity = p.get_usize("capacity").unwrap_or(sr);
+        let feedback = p.get_f32("feedback")?.unwrap_or(0.5);
+        let mut capacity = p.get_usize("capacity")?.unwrap_or(sr);
         if capacity < (delay_length_samples as usize) {
             capacity = (delay_length_samples as usize) * 2;
         }

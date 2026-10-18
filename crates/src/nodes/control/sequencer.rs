@@ -40,6 +40,7 @@ impl StepSequencer {
     pub fn new(num_steps: usize) -> Self {
         let ports = PortBuilder::default()
             .control_in_named(&["phasor"])
+            .required_in()
             .control_out_named(&["freq", "vel", "gate"])
             .build();
 
@@ -145,9 +146,7 @@ impl NodeDefinition for StepSequencer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let num_steps = p
-            .get_usize("num_steps")
-            .expect("Must pass num_steps to sequencer");
+        let num_steps = p.require_usize("num_steps")?;
         Ok(Box::new(Self::new(num_steps)))
     }
 }

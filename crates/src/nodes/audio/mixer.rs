@@ -41,6 +41,7 @@ impl TrackMixer {
             gain,
             ports: PortBuilder::default()
                 .audio_in(chans_per_track * tracks)
+                .silent_in()
                 .audio_out(chans_per_track)
                 .build(),
         }
@@ -104,6 +105,7 @@ impl MonoFanOut {
         Self {
             ports: PortBuilder::default()
                 .audio_in(1)
+                .silent_in()
                 .audio_out(chans_out)
                 .build(),
         }
@@ -145,14 +147,10 @@ impl NodeDefinition for TrackMixer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans_per_track = p
-            .get_usize("chans_per_track")
-            .expect("Could not find required parameter chans_per_track for track mixer!");
-        let tracks = p
-            .get_usize("tracks")
-            .expect("Could not find required parameter tracks for track mixer!");
+        let chans_per_track = p.require_usize("chans_per_track")?;
+        let tracks = p.require_usize("tracks")?;
         let gain = p
-            .get_array_f32("gain")
+            .get_array_f32("gain")?
             .unwrap_or(vec![(1.0 / f32::sqrt(tracks as f32))]);
         Ok(Box::new(Self::new(chans_per_track, tracks, gain)))
     }
@@ -207,7 +205,7 @@ impl NodeDefinition for MonoFanOut {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
         Ok(Box::new(Self::new(chans)))
     }
 }

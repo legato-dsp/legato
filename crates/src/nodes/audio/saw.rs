@@ -190,11 +190,10 @@ impl Node for Saw {
     }
 
     fn handle_msg(&mut self, msg: NodeMessage) {
-        if let NodeMessage::SetParam(payload) = msg {
-            match (payload.param_name, payload.value) {
-                ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unreachable!("Invalid parameter and value passed"),
-            }
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("freq", RtValue::F32(val)) = (payload.param_name, payload.value)
+        {
+            self.freq = val;
         }
     }
 
@@ -257,11 +256,9 @@ impl Saw {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
+        let chans = p.require_usize("chans")?;
 
-        let freq = p.get_f32("freq").unwrap_or(440.0);
+        let freq = p.get_f32("freq")?.unwrap_or(440.0);
 
         let sr = rb.get_config().sample_rate as f32;
 

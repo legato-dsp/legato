@@ -10,7 +10,7 @@ pub enum ParamError {
     ParamMetaNotFound,
 }
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ParamKey(usize);
 
 /// The param store, hoisted up on the context for the audio graph.
@@ -111,9 +111,9 @@ impl ParamStoreFrontend {
     }
 
     #[inline(always)]
-    pub fn get_key(&self, name: &'static str) -> Result<ParamKey, ParamError> {
+    pub fn get_key(&self, name: &str) -> Result<ParamKey, ParamError> {
         match self.param_lookup.get(name) {
-            Some(inner) => Ok(inner.clone()),
+            Some(inner) => Ok(*inner),
             None => Err(ParamError::ParamNotFound),
         }
     }
@@ -140,7 +140,7 @@ impl ParamStoreBuilder {
         self.meta.push(meta);
 
         // Put it in this string to key lookup for later use in the frontend
-        self.param_lookup.insert(unique_name, key.clone());
+        self.param_lookup.insert(unique_name, key);
 
         key
     }

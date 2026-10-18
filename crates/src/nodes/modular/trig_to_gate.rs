@@ -59,7 +59,7 @@ impl TrigToGate {
     ) -> Result<Self, ValidationError> {
         let sr = rb.config.sample_rate as f32;
         let gate_time = p
-            .get_duration_ms("gate_time")
+            .get_duration_ms("gate_time")?
             .unwrap_or(Duration::from_millis(100));
 
         Ok(Self::new((gate_time.as_secs_f32() * sr).floor() as u32))

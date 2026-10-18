@@ -17,7 +17,7 @@ kernel karplus(
         mult: exc { val: 1.0, chans: 1 },
 
         // tuning
-        sine: one { freq: 0.0, phase: 0.25 },
+        constant: one { val: 1.0 },
         div: period_s { val: 220.0 },
         mult: period_ms { val: 1000.0 },
 

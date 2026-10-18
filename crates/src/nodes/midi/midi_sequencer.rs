@@ -47,6 +47,7 @@ impl MidiSequencer {
     pub fn new(midi_chan: u8, num_steps: usize) -> Self {
         let ports = PortBuilder::default()
             .control_in_named(&["phasor"])
+            .required_in()
             .control_out_named(&["freq", "vel", "gate"])
             .build();
 
@@ -200,18 +201,17 @@ impl NodeDefinition for MidiSequencer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let midi_chan = p
-            .get_usize("midi_chan")
-            .expect("Must pass midi_chan to MidiSequencer!");
+        let midi_chan = p.require_usize("midi_chan")?;
 
-        let num_steps = p
-            .get_usize("num_steps")
-            .expect("Must pass num_steps to sequencer");
-        Ok(Box::new(Self::new(
-            midi_chan
-                .try_into()
-                .expect("Could not cast midi channel to u8!"),
-            num_steps,
-        )))
+        let num_steps = p.require_usize("num_steps")?;
+        let midi_chan = u8::try_from(midi_chan)
+            .ok()
+            .filter(|c| *c < 16)
+            .ok_or_else(|| {
+                ValidationError::InvalidParameter(format!(
+                    "midi_sequencer: midi_chan must be 0-15, found {midi_chan}"
+                ))
+            })?;
+        Ok(Box::new(Self::new(midi_chan, num_steps)))
     }
 }

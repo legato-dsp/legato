@@ -212,7 +212,7 @@ impl Quantize {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let values = p.get_array("notes").ok_or_else(|| {
+        let values = p.get_array("notes")?.ok_or_else(|| {
             ValidationError::MissingRequiredParameter(
                 "quantize needs `notes`, e.g. notes: [C, E, G] or notes: [0, 4, 7]".to_string(),
             )

@@ -606,106 +606,120 @@ impl<'a> DSLParams<'a> {
         Self(obj)
     }
 
-    pub fn get_f32(&self, key: &str) -> Option<f32> {
+    pub fn get_f32(&self, key: &str) -> Result<Option<f32>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::F32(x)) => Some(*x),
-            Some(Value::I32(x)) => Some(*x as f32),
-            Some(Value::U32(x)) => Some(*x as f32),
-            Some(x) => panic!("Expected F32 param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(v) => as_f32(v)
+                .map(Some)
+                .ok_or_else(|| wrong_type(key, "a number", v)),
         }
     }
 
     // TODO: More units
-    pub fn get_duration_ms(&self, key: &str) -> Option<Duration> {
+    pub fn get_duration_ms(&self, key: &str) -> Result<Option<Duration>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::F32(ms)) => Some(Duration::from_secs_f32(ms / 1000.0)),
-            Some(Value::I32(ms)) => Some(Duration::from_millis(*ms as u64)),
-            Some(Value::U32(ms)) => Some(Duration::from_millis(*ms as u64)),
-            Some(x) => panic!("Expected F32 or I32 param for ms, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(v) => as_duration_ms(v)
+                .map(Some)
+                .ok_or_else(|| wrong_type(key, "a duration in ms", v)),
         }
     }
 
-    pub fn get_u32(&self, key: &str) -> Option<u32> {
+    pub fn get_u32(&self, key: &str) -> Result<Option<u32>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::U32(s)) => Some(*s),
-            Some(x) => panic!("Expected U32 param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(Value::U32(s)) => Ok(Some(*s)),
+            Some(v) => Err(wrong_type(key, "a non-negative integer", v)),
         }
     }
 
-    pub fn get_usize(&self, key: &str) -> Option<usize> {
-        self.get_u32(key).map(|i| i as usize)
+    pub fn get_usize(&self, key: &str) -> Result<Option<usize>, ValidationError> {
+        Ok(self.get_u32(key)?.map(|i| i as usize))
     }
 
-    pub fn get_str(&self, key: &str) -> Option<String> {
+    pub fn get_str(&self, key: &str) -> Result<Option<String>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::String(s)) => Some(s.clone()),
-            Some(Value::Ident(i)) => Some(i.clone()),
-            Some(x) => panic!("Expected str param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(Value::String(s)) | Some(Value::Ident(s)) => Ok(Some(s.clone())),
+            Some(v) => Err(wrong_type(key, "a string", v)),
         }
     }
 
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
+    pub fn get_bool(&self, key: &str) -> Result<Option<bool>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::Bool(b)) => Some(*b),
-            Some(x) => panic!("Expected bool param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(Value::Bool(b)) => Ok(Some(*b)),
+            Some(v) => Err(wrong_type(key, "a bool", v)),
         }
     }
 
-    pub fn get_object(&self, key: &str) -> Option<Object> {
+    pub fn get_object(&self, key: &str) -> Result<Option<Object>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::Object(o)) => Some(o.clone()),
-            Some(x) => panic!("Expected object param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(Value::Object(o)) => Ok(Some(o.clone())),
+            Some(v) => Err(wrong_type(key, "an object", v)),
         }
     }
 
-    pub fn get_array(&self, key: &str) -> Option<Vec<Value>> {
+    pub fn get_array(&self, key: &str) -> Result<Option<Vec<Value>>, ValidationError> {
         match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
+            None => Ok(None),
+            Some(Value::Array(v)) => Ok(Some(v.clone())),
+            Some(v) => Err(wrong_type(key, "an array", v)),
         }
     }
 
-    pub fn get_array_f32(&self, key: &str) -> Option<Vec<f32>> {
-        let arr = match self.0.get(key) {
-            Some(Value::Array(v)) => Some(v.clone()),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => None,
-        }?;
-        Some(
-            arr.into_iter()
-                .map(|x| match x {
-                    Value::F32(x) => x,
-                    Value::I32(x) => x as f32,
-                    Value::U32(x) => x as f32,
-                    _ => panic!("Unexpected value in f32 array {:?}", x),
-                })
-                .collect(),
-        )
+    pub fn get_array_f32(&self, key: &str) -> Result<Option<Vec<f32>>, ValidationError> {
+        self.get_array(key)?
+            .map(|arr| {
+                arr.iter()
+                    .map(|x| as_f32(x).ok_or_else(|| wrong_type(key, "an array of numbers", x)))
+                    .collect()
+            })
+            .transpose()
     }
 
-    pub fn get_array_duration_ms(&self, key: &str) -> Option<Vec<Duration>> {
-        let arr = match self.0.get(key) {
-            Some(Value::Array(v)) => v.clone(),
-            Some(x) => panic!("Expected array param, found {:?}", x),
-            _ => return None,
-        };
-        Some(
-            arr.into_iter()
-                .map(|x| match x {
-                    Value::F32(x) => Duration::from_secs_f32(x / 1000.0),
-                    Value::I32(x) => Duration::from_millis(x as u64),
-                    Value::U32(x) => Duration::from_millis(x as u64),
-                    _ => panic!("Unexpected value in duration array {:?}", x),
-                })
-                .collect(),
-        )
+    pub fn get_array_duration_ms(
+        &self,
+        key: &str,
+    ) -> Result<Option<Vec<Duration>>, ValidationError> {
+        self.get_array(key)?
+            .map(|arr| {
+                arr.iter()
+                    .map(|x| {
+                        as_duration_ms(x).ok_or_else(|| wrong_type(key, "an array of durations", x))
+                    })
+                    .collect()
+            })
+            .transpose()
+    }
+
+    pub fn require_f32(&self, key: &str) -> Result<f32, ValidationError> {
+        self.get_f32(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_duration_ms(&self, key: &str) -> Result<Duration, ValidationError> {
+        self.get_duration_ms(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_u32(&self, key: &str) -> Result<u32, ValidationError> {
+        self.get_u32(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_usize(&self, key: &str) -> Result<usize, ValidationError> {
+        self.get_usize(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_str(&self, key: &str) -> Result<String, ValidationError> {
+        self.get_str(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_array(&self, key: &str) -> Result<Vec<Value>, ValidationError> {
+        self.get_array(key)?.ok_or_else(|| missing(key))
+    }
+
+    pub fn require_array_f32(&self, key: &str) -> Result<Vec<f32>, ValidationError> {
+        self.get_array_f32(key)?.ok_or_else(|| missing(key))
     }
 
     pub fn validate(&self, allowed: &BTreeSet<String>) -> Result<(), ValidationError> {
@@ -731,6 +745,34 @@ impl<'a> DSLParams<'a> {
         }
         Ok(())
     }
+}
+
+fn as_f32(v: &Value) -> Option<f32> {
+    match v {
+        Value::F32(x) => Some(*x),
+        Value::I32(x) => Some(*x as f32),
+        Value::U32(x) => Some(*x as f32),
+        _ => None,
+    }
+}
+
+fn as_duration_ms(v: &Value) -> Option<Duration> {
+    match v {
+        Value::F32(ms) if *ms >= 0.0 => Some(Duration::from_secs_f32(ms / 1000.0)),
+        Value::I32(ms) if *ms >= 0 => Some(Duration::from_millis(*ms as u64)),
+        Value::U32(ms) => Some(Duration::from_millis(*ms as u64)),
+        _ => None,
+    }
+}
+
+fn wrong_type(key: &str, expected: &str, found: &Value) -> ValidationError {
+    ValidationError::InvalidParameter(format!(
+        "parameter '{key}' expects {expected}, found {found:?}"
+    ))
+}
+
+fn missing(key: &str) -> ValidationError {
+    ValidationError::MissingRequiredParameter(format!("missing required parameter '{key}'"))
 }
 
 impl From<f32> for Value {

@@ -17,6 +17,7 @@ use crate::resources::params::{ParamError, ParamKey};
 use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
 use std::fmt::Debug;
+use std::path::Path;
 
 new_key_type! {
     /// A slotmap key corresponding to a particular node.
@@ -55,6 +56,9 @@ impl Runtime {
     }
     pub fn validate_arity(&self) -> Result<(), ValidationError> {
         self.executor.validate_arity()
+    }
+    pub fn validate_required_inputs(&self) -> Result<(), ValidationError> {
+        self.executor.validate_required_inputs()
     }
     pub fn set_resources(&mut self, resources: Resources) {
         self.context.set_resources(resources);
@@ -169,27 +173,28 @@ impl RuntimeFrontend {
     pub fn load_file(
         &mut self,
         name: &str,
-        path: &str,
+        path: &Path,
         chans: usize,
         sr: u32,
     ) -> Result<(), AudioSampleError> {
-        match decode_with_ffmpeg(path, chans, sr) {
-            Ok(decoded) => self
-                .resource_frontend
-                .send_external_buffer(name, decoded)
-                .map_err(|_| AudioSampleError::FailedToSendToRuntime),
-            Err(_) => Err(AudioSampleError::FailedDecoding),
-        }
+        let decoded = decode_with_ffmpeg(path, chans, sr)?;
+        self.resource_frontend.send_external_buffer(name, decoded)
     }
 
-    pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
-        if let Ok(key) = self.resource_frontend.get_param_key(name) {
-            return self.resource_frontend.set_param(key, val);
-        }
-        Err(ParamError::ParamNotFound)
+    pub fn set_param(&mut self, name: &str, val: f32) -> Result<(), ParamError> {
+        let key = self.resource_frontend.get_param_key(name)?;
+        self.resource_frontend.set_param(key, val)
     }
 
-    pub fn get_param_key(&self, param_name: &'static str) -> Result<ParamKey, ParamError> {
+    pub fn set_param_by_key(&mut self, key: ParamKey, val: f32) -> Result<(), ParamError> {
+        self.resource_frontend.set_param(key, val)
+    }
+
+    pub fn get_param(&self, key: ParamKey) -> Result<f32, ParamError> {
+        self.resource_frontend.get_param(key)
+    }
+
+    pub fn get_param_key(&self, param_name: &str) -> Result<ParamKey, ParamError> {
         self.resource_frontend.get_param_key(param_name)
     }
 }

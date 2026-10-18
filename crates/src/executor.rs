@@ -2,6 +2,7 @@ use crate::{
     builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
+    ports::Unpatched,
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
@@ -64,6 +65,30 @@ impl Executor {
                         "node '{}' ({}) has {} audio {} ports, but the executor supports \
                          at most {} per side",
                         node.name, node.node_kind, count, dir, MAX_ARITY
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Reject graphs that leave a [`Unpatched::Required`] input unconnected.
+    pub fn validate_required_inputs(&self) -> Result<(), ValidationError> {
+        for (key, node) in self.graph.iter() {
+            let connected: Vec<usize> = self
+                .graph
+                .incoming_connections(key)
+                .into_iter()
+                .flatten()
+                .map(|c| c.sink.port_index)
+                .collect();
+
+            for port in &node.get_node().ports().ports_in {
+                if port.unpatched == Unpatched::Required && !connected.contains(&port.index) {
+                    return Err(ValidationError::UnconnectedInput(format!(
+                        "node '{}' ({}) requires its '{}' input (index {}) to be connected",
+                        node.name, node.node_kind, port.name, port.index
                     )));
                 }
             }
@@ -164,7 +189,7 @@ impl Executor {
             }
 
             for i in 0..audio_inputs_size {
-                if has_inputs[i] {
+                if has_inputs[i] || ports.ports_in[i].unpatched == Unpatched::Silent {
                     // Pass references to each slice to the inputs now
                     let start = i * block_size;
                     let end = start + block_size;

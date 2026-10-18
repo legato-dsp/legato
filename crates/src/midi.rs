@@ -8,6 +8,8 @@ use std::{
 };
 
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender, bounded};
+#[cfg(unix)]
+use midir::os::unix::{VirtualInput, VirtualOutput};
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
 pub type MidiProducer = Sender<(MidiMessage, Instant)>;
@@ -436,22 +438,13 @@ pub fn start_midi_thread(
     out_port: MidiPortKind,
     port_name: &'static str,
 ) -> Result<MidiRuntimeFrontend, MidiError> {
-    let mut input = MidiInput::new(client_name).expect("Could not create MidiInput device!");
+    let connection_error =
+        |what: &str, e: &dyn std::fmt::Display| MidiError::ConnectionError(format!("{what}: {e}"));
+
+    let mut input =
+        MidiInput::new(client_name).map_err(|e| connection_error("create input", &e))?;
     // This message type not supported for now
     input.ignore(Ignore::SysexAndActiveSense);
-
-    let in_ports = input.ports();
-
-    for p in &input.ports() {
-        eprintln!("midir in: {:?}", input.port_name(p));
-    }
-
-    // Find our port index from the enum passed in
-    let in_port_index = in_port
-        .select_port_in(&input)
-        .expect("Could not create input port!");
-
-    let input_port = &in_ports[in_port_index];
 
     // These are the channels that signal from reader -> store and store -> writer
     let (midi_reader_prod, midi_reader_consumer) = bounded::<(MidiMessage, Instant)>(capacity);
@@ -459,38 +452,41 @@ pub fn start_midi_thread(
 
     let mut midi_listener = MidiListener::new(midi_reader_prod);
 
-    // The input connection thread
-    let reader_handle = input
-        .connect(
-            input_port,
-            port_name,
-            move |_, message, _| {
-                let instant = Instant::now();
-                if let Ok(msg) = parse_midi(message)
-                    && midi_listener.send_to_store(msg, instant).is_err()
-                {
-                    eprintln!("MIDI DROP");
-                }
-            },
-            (),
-        )
-        .map_err(|x| MidiError::ConnectionError(format!("input connect: {x}")))?;
+    let on_message = move |_: u64, message: &[u8], _: &mut ()| {
+        let instant = Instant::now();
+        if let Ok(msg) = parse_midi(message)
+            && midi_listener.send_to_store(msg, instant).is_err()
+        {
+            eprintln!("MIDI DROP");
+        }
+    };
 
-    let output = MidiOutput::new(client_name).expect("Could not create MidiOutput device!");
+    // The input connection thread
+    let reader_handle = match in_port {
+        #[cfg(unix)]
+        MidiPortKind::Virtual => input.create_virtual(port_name, on_message, ()),
+        _ => {
+            let in_ports = input.ports();
+            let index = in_port.select_port_in(&input)?;
+            input.connect(&in_ports[index], port_name, on_message, ())
+        }
+    }
+    .map_err(|e| connection_error("input connect", &e))?;
+
+    let output = MidiOutput::new(client_name).map_err(|e| connection_error("create output", &e))?;
 
     let midi_writer = MidiWriter::new(midi_writer_consumer);
 
-    let out_ports = output.ports();
-    // Create output port
-    let out_port_index = out_port
-        .select_port_out(&output)
-        .expect("Could not create input port!");
-
-    let output_port = &out_ports[out_port_index];
-
-    let mut output_connection = output
-        .connect(output_port, port_name)
-        .map_err(|x| MidiError::ConnectionError(format!("output connect: {x}")))?;
+    let mut output_connection = match out_port {
+        #[cfg(unix)]
+        MidiPortKind::Virtual => output.create_virtual(port_name),
+        _ => {
+            let out_ports = output.ports();
+            let index = out_port.select_port_out(&output)?;
+            output.connect(&out_ports[index], port_name)
+        }
+    }
+    .map_err(|e| connection_error("output connect", &e))?;
 
     // Spawning the writer thread, we keep the handle as we will use this on the MidiRuntime struct
     let writer_handle = std::thread::spawn(move || {
@@ -742,12 +738,16 @@ pub enum MidiPortKind {
     Default,
     Index(usize),
     Named(&'static str),
+    /// Create a virtual port other apps can connect to, named after `port_name`.
+    /// Not available on Windows.
+    Virtual,
 }
 
 impl MidiPortKind {
     pub fn select_port_in(&self, midi_input: &MidiInput) -> Result<usize, MidiError> {
         let n = midi_input.ports().len();
         let idx = match self {
+            MidiPortKind::Virtual => return Err(MidiError::NotImplemented),
             MidiPortKind::Default => 0,
             MidiPortKind::Index(i) => *i,
             MidiPortKind::Named(name) => midi_input
@@ -766,6 +766,7 @@ impl MidiPortKind {
     pub fn select_port_out(&self, midi_output: &MidiOutput) -> Result<usize, MidiError> {
         let n = midi_output.ports().len();
         let idx = match self {
+            MidiPortKind::Virtual => return Err(MidiError::NotImplemented),
             MidiPortKind::Default => 0,
             MidiPortKind::Index(i) => *i,
             MidiPortKind::Named(name) => midi_output

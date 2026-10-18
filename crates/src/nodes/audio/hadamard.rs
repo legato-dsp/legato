@@ -106,9 +106,12 @@ impl HadamardMixer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to hadamard");
+        let chans = p.require_usize("chans")?;
+        if !chans.is_power_of_two() {
+            return Err(ValidationError::InvalidParameter(format!(
+                "hadamard: chans must be a power of two, found {chans}"
+            )));
+        }
         Ok(Self::new(chans))
     }
 }

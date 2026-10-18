@@ -196,15 +196,13 @@ impl NodeDefinition for DelayWrite {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let name = p
-            .get_str("delay_name")
-            .expect("Could not find required parameter delay_name");
+        let name = p.require_str("delay_name")?;
 
         let len = p
-            .get_duration_ms("delay_length")
+            .get_duration_ms("delay_length")?
             .unwrap_or(Duration::from_secs(1));
 
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
 
         let sr = rb.get_config().sample_rate as f32;
         let capacity = sr * len.as_secs_f32();
@@ -235,23 +233,24 @@ impl NodeDefinition for DelayRead {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let name = p
-            .get_str("delay_name")
-            .expect("Could not find required parameter delay_name");
+        let name = p.require_str("delay_name")?;
 
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
 
         let delay_len = p
-            .get_duration_ms("delay_length")
+            .get_duration_ms("delay_length")?
             .unwrap_or(Duration::from_secs(1));
 
-        let quality = p
-            .get_str("quality")
-            .map_or(DelayQuality::default(), |q| match q.as_str() {
-                "linear" => DelayQuality::Linear,
-                "cubic" => DelayQuality::Cubic,
-                _ => panic!("Unknown delay quality '{q}', expected 'linear' or 'cubic'"),
-            });
+        let quality = match p.get_str("quality")?.as_deref() {
+            None => DelayQuality::default(),
+            Some("linear") => DelayQuality::Linear,
+            Some("cubic") => DelayQuality::Cubic,
+            Some(q) => {
+                return Err(ValidationError::InvalidParameter(format!(
+                    "delay_read: unknown quality '{q}', expected 'linear' or 'cubic'"
+                )));
+            }
+        };
 
         let key = rb
             .get_delay_line_key(&name)

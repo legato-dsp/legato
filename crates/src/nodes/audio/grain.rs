@@ -178,7 +178,9 @@ impl Granular {
             scan,
             last_trig: 0.0,
             ports: PortBuilder::default()
-                .audio_in_named(&["trig", "freq", "size"])
+                .audio_in_named(&["trig", "freq"])
+                .required_in()
+                .audio_in_named(&["size"])
                 .audio_out(chans)
                 .build(),
         }
@@ -274,20 +276,18 @@ impl NodeDefinition for Granular {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let name = p
-            .get_str("sampler_name")
-            .expect("Could not find required parameter sampler_name");
+        let name = p.require_str("sampler_name")?;
 
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
 
         let grain_size = p
-            .get_duration_ms("size")
+            .get_duration_ms("size")?
             .unwrap_or(Duration::from_millis(200))
             .clamp(Duration::from_millis(5), Duration::from_secs(3));
 
-        let shape = p.get_f32("shape").unwrap_or(0.3);
+        let shape = p.get_f32("shape")?.unwrap_or(0.3);
 
-        let scan = p.get_f32("scan").unwrap_or(1.0);
+        let scan = p.get_f32("scan")?.unwrap_or(1.0);
 
         let key = rb.add_external_buffer_key(&name);
 

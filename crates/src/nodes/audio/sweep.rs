@@ -81,11 +81,11 @@ impl NodeDefinition for Sweep {
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         use std::time::Duration;
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
         let duration = p
-            .get_duration_ms("duration")
+            .get_duration_ms("duration")?
             .unwrap_or(Duration::from_secs_f32(5.0));
-        let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
+        let range = p.get_array_f32("range")?.unwrap_or([40., 48_000.].into());
         Ok(Box::new(Self::new(&range, duration, chans)))
     }
 }

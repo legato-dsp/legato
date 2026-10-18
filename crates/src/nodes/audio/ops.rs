@@ -38,6 +38,7 @@ impl ApplyOp {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .default_in()
+                .silent_in()
                 .audio_in_named(&["val"])
                 .audio_out(chans)
                 .build(),
@@ -134,8 +135,7 @@ impl Node for ApplyOp {
     ///
     /// Unknown parameter names are ignored rather than panicking. Messages
     /// originate from user input and arrive on the audio thread, so a bad name
-    /// must not take down the stream. (Several other nodes still `unreachable!`
-    /// here; they predate generated code being able to address them.)
+    /// must not take down the stream.
     fn handle_msg(&mut self, msg: NodeMessage) {
         if let NodeMessage::SetParam(payload) = msg
             && let ("val", RtValue::F32(value)) = (payload.param_name, payload.value)
@@ -261,14 +261,14 @@ pub struct GainDef;
 impl NodeDefinition for MultDef {
     const NAME: &'static str = "mult";
     const DESCRIPTION: &'static str = "Multiplies an audio signal by a scalar or modulation input";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["val"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let val = p.get_f32("val").unwrap_or(1.0);
+        let val = p.get_f32("val")?.unwrap_or(1.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Mult)))
     }
 }
@@ -276,14 +276,14 @@ impl NodeDefinition for MultDef {
 impl NodeDefinition for AddDef {
     const NAME: &'static str = "add";
     const DESCRIPTION: &'static str = "Adds a scalar or modulation input to an audio signal";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["val"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let val = p.get_f32("val").unwrap_or(0.0);
+        let val = p.get_f32("val")?.unwrap_or(0.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Add)))
     }
 }
@@ -291,14 +291,14 @@ impl NodeDefinition for AddDef {
 impl NodeDefinition for SubDef {
     const NAME: &'static str = "sub";
     const DESCRIPTION: &'static str = "Subtracts a scalar or modulation input from an audio signal";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["val"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let val = p.get_f32("val").unwrap_or(0.0);
+        let val = p.get_f32("val")?.unwrap_or(0.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Subtract)))
     }
 }
@@ -306,14 +306,14 @@ impl NodeDefinition for SubDef {
 impl NodeDefinition for DivDef {
     const NAME: &'static str = "div";
     const DESCRIPTION: &'static str = "Divides an audio signal by a scalar or modulation input";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &[];
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["val"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let val = p.get_f32("val").unwrap_or(0.0);
+        let val = p.get_f32("val")?.unwrap_or(1.0);
         Ok(Box::new(mult_node_factory(val, 1, ApplyOpKind::Div)))
     }
 }
@@ -322,15 +322,15 @@ impl NodeDefinition for GainDef {
     const NAME: &'static str = "gain";
     const DESCRIPTION: &'static str =
         "Applies multichannel gain with soft clipping (tanh saturation)";
-    const REQUIRED_PARAMS: &'static [&'static str] = &["val"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans"];
+    const REQUIRED_PARAMS: &'static [&'static str] = &[];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["val", "chans"];
 
     fn create(
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p.get_usize("chans").unwrap_or(2);
-        let val = p.get_f32("val").unwrap_or(1.0);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
+        let val = p.get_f32("val")?.unwrap_or(1.0);
         Ok(Box::new(mult_node_factory(val, chans, ApplyOpKind::Gain)))
     }
 }

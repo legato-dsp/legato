@@ -264,11 +264,10 @@ impl Node for Sine {
     }
 
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        if let NodeMessage::SetParam(payload) = msg {
-            match (payload.param_name, payload.value) {
-                ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unimplemented!("Invalid parameter and value passed"),
-            }
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("freq", RtValue::F32(val)) = (payload.param_name, payload.value)
+        {
+            self.freq = val;
         }
     }
 
@@ -289,9 +288,16 @@ impl Sine {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let freq = p.get_f32("freq").unwrap_or(440.0);
+        if let Some(chans) = p.get_usize("chans")?
+            && chans != 1
+        {
+            return Err(ValidationError::InvalidParameter(format!(
+                "sine is mono, found chans: {chans}; fan it out with mono_fan_out"
+            )));
+        }
+        let freq = p.get_f32("freq")?.unwrap_or(440.0);
         let quality = p
-            .get_str("quality")
+            .get_str("quality")?
             .map(|s| {
                 Quality::from_str(&s).ok_or_else(|| {
                     ValidationError::InvalidParameter(
@@ -302,7 +308,7 @@ impl Sine {
             .transpose()?
             .unwrap_or_default();
         let sr = rb.get_config().sample_rate as f32;
-        let phase = p.get_f32("phase").unwrap_or(0.0);
+        let phase = p.get_f32("phase")?.unwrap_or(0.0);
         Ok(Self::with_quality(freq, sr, quality).with_start_phase(phase))
     }
 }

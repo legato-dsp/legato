@@ -108,6 +108,10 @@ impl AudioGraph {
         self.nodes.values().collect()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (NodeKey, &LegatoNode)> {
+        self.nodes.iter()
+    }
+
     pub fn get_sort_order_nodes_and_runtime_info(
         &mut self,
     ) -> (&Vec<NodeKey>, &mut SlotMap<NodeKey, LegatoNode>, &EdgeMap) {
@@ -317,7 +321,7 @@ mod test {
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
         node::{Inputs, Node},
-        ports::{PortMeta, Ports},
+        ports::{PortMeta, Ports, Unpatched},
     };
 
     #[derive(Clone)]
@@ -333,11 +337,13 @@ mod test {
                         name: "in",
                         index: 0,
                         default: true,
+                        unpatched: Unpatched::Absent,
                     }],
                     ports_out: vec![PortMeta {
                         name: "out",
                         index: 0,
                         default: true,
+                        unpatched: Unpatched::Absent,
                     }],
                 },
             }

@@ -22,6 +22,7 @@ impl Pan {
             ports: PortBuilder::default()
                 .audio_in(1)
                 .default_in()
+                .silent_in()
                 .audio_in_named(&["pan"])
                 .audio_out(2)
                 .build(),
@@ -49,11 +50,10 @@ impl Node for Pan {
         }
     }
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        if let NodeMessage::SetParam(payload) = msg {
-            match (payload.param_name, payload.value) {
-                ("pan", RtValue::F32(val)) => self.pan = val.clamp(0.0, 1.0),
-                _ => unreachable!("Invalid parameter and value passed"),
-            }
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("pan", RtValue::F32(val)) = (payload.param_name, payload.value)
+        {
+            self.pan = val.clamp(0.0, 1.0);
         }
     }
     fn ports(&self) -> &Ports {
@@ -85,7 +85,7 @@ impl Pan {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let pan = p.get_f32("pan").unwrap_or(0.5);
+        let pan = p.get_f32("pan")?.unwrap_or(0.5);
         Ok(Self::new(pan))
     }
 }

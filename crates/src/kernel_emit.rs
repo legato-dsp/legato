@@ -65,6 +65,7 @@ fn rust_type_for(node_type: &str) -> Option<(&'static str, &'static str)> {
         ),
         "quantize" => ("Quantize", "nodes::modular::quantize::Quantize"),
         "trig_to_gate" => ("TrigToGate", "nodes::modular::trig_to_gate::TrigToGate"),
+        "constant" => ("Constant", "nodes::control::constant::Constant"),
         // Every arithmetic node is one `ApplyOp` behind the scenes.
         "mult" | "add" | "sub" | "div" | "gain" => ("Op", "nodes::audio::ops::ApplyOp"),
         _ => return None,
@@ -394,7 +395,7 @@ fn emit_node_definition(out: &mut String, plan: &KernelPlan, struct_name: &str, 
     );
     let _ = writeln!(
         out,
-        "        let mut node = Self::new(rb)?;\n                 node.apply_params(params);\n                 Ok(Box::new({krate}::persample::PerSample::new(node)))"
+        "        let mut node = Self::new(rb)?;\n                 node.apply_params(params)?;\n                 Ok(Box::new({krate}::persample::PerSample::new(node)))"
     );
     let _ = writeln!(out, "    }}");
     let _ = writeln!(out, "}}");
@@ -611,7 +612,7 @@ fn emit_setters(out: &mut String, plan: &KernelPlan, krate: &str) {
     );
     let _ = writeln!(
         out,
-        "    pub fn apply_params(&mut self, params: &{krate}::dsl::ir::DSLParams) {{"
+        "    pub fn apply_params(&mut self, params: &{krate}::dsl::ir::DSLParams) -> Result<(), {krate}::builder::ValidationError> {{"
     );
     if plan.params.is_empty() {
         // Emitted even with nothing to apply so `create` can call it
@@ -621,11 +622,12 @@ fn emit_setters(out: &mut String, plan: &KernelPlan, krate: &str) {
     for param in &plan.params {
         let _ = writeln!(
             out,
-            "        if let Some(value) = params.get_f32({:?}) {{\n                         self.set_{}(value);\n        }}",
+            "        if let Some(value) = params.get_f32({:?})? {{\n                         self.set_{}(value);\n        }}",
             param.name,
             sanitize(&param.name)
         );
     }
+    let _ = writeln!(out, "        Ok(())");
     let _ = writeln!(out, "    }}");
 }
 
@@ -758,6 +760,7 @@ mod tests {
             "sample_and_hold",
             "quantize",
             "trig_to_gate",
+            "constant",
             "mult",
             "add",
             "sub",

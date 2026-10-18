@@ -44,6 +44,7 @@ export default defineContentConfig({
       source: nodesSource,
       schema: z.object({
         name: z.string(),
+        namespace: z.string(),
         description: z.string(),
         required_params: z.array(z.string()),
         optional_params: z.array(z.string()),

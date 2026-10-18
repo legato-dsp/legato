@@ -1481,31 +1481,35 @@ impl Plate {
 
     /// Apply any declared params present in `params`, leaving the rest
     /// at their defaults.
-    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
-        if let Some(value) = params.get_f32("bandwidth_a") {
+    pub fn apply_params(
+        &mut self,
+        params: &legato::dsl::ir::DSLParams,
+    ) -> Result<(), legato::builder::ValidationError> {
+        if let Some(value) = params.get_f32("bandwidth_a")? {
             self.set_bandwidth_a(value);
         }
-        if let Some(value) = params.get_f32("damping") {
+        if let Some(value) = params.get_f32("damping")? {
             self.set_damping(value);
         }
-        if let Some(value) = params.get_f32("decay") {
+        if let Some(value) = params.get_f32("decay")? {
             self.set_decay(value);
         }
-        if let Some(value) = params.get_f32("dry") {
+        if let Some(value) = params.get_f32("dry")? {
             self.set_dry(value);
         }
-        if let Some(value) = params.get_f32("mod_range_l") {
+        if let Some(value) = params.get_f32("mod_range_l")? {
             self.set_mod_range_l(value);
         }
-        if let Some(value) = params.get_f32("mod_range_r") {
+        if let Some(value) = params.get_f32("mod_range_r")? {
             self.set_mod_range_r(value);
         }
-        if let Some(value) = params.get_f32("predelay") {
+        if let Some(value) = params.get_f32("predelay")? {
             self.set_predelay(value);
         }
-        if let Some(value) = params.get_f32("wet") {
+        if let Some(value) = params.get_f32("wet")? {
             self.set_wet(value);
         }
+        Ok(())
     }
 }
 
@@ -1900,7 +1904,7 @@ impl legato::spec::NodeDefinition for Plate {
         params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
         let mut node = Self::new(rb)?;
-        node.apply_params(params);
+        node.apply_params(params)?;
         Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }

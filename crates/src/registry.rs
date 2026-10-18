@@ -34,6 +34,7 @@ use crate::{
             tap::DelayTap,
         },
         control::{
+            constant::Constant,
             lfo::Lfo,
             map::Map,
             phasor::{ClockDef, Phasor},
@@ -79,7 +80,7 @@ impl NodeRegistry {
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
             Some(spec) => {
-                spec.check_for_bad_params(params);
+                spec.validate_params(params)?;
                 (spec.build)(resource_builder, params)
             }
             None => Err(ValidationError::NodeNotFound(format!(
@@ -96,11 +97,28 @@ impl NodeRegistry {
         self.data.insert(spec.name.clone(), spec);
     }
 
+    /// Every node spec in this registry, sorted by name.
+    pub fn specs(&self) -> Vec<&NodeSpec> {
+        let mut specs: Vec<&NodeSpec> = self.data.values().collect();
+        specs.sort_by(|a, b| a.name.cmp(&b.name));
+        specs
+    }
+
     /// Register a node type that implements [`NodeDefinition`].
     pub fn register_node<T: NodeDefinition>(&mut self) {
         let spec = T::spec();
         self.data.insert(spec.name.clone(), spec);
     }
+}
+
+/// The built-in namespaces every builder starts with.
+pub fn default_namespaces() -> Vec<(&'static str, NodeRegistry)> {
+    vec![
+        ("audio", audio_registry_factory()),
+        ("control", control_registry_factory()),
+        ("midi", midi_registry_factory()),
+        ("modular", modular_registry_factory()),
+    ]
 }
 
 // Here, we assemble all of these registries. I might look into linking/static graphs in the future instead.
@@ -138,6 +156,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 pub fn control_registry_factory() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register_node::<Signal>();
+    registry.register_node::<Constant>();
     registry.register_node::<Lfo>();
     registry.register_node::<Map>();
     registry.register_node::<Phasor>();

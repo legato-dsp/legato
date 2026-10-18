@@ -9,6 +9,8 @@ use crate::{
 pub struct Phasor {
     phase: f32,
     freq: f32,
+    /// Hz per BPM, so a `bpm` message can retune the phasor.
+    hz_per_bpm: f32,
     ports: Ports,
 }
 
@@ -17,7 +19,18 @@ impl Phasor {
         Self {
             phase: 0.0,
             freq,
+            hz_per_bpm: 1.0 / 60.0,
             ports: PortBuilder::default().control_out(1).build(),
+        }
+    }
+
+    /// A phasor that completes one cycle every `steps` divisions of a beat.
+    pub fn clock(bpm: f32, division: f32, steps: f32) -> Self {
+        let hz_per_bpm = division / (60.0 * steps);
+        Self {
+            freq: bpm * hz_per_bpm,
+            hz_per_bpm,
+            ..Self::new(0.0)
         }
     }
 
@@ -54,6 +67,8 @@ impl Node for Phasor {
             match (inner.param_name, inner.value) {
                 ("freq", RtValue::F32(val)) => self.freq = val,
                 ("freq", RtValue::U32(val)) => self.freq = val as f32,
+                ("bpm", RtValue::F32(val)) => self.freq = val * self.hz_per_bpm,
+                ("bpm", RtValue::U32(val)) => self.freq = val as f32 * self.hz_per_bpm,
                 _ => (),
             }
         }
@@ -77,7 +92,7 @@ impl NodeDefinition for Phasor {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let freq = p.get_f32("freq").expect("Must pass frequency to phasor");
+        let freq = p.require_f32("freq")?;
         Ok(Box::new(Self::new(freq)))
     }
 }
@@ -89,7 +104,7 @@ pub struct ClockDef;
 impl NodeDefinition for ClockDef {
     const NAME: &'static str = "clock";
     const DESCRIPTION: &'static str =
-        "Clock signal derived from BPM, beat division, and step count";
+        "Clock signal derived from BPM, beat division, and step count. Accepts a `bpm` message";
     const REQUIRED_PARAMS: &'static [&'static str] = &["bpm", "division", "steps"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
@@ -97,12 +112,32 @@ impl NodeDefinition for ClockDef {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
-        let division = p
-            .get_usize("division")
-            .expect("Must pass division to clock");
-        let steps = p.get_usize("steps").expect("Must pass steps to clock");
-        let freq = (bpm * division) as f32 / (60.0 * steps as f32);
-        Ok(Box::new(Phasor::new(freq)))
+        let bpm = p.require_f32("bpm")?;
+        let division = p.require_usize("division")?;
+        let steps = p.require_usize("steps")?;
+        if steps == 0 {
+            return Err(ValidationError::InvalidParameter(
+                "clock: steps must be at least 1".into(),
+            ));
+        }
+        Ok(Box::new(Phasor::clock(bpm, division as f32, steps as f32)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::msg::{NodeMessage, ParamPayload};
+
+    #[test]
+    fn bpm_message_retunes_a_clock() {
+        let mut clock = Phasor::clock(120.0, 4.0, 16.0);
+        assert!((clock.freq - 0.5).abs() < 1e-6);
+
+        clock.handle_msg(NodeMessage::SetParam(ParamPayload {
+            param_name: "bpm",
+            value: RtValue::F32(90.0),
+        }));
+        assert!((clock.freq - 0.375).abs() < 1e-6);
     }
 }

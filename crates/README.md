@@ -240,13 +240,15 @@ impl NodeDefinition for Sweep {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let chans = p.get_usize("chans").unwrap_or(2);
+        // Getters return `Err` on a wrongly typed param and `Ok(None)` when it is absent.
+        // Use `p.require_*` for params listed in REQUIRED_PARAMS.
+        let chans = p.get_usize("chans")?.unwrap_or(2);
         
         let duration = p
-            .get_duration_ms("duration")
+            .get_duration_ms("duration")?
             .unwrap_or(Duration::from_secs_f32(5.0));
         
-        let range = p.get_array_f32("range").unwrap_or([40., 48_000.].into());
+        let range = p.get_array_f32("range")?.unwrap_or([40., 48_000.].into());
         
         Ok(Box::new(Self::new(&range, duration, chans)))
     }

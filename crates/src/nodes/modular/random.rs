@@ -122,14 +122,14 @@ impl Random {
         let sr = rb.config.sample_rate as f32;
 
         let rate = p
-            .get_duration_ms("rate")
+            .get_duration_ms("rate")?
             .unwrap_or(Duration::from_millis(250));
         let period_in_samples = (rate.as_secs_f32() * sr).floor() as u32;
 
-        let prob = p.get_f32("prob").unwrap_or(1.0);
-        let smoothing = p.get_f32("smoothing").unwrap_or(0.0);
+        let prob = p.get_f32("prob")?.unwrap_or(1.0);
+        let smoothing = p.get_f32("smoothing")?.unwrap_or(0.0);
 
-        let range = match p.get_array_f32("range") {
+        let range = match p.get_array_f32("range")? {
             Some(v) if v.len() == 2 => (v[0], v[1]),
             Some(_) => {
                 return Err(ValidationError::InvalidParameter(
