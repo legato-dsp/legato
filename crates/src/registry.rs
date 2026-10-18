@@ -34,6 +34,7 @@ use crate::{
             tap::DelayTap,
         },
         control::{
+            constant::Constant,
             lfo::Lfo,
             map::Map,
             phasor::{ClockDef, Phasor},
@@ -138,6 +139,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
 pub fn control_registry_factory() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register_node::<Signal>();
+    registry.register_node::<Constant>();
     registry.register_node::<Lfo>();
     registry.register_node::<Map>();
     registry.register_node::<Phasor>();

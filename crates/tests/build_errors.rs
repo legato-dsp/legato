@@ -112,3 +112,11 @@ fn multichannel_sine_is_rejected() {
         "{err:?}"
     );
 }
+
+#[test]
+fn constant_and_fractional_bpm_build() {
+    build("control { constant { val: 0.5, chans: 2 } }\n{ constant }").expect("constant");
+    let src = "control { clock { bpm: 92.5, division: 4, steps: 16 }, sequencer { num_steps: 16 } }\n\
+               clock >> sequencer\n{ sequencer }";
+    build(src).expect("fractional bpm");
+}

@@ -25,7 +25,7 @@ use crate::{
             svf::Svf,
             tap::DelayTap,
         },
-        control::map::Map,
+        control::{constant::Constant, map::Map},
         modular::{quantize::Quantize, sample_and_hold::SampleAndHold, trig_to_gate::TrigToGate},
     },
     persample::PerSampleNode,
@@ -58,6 +58,7 @@ pub enum KernelNode {
     SampleAndHold(SampleAndHold),
     Quantize(Quantize),
     TrigToGate(TrigToGate),
+    Constant(Constant),
 }
 
 /// This macro lets us quickly write rules for all kernels
@@ -79,6 +80,7 @@ macro_rules! dispatch {
             KernelNode::SampleAndHold($inner) => $body,
             KernelNode::Quantize($inner) => $body,
             KernelNode::TrigToGate($inner) => $body,
+            KernelNode::Constant($inner) => $body,
         }
     };
 }
@@ -135,6 +137,7 @@ pub fn build_kernel_node(
         "sample_and_hold" => KernelNode::SampleAndHold(SampleAndHold::from_params(rb, p)?),
         "quantize" => KernelNode::Quantize(Quantize::from_params(rb, p)?),
         "trig_to_gate" => KernelNode::TrigToGate(TrigToGate::from_params(rb, p)?),
+        "constant" => KernelNode::Constant(Constant::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
         "mult" => op(ApplyOpKind::Mult, 1.0, 1, p)?,
         "add" => op(ApplyOpKind::Add, 0.0, 1, p)?,
