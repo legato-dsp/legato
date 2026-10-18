@@ -189,4 +189,3 @@ impl NodeDefinition for Adsr {
         Ok(Box::new(Self::new(chans, attack, decay, sustain, release)))
     }
 }
-
