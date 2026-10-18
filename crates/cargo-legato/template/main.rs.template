@@ -1,0 +1,23 @@
+use legato::prelude::*;
+
+const GRAPH: &str = include_str!("../graph.legato");
+
+fn main() {
+    let config = Config {
+        sample_rate: 48_000,
+        block_size: 512,
+        channels: 2,
+        rt_capacity: 0,
+    };
+
+    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
+        .build_dsl(GRAPH)
+        .expect("graph should build");
+
+    let host = cpal::default_host();
+
+    AudioInterface::builder(&host, config)
+        .build(app)
+        .expect("failed to start audio")
+        .run_forever();
+}

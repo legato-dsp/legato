@@ -24,6 +24,14 @@ export default defineContentConfig({
         title: z.string(),
       }),
     }),
+    blog: defineCollection({
+      type: "page",
+      source: "blog/*.md",
+      schema: z.object({
+        title: z.string(),
+        date: z.string(),
+      }),
+    }),
     contributing: defineCollection({
       type: "page",
       source: "contributing.md",

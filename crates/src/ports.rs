@@ -53,7 +53,7 @@ impl Ports {
     }
 }
 
-fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
+pub(crate) fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
     let marked: Vec<usize> = ports
         .iter()
         .filter(|p| p.default)

@@ -1,0 +1,195 @@
+================================================================================
+node pipes and aliases
+================================================================================
+
+audio {
+    osc: sine * 4 { freq: 440 } | lowpass(100.5) | gain(null)
+}
+
+{ sine }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (scope
+    namespace: (identifier)
+    (node_declaration
+      node_type: (identifier)
+      alias: (identifier)
+      count: (uint)
+      params: (params
+        (param key: (identifier) value: (value (integer))))
+      pipe: (pipe name: (identifier) params: (value (float)))
+      pipe: (pipe name: (identifier) params: (value (null)))))
+  (sink name: (identifier)))
+
+================================================================================
+complex ports in a connection chain
+================================================================================
+
+audio { in_node, looper, out }
+
+audio_in.stereo >> looper[0..2] >> out[1]
+
+{ out }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (scope
+    namespace: (identifier)
+    (node_declaration node_type: (identifier))
+    (node_declaration node_type: (identifier))
+    (node_declaration node_type: (identifier)))
+  (connection
+    (endpoint node: (identifier) port: (port name: (identifier)))
+    (endpoint node: (identifier) port: (port (uint) (uint)))
+    (endpoint node: (identifier) port: (port (uint))))
+  (sink name: (identifier)))
+
+================================================================================
+port stride
+================================================================================
+
+audio { test_node }
+
+test_node[0:10:2] >> out
+
+{ out }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (scope
+    namespace: (identifier)
+    (node_declaration node_type: (identifier)))
+  (connection
+    (endpoint node: (identifier) port: (port (uint) (uint) (uint)))
+    (endpoint node: (identifier)))
+  (sink name: (identifier)))
+
+================================================================================
+patch with virtual ports and templates
+================================================================================
+
+patch voice(freq = 440.0) {
+    in gate freq_in
+
+    audio {
+        sine: osc { freq: $freq },
+        adsr: env { attack: 100.0 }
+    }
+
+    freq_in >> osc.freq
+    gate >> env.gate
+    osc >> env[1]
+
+    { env }
+}
+
+patches {
+    voice: v1 { freq: 880.0 }
+}
+
+{ v1 }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (patch
+    name: (identifier)
+    default_params: (default_params
+      name: (identifier)
+      value: (value (float)))
+    body: (patch_body
+      (virtual_ports port: (identifier) port: (identifier))
+      (scope
+        namespace: (identifier)
+        (node_declaration
+          node_type: (identifier)
+          alias: (identifier)
+          params: (params (param key: (identifier) value: (value (template)))))
+        (node_declaration
+          node_type: (identifier)
+          alias: (identifier)
+          params: (params (param key: (identifier) value: (value (float))))))
+      (connection
+        (endpoint node: (identifier))
+        (endpoint node: (identifier) port: (port name: (identifier))))
+      (connection
+        (endpoint node: (identifier))
+        (endpoint node: (identifier) port: (port name: (identifier))))
+      (connection
+        (endpoint node: (identifier))
+        (endpoint node: (identifier) port: (port (uint))))
+      (sink name: (identifier))))
+  (scope
+    namespace: (identifier)
+    (node_declaration
+      node_type: (identifier)
+      alias: (identifier)
+      params: (params (param key: (identifier) value: (value (float))))))
+  (sink name: (identifier)))
+
+================================================================================
+kernel declaration
+================================================================================
+
+kernel fm3(index = 300.0) {
+    in fm_in
+
+    audio {
+        sine: op1 { freq: 110.0 }
+    }
+
+    fm_in >> op1[0]
+
+    { op1 }
+}
+
+{ out }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (kernel
+    name: (identifier)
+    default_params: (default_params
+      name: (identifier)
+      value: (value (float)))
+    body: (patch_body
+      (virtual_ports port: (identifier))
+      (scope
+        namespace: (identifier)
+        (node_declaration
+          node_type: (identifier)
+          alias: (identifier)
+          params: (params (param key: (identifier) value: (value (float))))))
+      (connection
+        (endpoint node: (identifier))
+        (endpoint node: (identifier) port: (port (uint))))
+      (sink name: (identifier))))
+  (sink name: (identifier)))
+
+================================================================================
+comments are ignored
+================================================================================
+
+// line comment
+audio {
+    osc /* inline */ { freq: 440 }
+}
+
+{ osc }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (scope
+    namespace: (identifier)
+    (node_declaration
+      node_type: (identifier)
+      (comment)
+      params: (params (param key: (identifier) value: (value (integer))))))
+  (sink name: (identifier)))

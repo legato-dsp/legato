@@ -1,10 +1,10 @@
 [workspace]
-members = ["legato-macros"]
+members = ["legato-macros", "cargo-legato"]
 
 [package]
 name = "legato"
 description = "Legato is a WIP audiograph and DSL for quickly developing audio applications"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 repository="https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"

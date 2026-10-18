@@ -1,0 +1,11 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+legato = { version = "0.1", default-features = false }
+cpal = "0.18"
+
+[features]
+simd = ["legato/simd"]

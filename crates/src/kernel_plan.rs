@@ -44,7 +44,7 @@ use crate::{
         ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
-    ports::{PortMeta, Ports},
+    ports::{PortMeta, Ports, default_indices},
 };
 use std::collections::HashMap;
 
@@ -262,16 +262,15 @@ fn unsupported(what: impl Into<String>) -> ValidationError {
 /// Resolve a `Port` reference against a node's port list, yielding the port
 /// indices it names.
 ///
-/// Note `Port::None` expands to *every* port, matching block-rate builder
-/// semantics: `a >> b` targets all of b's inputs, named modulation ports
-/// included. Write `a >> b[0]` to hit only the first.
+/// `Port::None` expands to the node's default ports, matching block-rate
+/// builder semantics: `a >> mult` feeds the signal input, not `val`.
 fn resolve_port(
     port: &Port,
     ports: &[PortMeta],
     node_alias: &str,
 ) -> Result<Vec<usize>, ValidationError> {
     match port {
-        Port::None => Ok((0..ports.len()).collect()),
+        Port::None => Ok(default_indices(ports)),
         Port::Index(i) => {
             if *i >= ports.len() {
                 return Err(ValidationError::InvalidParameter(format!(

@@ -1,0 +1,50 @@
+{
+  "name": "tree-sitter-legato",
+  "version": "0.1.0",
+  "description": "Legato DSL grammar for tree-sitter",
+  "license": "MIT",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "keywords": [
+    "incremental",
+    "parsing",
+    "tree-sitter",
+    "legato"
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "queries/*",
+    "src/**",
+    "bindings/**"
+  ],
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "node-gyp-build": "^4.8.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
+  "peerDependencies": {
+    "tree-sitter": "^0.21.1"
+  },
+  "peerDependenciesMeta": {
+    "tree-sitter": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.legato",
+      "file-types": [
+        "legato",
+        "lgt"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+[package]
+name = "cargo-legato"
+description = "Scaffold new Legato audio applications with `cargo legato init`"
+version = "0.1.1"
+edition = "2024"
+repository = "https://github.com/legato-dsp/legato"
+license = "AGPL-3.0"
+
+[dependencies]

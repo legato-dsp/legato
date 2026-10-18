@@ -1,0 +1,55 @@
+// title: FM Kernel
+// desc: A kernel example with a generative FM synth with feedback
+
+kernel fm(
+    ratio = 2.0,
+    index = 400.0,
+    feedback = 80.0
+) {
+    in freq
+
+    audio {
+        mult: mod_freq { val: $ratio },
+        mult: fb { val: $feedback },
+        sine: modulator { freq: 0.0 },
+        mult: depth { val: $index },
+        add: car_freq { val: 0.0 },
+        sine: carrier { freq: 0.0 },
+    }
+
+    // The modulator follows the note at a ratio, plus its own output one sample ago
+    freq >> mod_freq >> modulator
+    modulator >> fb >> modulator
+
+    // The modulator bends the carrier frequency by up to `index` Hz
+    freq >> car_freq
+    modulator >> depth >> car_freq
+    car_freq >> carrier
+
+    { carrier }
+}
+
+patches {
+    fm: voice { ratio: 3.0, index: 400.0, feedback: 120.0 },
+}
+
+audio {
+    adsr { attack: 5.0, decay: 300.0, sustain: 0.2, release: 400.0, chans: 1 },
+    mult: level { val: 0.3 },
+    mono_fan_out { chans: 2 },
+}
+
+modular {
+    random { rate: 180.0, prob: 0.6, range: [36.0, 72.0] },
+    quantize { notes: [0, 3, 5, 7, 10] },
+    trig_to_gate { gate_time: 120.0 },
+}
+
+random.stepped >> quantize
+quantize.trig >> trig_to_gate >> adsr.gate
+quantize.freq >> voice.freq
+
+voice >> adsr[1]
+adsr >> level >> mono_fan_out
+
+{ mono_fan_out }

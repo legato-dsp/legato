@@ -1,0 +1,34 @@
+patch voice(freq = 440.0) {
+    in freq gate
+
+    audio {
+        sine { freq: $freq },
+        adsr { attack: 100.0, chans: 1 }
+    }
+
+    freq >> sine.freq
+    gate >> adsr.gate
+    sine >> adsr[1]
+
+    { adsr }
+}
+
+patches {
+    voice * 5 {}
+}
+
+audio {
+    track_mixer: osc_mixer { tracks: 5, chans_per_track: 1 },
+    track_mixer: out_mixer { tracks: 2, chans_per_track: 1 }
+}
+
+midi {
+    poly_voice { chan: 0, voices: 5 }
+}
+
+poly_voice[0:12:3] >> voice(*).gate
+poly_voice[1:13:3] >> voice(*).freq
+voice(*) >> osc_mixer[0..5]
+osc_mixer >> out_mixer
+
+{ out_mixer }
