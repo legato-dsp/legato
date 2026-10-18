@@ -6,6 +6,7 @@ use crate::{
     dsl::ir::DSLParams,
     math::cubic_hermite,
     node::{DynNode, Inputs, Node},
+    nodes::midi::voice::MIDDLE_C,
     ports::{PortBuilder, Ports},
     resources::ExternalBufferKey,
     spec::NodeDefinition,
@@ -13,9 +14,6 @@ use crate::{
 
 /// For now, we use two overlapping grains to make it continuous. More fun algs. in the future!
 const NUM_GRAINS: usize = 2;
-
-/// We use this as a constant to scale the incoming stream of freq values
-const MIDDLE_C: f32 = 261.625_58;
 
 // TODO: Pan, more algorithms, windows, variation
 
@@ -204,7 +202,7 @@ impl Node for Granular {
 
         let Some(sample) = sample else { return };
 
-        let sample_len = sample.len();
+        let sample_len = sample.len_samples();
         let end = self.sample_end.unwrap_or(sample_len).min(sample_len);
         let start = self.sample_start.unwrap_or(0).min(end);
 

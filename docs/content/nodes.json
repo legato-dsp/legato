@@ -10,12 +10,16 @@
   },
   {
     "name": "sampler",
-    "description": "Plays back a loaded audio sample",
+    "description": "Plays back a loaded audio sample with variable speed, pitch and region",
     "required_params": [
       "sampler_name"
     ],
     "optional_params": [
-      "chans"
+      "chans",
+      "speed",
+      "pitch",
+      "start",
+      "end"
     ]
   },
   {

@@ -71,6 +71,9 @@ impl Node for Voice {
     }
 }
 
+/// A middle C constant, used for reference when repitching
+pub const MIDDLE_C: f32 = 261.625_58;
+
 /// MIDI note number -> frequency in Hz.
 ///
 /// This is the whole pitch convention of the framework in one line: a *pitch*
