@@ -50,11 +50,10 @@ impl Node for Pan {
         }
     }
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        if let NodeMessage::SetParam(payload) = msg {
-            match (payload.param_name, payload.value) {
-                ("pan", RtValue::F32(val)) => self.pan = val.clamp(0.0, 1.0),
-                _ => {}
-            }
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("pan", RtValue::F32(val)) = (payload.param_name, payload.value)
+        {
+            self.pan = val.clamp(0.0, 1.0);
         }
     }
     fn ports(&self) -> &Ports {

@@ -264,11 +264,10 @@ impl Node for Sine {
     }
 
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
-        if let NodeMessage::SetParam(payload) = msg {
-            match (payload.param_name, payload.value) {
-                ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => {}
-            }
+        if let NodeMessage::SetParam(payload) = msg
+            && let ("freq", RtValue::F32(val)) = (payload.param_name, payload.value)
+        {
+            self.freq = val;
         }
     }
 

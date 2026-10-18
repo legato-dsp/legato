@@ -172,7 +172,7 @@ fn build_output_stream(
     let mut cursor = BlockCursor::new(&app, stream_config.channels as usize);
     device
         .build_output_stream(
-            stream_config.clone(),
+            *stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 assert_no_alloc(|| cursor.write(data, &mut app, viz.as_mut()))
             },
