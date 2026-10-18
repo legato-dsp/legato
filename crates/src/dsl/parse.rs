@@ -359,24 +359,40 @@ pub fn legato_parser_inner<'a>() -> impl Parser<'a, &'a str, Ast, Err<Rich<'a, c
 
 /// The Legato parser, using chumsky and ariande to handle errors.
 pub fn legato_parser(src: &str) -> Result<Ast, ValidationError> {
+    // Spans index the trimmed text, but reports are rendered against `src`.
+    let offset = src.len() - src.trim_start().len();
     let (ast, errs) = legato_parser_inner().parse(src.trim()).into_output_errors();
-    errs.into_iter().for_each(|e| {
-        Report::build(ReportKind::Error, ((), e.span().into_range()))
+
+    let mut messages = Vec::with_capacity(errs.len());
+    for e in &errs {
+        let span = e.span().start + offset..e.span().end + offset;
+        let (line, col) = line_col(src, span.start);
+        messages.push(format!("{line}:{col}: {e}"));
+
+        let _ = Report::build(ReportKind::Error, ((), span.clone()))
             .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
             .with_message(e.to_string())
             .with_label(
-                Label::new(((), e.span().into_range()))
+                Label::new(((), span))
                     .with_message(e.reason().to_string())
                     .with_color(Color::Red),
             )
             .finish()
-            .print(Source::from(&src))
-            .unwrap()
-    });
+            .eprint(Source::from(&src));
+    }
 
-    ast.ok_or(ValidationError::ParseError(
-        "Could not parse source. Please check error report.".into(),
-    ))
+    match ast {
+        Some(ast) if errs.is_empty() => Ok(ast),
+        _ => Err(ValidationError::ParseError(messages.join("\n"))),
+    }
+}
+
+/// 1-based line and column of a byte offset.
+fn line_col(src: &str, byte: usize) -> (usize, usize) {
+    let before = &src[..byte.min(src.len())];
+    let line = before.matches('\n').count() + 1;
+    let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+    (line, col)
 }
 
 #[cfg(test)]
@@ -423,6 +439,15 @@ mod test {
                 .print(Source::from(input))
                 .unwrap();
         }
+    }
+
+    #[test]
+    fn parse_errors_point_into_the_untrimmed_source() {
+        let src = "\n\n    audio { sine { freq: } }\n{ sine }";
+        let Err(ValidationError::ParseError(msg)) = legato_parser(src) else {
+            panic!("expected a parse error");
+        };
+        assert!(msg.starts_with("3:"), "{msg}");
     }
 
     #[test]

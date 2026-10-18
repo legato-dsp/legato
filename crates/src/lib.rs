@@ -148,9 +148,23 @@ impl Debug for LegatoApp {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum FrontendError {
-    NodeNotFound(),
+    NodeNotFound(String),
+    /// The message queue to the audio thread is full; the message was not sent.
+    QueueFull,
 }
+
+impl std::fmt::Display for FrontendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NodeNotFound(name) => write!(f, "no node named '{name}' in the graph"),
+            Self::QueueFull => write!(f, "the message queue to the audio thread is full"),
+        }
+    }
+}
+
+impl std::error::Error for FrontendError {}
 
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
@@ -178,42 +192,51 @@ impl LegatoFrontend {
         chans: usize,
         sr: u32,
     ) -> Result<(), AudioSampleError> {
-        self.runtime_frontend.load_file(
-            buffer_name,
-            path.to_str().expect("Path not found!"),
-            chans,
-            sr,
-        )
+        self.runtime_frontend
+            .load_file(buffer_name, path, chans, sr)
     }
 
     pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
         self.node_registry.clone()
     }
 
-    pub fn set_param(&mut self, name: &'static str, val: f32) -> Result<(), ParamError> {
+    pub fn set_param(&mut self, name: &str, val: f32) -> Result<(), ParamError> {
         self.runtime_frontend.set_param(name, val)
     }
 
-    pub fn get_param_key(&self, param_name: &'static str) -> Result<ParamKey, ParamError> {
-        self.runtime_frontend.get_param_key(param_name)
+    /// Look a param up once with [`Self::get_param_key`], then set it without a name lookup.
+    pub fn set_param_by_key(&mut self, key: ParamKey, val: f32) -> Result<(), ParamError> {
+        self.runtime_frontend.set_param_by_key(key, val)
     }
 
-    // TODO: Error handling for both of these?
+    pub fn get_param(&self, name: &str) -> Result<f32, ParamError> {
+        self.runtime_frontend.get_param(self.get_param_key(name)?)
+    }
+
+    pub fn get_param_by_key(&self, key: ParamKey) -> Result<f32, ParamError> {
+        self.runtime_frontend.get_param(key)
+    }
+
+    pub fn get_param_key(&self, param_name: &str) -> Result<ParamKey, ParamError> {
+        self.runtime_frontend.get_param_key(param_name)
+    }
 
     pub fn send_node_msg(
         &mut self,
         node_name: &str,
         msg: NodeMessage,
     ) -> Result<(), FrontendError> {
-        if let Some(key) = self.node_registry.get(node_name) {
-            let _ = self.producer.push(LegatoMsg::NodeMessage(*key, msg));
-            return Ok(());
-        }
-        Err(FrontendError::NodeNotFound())
+        let key = *self
+            .node_registry
+            .get(node_name)
+            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))?;
+        self.send_msg(LegatoMsg::NodeMessage(key, msg))
     }
 
     /// Send a message to the LegatoRuntime
-    pub fn send_msg(&mut self, msg: LegatoMsg) {
-        let _ = self.producer.push(msg);
+    pub fn send_msg(&mut self, msg: LegatoMsg) -> Result<(), FrontendError> {
+        self.producer
+            .push(msg)
+            .map_err(|_| FrontendError::QueueFull)
     }
 }
