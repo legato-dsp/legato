@@ -3,13 +3,13 @@ members = ["legato-macros", "cargo-legato"]
 
 # Bump `version` here and in [workspace.dependencies] together; members inherit both.
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [workspace.dependencies]
-legato = { version = "0.1.2", path = ".", default-features = false }
+legato = { version = "0.2.0", path = ".", default-features = false }
 
 [package]
 name = "legato"

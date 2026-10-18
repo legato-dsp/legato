@@ -162,7 +162,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cargo-legato"
-version = "0.1.2"
+version = "0.2.0"
 
 [[package]]
 name = "cassowary"
@@ -900,7 +900,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "legato"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "approx",
  "arc-swap",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "legato-macros"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "legato",
 ]
