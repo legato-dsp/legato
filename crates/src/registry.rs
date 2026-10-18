@@ -97,11 +97,28 @@ impl NodeRegistry {
         self.data.insert(spec.name.clone(), spec);
     }
 
+    /// Every node spec in this registry, sorted by name.
+    pub fn specs(&self) -> Vec<&NodeSpec> {
+        let mut specs: Vec<&NodeSpec> = self.data.values().collect();
+        specs.sort_by(|a, b| a.name.cmp(&b.name));
+        specs
+    }
+
     /// Register a node type that implements [`NodeDefinition`].
     pub fn register_node<T: NodeDefinition>(&mut self) {
         let spec = T::spec();
         self.data.insert(spec.name.clone(), spec);
     }
+}
+
+/// The built-in namespaces every builder starts with.
+pub fn default_namespaces() -> Vec<(&'static str, NodeRegistry)> {
+    vec![
+        ("audio", audio_registry_factory()),
+        ("control", control_registry_factory()),
+        ("midi", midi_registry_factory()),
+        ("modular", modular_registry_factory()),
+    ]
 }
 
 // Here, we assemble all of these registries. I might look into linking/static graphs in the future instead.

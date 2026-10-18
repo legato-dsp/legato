@@ -1,168 +1,110 @@
 [
   {
-    "name": "sine",
-    "description": "Sine wave oscillator with optional FM input",
+    "name": "add",
+    "namespace": "audio",
+    "description": "Adds a scalar or modulation input to an audio signal",
     "required_params": [],
     "optional_params": [
-      "freq",
-      "chans"
-    ]
-  },
-  {
-    "name": "sampler",
-    "description": "Plays back a loaded audio sample with variable speed, pitch and region",
-    "required_params": [
-      "sampler_name"
-    ],
-    "optional_params": [
-      "chans",
-      "speed",
-      "pitch",
-      "start",
-      "end"
-    ]
-  },
-  {
-    "name": "delay_write",
-    "description": "Writes audio into a named shared delay line",
-    "required_params": [
-      "delay_name"
-    ],
-    "optional_params": [
-      "delay_length",
-      "chans"
-    ]
-  },
-  {
-    "name": "delay_read",
-    "description": "Reads audio from a named shared delay line with interpolation",
-    "required_params": [
-      "delay_name"
-    ],
-    "optional_params": [
-      "delay_length",
-      "chans"
-    ]
-  },
-  {
-    "name": "track_mixer",
-    "description": "Mixes multiple audio tracks with configurable per-track gain",
-    "required_params": [
-      "tracks",
-      "chans_per_track"
-    ],
-    "optional_params": [
-      "gain"
-    ]
-  },
-  {
-    "name": "mult",
-    "description": "Multiplies an audio signal by a scalar or modulation input",
-    "required_params": [
       "val"
-    ],
-    "optional_params": []
-  },
-  {
-    "name": "add",
-    "description": "Adds a scalar or modulation input to an audio signal",
-    "required_params": [
-      "val"
-    ],
-    "optional_params": []
-  },
-  {
-    "name": "sub",
-    "description": "Subtracts a scalar or modulation input from an audio signal",
-    "required_params": [
-      "val"
-    ],
-    "optional_params": []
-  },
-  {
-    "name": "div",
-    "description": "Divides an audio signal by a scalar or modulation input",
-    "required_params": [
-      "val"
-    ],
-    "optional_params": []
-  },
-  {
-    "name": "gain",
-    "description": "Applies multichannel gain with soft clipping (tanh saturation)",
-    "required_params": [
-      "val"
-    ],
-    "optional_params": [
-      "chans"
     ]
   },
   {
     "name": "adsr",
+    "namespace": "audio",
     "description": "Attack-decay-sustain-release envelope generator",
     "required_params": [
       "attack",
+      "chans",
       "decay",
-      "sustain",
       "release",
-      "chans"
+      "sustain"
     ],
     "optional_params": []
   },
   {
-    "name": "svf",
-    "description": "State variable filter (lowpass, highpass, bandpass, and more)",
-    "required_params": [],
-    "optional_params": [
-      "cutoff",
-      "q",
-      "type",
-      "chans",
-      "gain"
-    ]
-  },
-  {
-    "name": "mono_fan_out",
-    "description": "Fans a mono signal out to multiple channels with equal power normalisation",
-    "required_params": [],
-    "optional_params": [
-      "chans"
-    ]
-  },
-  {
-    "name": "sweep",
-    "description": "Frequency sweep oscillator over a configurable range and duration",
-    "required_params": [],
-    "optional_params": [
-      "duration",
-      "range",
-      "chans"
-    ]
-  },
-  {
-    "name": "onepole",
-    "description": "Single-pole lowpass filter",
-    "required_params": [
-      "cutoff"
-    ],
-    "optional_params": [
-      "chans"
-    ]
-  },
-  {
     "name": "allpass",
+    "namespace": "audio",
     "description": "Allpass filter with configurable delay length and feedback",
     "required_params": [
+      "chans",
       "delay_length",
-      "feedback",
-      "chans"
+      "feedback"
     ],
     "optional_params": [
       "capacity"
     ]
   },
   {
+    "name": "delay_read",
+    "namespace": "audio",
+    "description": "Reads audio from a named shared delay line with interpolation",
+    "required_params": [
+      "delay_name"
+    ],
+    "optional_params": [
+      "chans",
+      "delay_length",
+      "quality"
+    ]
+  },
+  {
+    "name": "delay_write",
+    "namespace": "audio",
+    "description": "Writes audio into a named shared delay line",
+    "required_params": [
+      "delay_name"
+    ],
+    "optional_params": [
+      "chans",
+      "delay_length"
+    ]
+  },
+  {
+    "name": "div",
+    "namespace": "audio",
+    "description": "Divides an audio signal by a scalar or modulation input",
+    "required_params": [],
+    "optional_params": [
+      "val"
+    ]
+  },
+  {
+    "name": "external",
+    "namespace": "audio",
+    "description": "Receives audio from an external hardware interface",
+    "required_params": [
+      "chans",
+      "interface_name"
+    ],
+    "optional_params": []
+  },
+  {
+    "name": "gain",
+    "namespace": "audio",
+    "description": "Applies multichannel gain with soft clipping (tanh saturation)",
+    "required_params": [],
+    "optional_params": [
+      "chans",
+      "val"
+    ]
+  },
+  {
+    "name": "grain",
+    "namespace": "audio",
+    "description": "A basic granular synth",
+    "required_params": [
+      "sampler_name"
+    ],
+    "optional_params": [
+      "chans",
+      "scan",
+      "shape",
+      "size"
+    ]
+  },
+  {
     "name": "hadamard",
+    "namespace": "audio",
     "description": "Walsh-Hadamard transform mixer for feedback delay networks",
     "required_params": [
       "chans"
@@ -171,6 +113,7 @@
   },
   {
     "name": "householder",
+    "namespace": "audio",
     "description": "Householder reflection mixer for feedback delay networks",
     "required_params": [
       "chans"
@@ -178,47 +121,162 @@
     "optional_params": []
   },
   {
-    "name": "external",
-    "description": "Receives audio from an external hardware interface",
-    "required_params": [
-      "interface_name",
-      "chans"
-    ],
-    "optional_params": []
-  },
-  {
-    "name": "signal",
-    "description": "Smoothed control parameter exposed to the host application",
-    "required_params": [
-      "name",
-      "min",
-      "max",
-      "default"
-    ],
+    "name": "mono_fan_out",
+    "namespace": "audio",
+    "description": "Fans a mono signal out to multiple channels with equal power normalisation",
+    "required_params": [],
     "optional_params": [
-      "smoothing"
+      "chans"
     ]
   },
   {
-    "name": "map",
-    "description": "Maps one numeric range to another (e.g. -1..1 → 120..240)",
-    "required_params": [
-      "range",
-      "new_range"
-    ],
+    "name": "mult",
+    "namespace": "audio",
+    "description": "Multiplies an audio signal by a scalar or modulation input",
+    "required_params": [],
+    "optional_params": [
+      "val"
+    ]
+  },
+  {
+    "name": "noise",
+    "namespace": "audio",
+    "description": "A basic noise generator",
+    "required_params": [],
     "optional_params": []
   },
   {
-    "name": "phasor",
-    "description": "Ramp oscillator producing a signal from 0.0 to 1.0",
+    "name": "onepole",
+    "namespace": "audio",
+    "description": "Single-pole lowpass filter (specify `cutoff` in Hz, or the pole coefficient `a` directly)",
+    "required_params": [],
+    "optional_params": [
+      "a",
+      "chans",
+      "cutoff"
+    ]
+  },
+  {
+    "name": "pan",
+    "namespace": "audio",
+    "description": "A mono to stereo panning node. 0.0 is left, 1.0 is right.",
+    "required_params": [],
+    "optional_params": [
+      "pan"
+    ]
+  },
+  {
+    "name": "plate480",
+    "namespace": "audio",
+    "description": "Dattorro/Lexicon-480L-style plate reverb (per-sample tank)",
+    "required_params": [],
+    "optional_params": [
+      "bandwidth",
+      "damping",
+      "decay",
+      "mix",
+      "predelay"
+    ]
+  },
+  {
+    "name": "sampler",
+    "namespace": "audio",
+    "description": "Plays back a loaded audio sample with variable speed, pitch and region",
     "required_params": [
-      "freq"
+      "sampler_name"
     ],
-    "optional_params": []
+    "optional_params": [
+      "chans",
+      "end",
+      "pitch",
+      "speed",
+      "start"
+    ]
+  },
+  {
+    "name": "saw",
+    "namespace": "audio",
+    "description": "Sawtooth wave, PolyBLEP, suitable for synthesis",
+    "required_params": [
+      "chans"
+    ],
+    "optional_params": [
+      "freq"
+    ]
+  },
+  {
+    "name": "sine",
+    "namespace": "audio",
+    "description": "Sine wave oscillator with optional FM input",
+    "required_params": [],
+    "optional_params": [
+      "chans",
+      "freq",
+      "phase",
+      "quality"
+    ]
+  },
+  {
+    "name": "sub",
+    "namespace": "audio",
+    "description": "Subtracts a scalar or modulation input from an audio signal",
+    "required_params": [],
+    "optional_params": [
+      "val"
+    ]
+  },
+  {
+    "name": "svf",
+    "namespace": "audio",
+    "description": "State variable filter (lowpass, highpass, bandpass, and more)",
+    "required_params": [],
+    "optional_params": [
+      "chans",
+      "cutoff",
+      "gain",
+      "q",
+      "type"
+    ]
+  },
+  {
+    "name": "sweep",
+    "namespace": "audio",
+    "description": "Frequency sweep oscillator over a configurable range and duration",
+    "required_params": [],
+    "optional_params": [
+      "chans",
+      "duration",
+      "range"
+    ]
+  },
+  {
+    "name": "tap",
+    "namespace": "audio",
+    "description": "Single-tap delay line (no feedback) with cubic interpolation and modulatable delay",
+    "required_params": [
+      "chans",
+      "delay_length"
+    ],
+    "optional_params": [
+      "capacity"
+    ]
+  },
+  {
+    "name": "track_mixer",
+    "namespace": "audio",
+    "description": "Mixes multiple audio tracks with configurable per-track gain",
+    "required_params": [
+      "chans_per_track",
+      "tracks"
+    ],
+    "optional_params": [
+      "gain"
+    ]
   },
   {
     "name": "clock",
-    "description": "Clock signal derived from BPM, beat division, and step count",
+    "namespace": "control",
+    "description": "Clock signal derived from BPM, beat division, and step count. Accepts a `bpm` message",
     "required_params": [
       "bpm",
       "division",
@@ -227,7 +285,48 @@
     "optional_params": []
   },
   {
+    "name": "constant",
+    "namespace": "control",
+    "description": "Outputs a fixed value, settable at runtime with a `val` message",
+    "required_params": [],
+    "optional_params": [
+      "chans",
+      "val"
+    ]
+  },
+  {
+    "name": "lfo",
+    "namespace": "control",
+    "description": "Sine modulation source with a control-kind output",
+    "required_params": [],
+    "optional_params": [
+      "freq",
+      "phase",
+      "quality"
+    ]
+  },
+  {
+    "name": "map",
+    "namespace": "control",
+    "description": "Maps one numeric range to another (e.g. -1..1 → 120..240)",
+    "required_params": [
+      "new_range",
+      "range"
+    ],
+    "optional_params": []
+  },
+  {
+    "name": "phasor",
+    "namespace": "control",
+    "description": "Ramp oscillator producing a signal from 0.0 to 1.0",
+    "required_params": [
+      "freq"
+    ],
+    "optional_params": []
+  },
+  {
     "name": "sequencer",
+    "namespace": "control",
     "description": "Step sequencer outputting gate, frequency, and velocity per step",
     "required_params": [
       "num_steps"
@@ -235,7 +334,42 @@
     "optional_params": []
   },
   {
+    "name": "signal",
+    "namespace": "control",
+    "description": "Smoothed control parameter exposed to the host application",
+    "required_params": [
+      "default",
+      "max",
+      "min",
+      "name"
+    ],
+    "optional_params": [
+      "smoothing"
+    ]
+  },
+  {
+    "name": "midi_sequencer",
+    "namespace": "midi",
+    "description": "Midi step sequencer sending note information to the selected midi channel",
+    "required_params": [
+      "midi_chan",
+      "num_steps"
+    ],
+    "optional_params": []
+  },
+  {
+    "name": "poly_voice",
+    "namespace": "midi",
+    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, frequency, and velocity",
+    "required_params": [
+      "chan",
+      "voices"
+    ],
+    "optional_params": []
+  },
+  {
     "name": "voice",
+    "namespace": "midi",
     "description": "Decodes MIDI note events on a channel to gate, frequency, and velocity signals",
     "required_params": [
       "chan"
@@ -243,12 +377,54 @@
     "optional_params": []
   },
   {
-    "name": "poly_voice",
-    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, frequency, and velocity",
+    "name": "env",
+    "namespace": "modular",
+    "description": "Edge-triggered ADSR envelope with a control-kind output, for use as a modulation source such as `env >> map >> svf.cutoff`.",
+    "required_params": [],
+    "optional_params": [
+      "attack",
+      "decay",
+      "release",
+      "sustain"
+    ]
+  },
+  {
+    "name": "quantize",
+    "namespace": "modular",
+    "description": "Snaps a continuous pitch (a MIDI note number) onto the nearest note of a scale, given as `notes: [C, E, G]` or `notes: [0, 4, 7]`. Outputs frequency in Hz on `freq` and the quantized note on `note`.",
     "required_params": [
-      "voices",
-      "chan"
+      "notes"
     ],
     "optional_params": []
+  },
+  {
+    "name": "random",
+    "namespace": "modular",
+    "description": "A modular random source. Each step it takes a new value in `range` with probability `prob`, emitting it on `stepped` (and a one-pole-`smooth`ed copy) while firing `trig`. Free-runs at `rate` ms, or steps on the rising edges of a patched `trig` input.",
+    "required_params": [],
+    "optional_params": [
+      "prob",
+      "range",
+      "rate",
+      "smoothing"
+    ]
+  },
+  {
+    "name": "sample_and_hold",
+    "namespace": "modular",
+    "description": "A basic modular-style sample and hold node, the hold_time parameter determines how frequently it fetches new information.",
+    "required_params": [],
+    "optional_params": [
+      "hold_time"
+    ]
+  },
+  {
+    "name": "trig_to_gate",
+    "namespace": "modular",
+    "description": "Holds a gate high for `gate_time` ms on every rising edge of `trig`, so a trigger source such as `quantize.trig` can drive an envelope.",
+    "required_params": [],
+    "optional_params": [
+      "gate_time"
+    ]
   }
 ]

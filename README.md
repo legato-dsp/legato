@@ -49,14 +49,11 @@ patches {
 
 audio {
     track_mixer { tracks: 3, chans_per_track: 2 },
+    plate480: verb { predelay: 32.0, decay: 0.4, damping: 0.3, mix: 0.8 },
 }
 
 midi {
     poly_voice { chan: 0, voices: 3 }
-}
-
-patches {
-    plate: verb { predelay: 32.0, decay: 0.4, damping: 0.3, wet: 0.8, dry: 0.2 }
 }
 
 poly_voice[0:10:3] >> voice(*).gate
