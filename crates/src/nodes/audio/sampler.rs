@@ -170,8 +170,7 @@ impl NodeDefinition for Sampler {
     const DESCRIPTION: &'static str =
         "Plays back a loaded audio sample with variable speed, pitch and region";
     const REQUIRED_PARAMS: &'static [&'static str] = &["sampler_name"];
-    const OPTIONAL_PARAMS: &'static [&'static str] =
-        &["chans", "speed", "pitch", "start", "end"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["chans", "speed", "pitch", "start", "end"];
 
     fn create(
         rb: &mut ResourceBuilderView,
