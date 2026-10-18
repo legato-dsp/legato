@@ -20,6 +20,20 @@ pub struct PortMeta {
     pub index: usize,
     /// Whether a bare `>>` auto-maps onto this port.
     pub default: bool,
+    /// What the node receives when nothing is connected to this input.
+    pub unpatched: Unpatched,
+}
+
+/// How the executor presents an input that has no incoming connection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Unpatched {
+    /// The node sees `None`, typically falling back to an internal parameter.
+    #[default]
+    Absent,
+    /// The node sees a block of zeros.
+    Silent,
+    /// Building the graph fails.
+    Required,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +108,7 @@ impl PortBuilder {
             name,
             index,
             default: false,
+            unpatched: Unpatched::Absent,
         });
     }
 
@@ -103,6 +118,7 @@ impl PortBuilder {
             name,
             index,
             default: false,
+            unpatched: Unpatched::Absent,
         });
     }
 
@@ -198,6 +214,26 @@ impl PortBuilder {
             .expect("default_out() requires a preceding output batch");
         for p in &mut self.port_audio_out[start..end] {
             p.default = true;
+        }
+        self
+    }
+
+    /// The most recently added input batch reads as silence when unpatched.
+    pub fn silent_in(self) -> Self {
+        self.set_unpatched(Unpatched::Silent)
+    }
+
+    /// The most recently added input batch must be connected for the graph to build.
+    pub fn required_in(self) -> Self {
+        self.set_unpatched(Unpatched::Required)
+    }
+
+    fn set_unpatched(mut self, unpatched: Unpatched) -> Self {
+        let (start, end) = self
+            .last_in
+            .expect("silent_in()/required_in() require a preceding input batch");
+        for p in &mut self.port_audio_in[start..end] {
+            p.unpatched = unpatched;
         }
         self
     }

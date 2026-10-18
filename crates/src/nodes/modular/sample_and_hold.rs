@@ -147,7 +147,7 @@ impl Node for SampleAndHold {
                 ("hold_time", RtValue::U32(val)) => val,
                 ("hold_time", RtValue::I32(val)) => val as u32,
                 ("hold_time", RtValue::F32(val)) => val.round() as u32, // TODO: Semantics?
-                _ => unimplemented!("Incorrect parameter passed to SampleAndHold!"),
+                _ => return,
             };
 
             // Process handles the updating of any state, set minimum as 1 sample

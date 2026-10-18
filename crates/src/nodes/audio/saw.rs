@@ -193,7 +193,7 @@ impl Node for Saw {
         if let NodeMessage::SetParam(payload) = msg {
             match (payload.param_name, payload.value) {
                 ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unreachable!("Invalid parameter and value passed"),
+                _ => {}
             }
         }
     }

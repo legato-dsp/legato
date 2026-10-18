@@ -46,8 +46,10 @@ impl Adsr {
             gate_open: false,
             ports: PortBuilder::default()
                 .control_in_named(&["gate"])
+                .required_in()
                 .audio_in(chans)
                 .default_in()
+                .silent_in()
                 .audio_out(chans)
                 .build(),
         }
@@ -187,5 +189,38 @@ impl NodeDefinition for Adsr {
         let release = p.get_f32("release").expect("Must provide release to ADSR");
         let chans = p.get_usize("chans").expect("Must provide chans to ADSR");
         Ok(Box::new(Self::new(chans, attack, decay, sustain, release)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{config::Config, harness::build_placeholder_context};
+
+    fn run(node: &mut Adsr, gates: &[f32]) -> Vec<f32> {
+        let mut ctx = build_placeholder_context(Config {
+            block_size: gates.len(),
+            channels: 1,
+            rt_capacity: 0,
+            sample_rate: 1_000,
+        });
+        let ones = vec![1.0f32; gates.len()];
+        let mut out = vec![0.0f32; gates.len()];
+        node.process(&mut ctx, &[Some(gates), Some(&ones)], &mut [&mut out]);
+        out
+    }
+
+    #[test]
+    fn held_gate_settles_to_sustain() {
+        let mut node = Adsr::new(1, 2.0, 2.0, 0.3, 10.0);
+        let out = run(&mut node, &[1.0; 16]);
+        assert!((out.last().unwrap() - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn velocity_scaled_gate_triggers() {
+        let mut node = Adsr::new(1, 2.0, 2.0, 0.3, 10.0);
+        let out = run(&mut node, &[0.7; 16]);
+        assert!((out.last().unwrap() - 0.3).abs() < 1e-6);
     }
 }

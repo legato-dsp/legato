@@ -22,6 +22,7 @@ impl Pan {
             ports: PortBuilder::default()
                 .audio_in(1)
                 .default_in()
+                .silent_in()
                 .audio_in_named(&["pan"])
                 .audio_out(2)
                 .build(),
@@ -52,7 +53,7 @@ impl Node for Pan {
         if let NodeMessage::SetParam(payload) = msg {
             match (payload.param_name, payload.value) {
                 ("pan", RtValue::F32(val)) => self.pan = val.clamp(0.0, 1.0),
-                _ => unreachable!("Invalid parameter and value passed"),
+                _ => {}
             }
         }
     }

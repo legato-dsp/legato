@@ -267,7 +267,7 @@ impl Node for Sine {
         if let NodeMessage::SetParam(payload) = msg {
             match (payload.param_name, payload.value) {
                 ("freq", RtValue::F32(val)) => self.freq = val,
-                _ => unimplemented!("Invalid parameter and value passed"),
+                _ => {}
             }
         }
     }

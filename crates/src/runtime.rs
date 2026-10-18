@@ -56,6 +56,9 @@ impl Runtime {
     pub fn validate_arity(&self) -> Result<(), ValidationError> {
         self.executor.validate_arity()
     }
+    pub fn validate_required_inputs(&self) -> Result<(), ValidationError> {
+        self.executor.validate_required_inputs()
+    }
     pub fn set_resources(&mut self, resources: Resources) {
         self.context.set_resources(resources);
     }

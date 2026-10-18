@@ -178,7 +178,9 @@ impl Granular {
             scan,
             last_trig: 0.0,
             ports: PortBuilder::default()
-                .audio_in_named(&["trig", "freq", "size"])
+                .audio_in_named(&["trig", "freq"])
+                .required_in()
+                .audio_in_named(&["size"])
                 .audio_out(chans)
                 .build(),
         }

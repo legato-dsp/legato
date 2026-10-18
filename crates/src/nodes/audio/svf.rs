@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 
 use crate::{
     context::AudioContext,
+    msg::{NodeMessage, RtValue},
     node::{Inputs, Node},
     persample::PerSampleNode,
     ports::{PortBuilder, Ports},
@@ -71,6 +72,7 @@ impl Svf {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .default_in()
+                .silent_in()
                 .control_in_named(&["cutoff", "q"])
                 .audio_out(chans)
                 .build(),
@@ -328,8 +330,19 @@ impl Node for Svf {
     fn ports(&self) -> &Ports {
         &self.ports
     }
-    fn handle_msg(&mut self, _msg: crate::msg::NodeMessage) {
-        todo!()
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        if let NodeMessage::SetParam(payload) = msg
+            && let RtValue::F32(val) = payload.value
+        {
+            let (mut cutoff, mut q, mut gain) = (self.cutoff, self.q, self.gain);
+            match payload.param_name {
+                "cutoff" => cutoff = val,
+                "q" => q = val.max(Self::Q_EPSILON),
+                "gain" => gain = val,
+                _ => return,
+            }
+            self.set(self.filter_type, self.sample_rate, cutoff, q, gain);
+        }
     }
 }
 
@@ -350,20 +363,22 @@ impl Svf {
         let gain = p.get_f32("gain").unwrap_or(1.0);
         let q = p.get_f32("q").unwrap_or(0.4);
 
-        let filter_type = p
-            .get_str("type")
-            .map_or(FilterType::LowPass, |f| match f.as_str() {
-                "lowpass" => FilterType::LowPass,
-                "highpass" => FilterType::HighPass,
-                "allpass" => FilterType::AllPass,
-                "bandpass" => FilterType::BandPass,
-                "bell" => FilterType::Bell,
-                "highshelf" => FilterType::HighShelf,
-                "lowshelf" => FilterType::LowShelf,
-                "notch" => FilterType::Notch,
-                "peak" => FilterType::Peak,
-                _ => panic!("Could not find filter type!"),
-            });
+        let filter_type = match p.get_str("type").as_deref() {
+            None | Some("lowpass") => FilterType::LowPass,
+            Some("highpass") => FilterType::HighPass,
+            Some("allpass") => FilterType::AllPass,
+            Some("bandpass") => FilterType::BandPass,
+            Some("bell") => FilterType::Bell,
+            Some("highshelf") => FilterType::HighShelf,
+            Some("lowshelf") => FilterType::LowShelf,
+            Some("notch") => FilterType::Notch,
+            Some("peak") => FilterType::Peak,
+            Some(other) => {
+                return Err(ValidationError::InvalidParameter(format!(
+                    "svf: unknown filter type '{other}'"
+                )));
+            }
+        };
 
         let sr = rb.get_config().sample_rate as f32;
         Ok(Self::new(sr, filter_type, cutoff, gain, q, chans))

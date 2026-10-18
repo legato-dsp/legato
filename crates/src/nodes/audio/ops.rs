@@ -38,6 +38,7 @@ impl ApplyOp {
             ports: PortBuilder::default()
                 .audio_in(chans)
                 .default_in()
+                .silent_in()
                 .audio_in_named(&["val"])
                 .audio_out(chans)
                 .build(),
@@ -134,8 +135,7 @@ impl Node for ApplyOp {
     ///
     /// Unknown parameter names are ignored rather than panicking. Messages
     /// originate from user input and arrive on the audio thread, so a bad name
-    /// must not take down the stream. (Several other nodes still `unreachable!`
-    /// here; they predate generated code being able to address them.)
+    /// must not take down the stream.
     fn handle_msg(&mut self, msg: NodeMessage) {
         if let NodeMessage::SetParam(payload) = msg
             && let ("val", RtValue::F32(value)) = (payload.param_name, payload.value)

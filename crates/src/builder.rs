@@ -57,6 +57,8 @@ pub enum ValidationError {
     UnsupportedInKernel(String),
     /// A node has more audio ports on input/output side than [`crate::executor::MAX_ARITY`].
     ArityExceeded(String),
+    /// A node input marked [`crate::ports::Unpatched::Required`] has no connection.
+    UnconnectedInput(String),
     /// Two declarations resolve to the same alias, so one would shadow the other.
     DuplicateAlias(String),
     /// Two node selections cannot be paired: neither is single and they differ.
@@ -534,6 +536,7 @@ where
         let mut runtime = self.runtime;
 
         runtime.validate_arity()?;
+        runtime.validate_required_inputs()?;
 
         let cfg = runtime.get_config();
 

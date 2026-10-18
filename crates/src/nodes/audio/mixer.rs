@@ -41,6 +41,7 @@ impl TrackMixer {
             gain,
             ports: PortBuilder::default()
                 .audio_in(chans_per_track * tracks)
+                .silent_in()
                 .audio_out(chans_per_track)
                 .build(),
         }
@@ -104,6 +105,7 @@ impl MonoFanOut {
         Self {
             ports: PortBuilder::default()
                 .audio_in(1)
+                .silent_in()
                 .audio_out(chans_out)
                 .build(),
         }
