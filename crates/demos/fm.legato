@@ -1,9 +1,9 @@
 // title: FM Kernel
-// desc: A two operator FM voice with modulator self-feedback, written as a kernel, played generatively
+// desc: A kernel example with a generative FM synth with feedback
 
 kernel fm(
     ratio = 2.0,
-    index = 300.0,
+    index = 400.0,
     feedback = 80.0
 ) {
     in freq

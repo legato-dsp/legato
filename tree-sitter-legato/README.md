@@ -1,5 +1,7 @@
 # tree-sitter-legato
 
+**Disclaimer: This was vibe-coded, a proper LSP will replace this in the future**
+
 A [tree-sitter](https://tree-sitter.github.io/tree-sitter/) grammar for the
 Legato DSL, derived from the `chumsky` parser in `crates/src/dsl/parse.rs`.
 

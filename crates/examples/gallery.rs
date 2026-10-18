@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
 
-// A codegen kernel node so the `modtap` demo can reference it from the DSL.
+// `modtap` demo uses a codegen node
 legato_macros::include_node!("kernels/modtap4.legato", "modtap4");
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
@@ -21,11 +21,18 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
         .unwrap_or(default)
 }
 
+#[cfg(target_os = "linux")]
 #[cfg(feature = "jack")]
 fn make_host() -> Host {
     cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available")
 }
 
+#[cfg(target_os = "macos")]
+fn make_host() -> Host {
+    cpal::host_from_id(cpal::HostId::CoreAudio).expect("CoreAudio host not available")
+}
+
+#[cfg(not(target_os = "linux"))]
 #[cfg(not(feature = "jack"))]
 fn make_host() -> Host {
     cpal::default_host()
@@ -90,7 +97,7 @@ fn build_interface<'a>(
     source: &str,
 ) -> Result<AudioInterface<'a>, String> {
     let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
-        .register_node("audio", Modtap4::spec())
+        .register_node("audio", Modtap4::spec()) // custom codegen node
         .build_dsl(source)
         .map_err(|e| format!("{e:?}"))?;
     AudioInterface::builder(host, config)
@@ -309,7 +316,7 @@ fn main() -> std::io::Result<()> {
     };
 
     let host = make_host();
-    let mut playing_interface: Option<AudioInterface> = None;
+    let mut active_interface: Option<AudioInterface> = None;
 
     let demos = load_demos(&demos_dir).unwrap_or_default();
     let mut list_state = ListState::default();
@@ -361,10 +368,10 @@ fn main() -> std::io::Result<()> {
                 let delta = if key.code == KeyCode::Right { 1 } else { -1 };
                 if app.adjust_config(delta) {
                     if let Some(i) = app.playing {
-                        playing_interface = None;
+                        active_interface = None;
                         match build_interface(&host, app.config, &app.demos[i].source) {
                             Ok(interface) => {
-                                playing_interface = Some(interface);
+                                active_interface = Some(interface);
                                 app.status = format!(
                                     "playing {} @ {} Hz",
                                     app.demos[i].title, app.config.sample_rate
@@ -386,16 +393,16 @@ fn main() -> std::io::Result<()> {
                     app.list_state.select((!app.demos.is_empty()).then_some(0));
                 }
                 app.playing = None;
-                playing_interface = None;
+                active_interface = None;
                 app.status = "reloaded".into();
             }
             KeyCode::Enter => {
                 // When we change, drop the interface (kill the audio thread), and spawn a new one
                 if let Some(i) = app.list_state.selected() {
-                    playing_interface = None;
+                    active_interface = None;
                     match build_interface(&host, app.config, &app.demos[i].source) {
                         Ok(interface) => {
-                            playing_interface = Some(interface);
+                            active_interface = Some(interface);
                             app.playing = Some(i);
                             app.status = format!("playing {}", app.demos[i].title);
                         }
@@ -411,6 +418,6 @@ fn main() -> std::io::Result<()> {
     }
 
     ratatui::restore();
-    drop(playing_interface);
+    drop(active_interface);
     Ok(())
 }

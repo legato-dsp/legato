@@ -18,14 +18,18 @@ LICENSE and ADDITIONAL_PERMISSIONS distributed with the repository.
 
 ## AI Policy
 
-AI tools have real use in software and can help increase correctness and productivity,
-whiling making it more accesible to learn new technologies and concepts.
+AI tools can be useful in software and can help increase correctness and productivity, while making it more accesible to learn new technologies and concepts. I've found use in using AI for auditing my code, finding correctness or performance issues, generating tests, and making quick placeholder CLI and UI applications.
 
-However, this project is firmly against the use of generative AI for musical and artistic content.
+However, this project will set a few firm boundaries for AI usage:
 
-Additionally, you are expected to understand your PR as if you yourself wrote it, anyone pushing
+- You are expected to understand your PR as if you yourself wrote it, anyone pushing
 slop content will be quickly banned from making similar contributions.
 
-This is even more strict with DSP-related functionality. A lot of DSP code that LLMs have trained
-on comes from repositories that are not permissive. DSP functionality should generally be
-clean-room implementations unless referencing a highly-permissive repository.
+- DSP-related functionality will be even more strict. A lot of DSP code that LLMs have trained
+on comes from repositories that are not open source or permissive. DSP functionality should generally be
+clean-room implementations unless referencing a highly-permissive repository. I will be very skeptical reviewing
+DSP code from individuals that do not have a DSP, math, musical, or systems background.
+
+- I am firmly against any sort of generative AI output aimed at replacing creatives. This project is open source,
+do as you please, but I don't want this project to highlight slop content when there are real creatives honing
+their craft every day.
