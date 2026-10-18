@@ -25,8 +25,12 @@ impl ExternalBuffer {
         let start = idx * stride;
         &self.data[start..start + stride]
     }
+
+    /// Get the length of samples for the current sample.
+    ///
+    /// This assumes some symmetry between the channels, but is fine for now
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub fn len_samples(&self) -> usize {
         self.data.len() / self.num_channels
     }
 }
