@@ -64,6 +64,8 @@ pub enum ValidationError {
     SelectionArity(String),
     /// A graph pass could not expand the program as written.
     Expansion(String),
+    /// A factory exported more than one handle for the same instance.
+    DuplicateHandle(String),
 }
 
 impl ValidationError {
@@ -88,6 +90,7 @@ impl ValidationError {
             DuplicateAlias(m) => DuplicateAlias(wrap(m)),
             SelectionArity(m) => SelectionArity(wrap(m)),
             Expansion(m) => Expansion(wrap(m)),
+            DuplicateHandle(m) => DuplicateHandle(wrap(m)),
         }
     }
 }
@@ -312,6 +315,10 @@ where
             .get_node(&mut resource_builder_view, node_kind, params)
             .map_err(|e| e.context(&format!("'{alias}' ({namespace}::{node_kind})")))?;
 
+        self.resource_builder
+            .handles_mut()
+            .set_node_kind(alias, node_kind);
+
         let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
 
         let key = self.runtime.add_node(legato_node);
@@ -528,6 +535,8 @@ where
 
         let audio_input_keys = self.resource_builder.audio_input_keys().clone();
 
+        let handles = self.resource_builder.take_handles();
+
         // IMPORTANT: Swap out the dummy resources for the actual ones
         let (resources_frontend, resources) = self
             .resource_builder
@@ -549,7 +558,8 @@ where
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
-        let frontend = LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup);
+        let frontend =
+            LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup, handles);
 
         Ok((app, frontend))
     }
@@ -586,6 +596,10 @@ impl LegatoBuilder<DslBuilding> {
             node.node_type.clone(),
             Box::new(crate::persample::PerSample::new(kernel_graph)),
         );
+
+        self.resource_builder
+            .handles_mut()
+            .set_node_kind(&node.alias, &node.node_type);
 
         let key = self.runtime.add_node(legato_node);
         self.working_name_lookup.insert(node.alias.clone(), key);
@@ -709,7 +723,7 @@ impl LegatoBuilder<DslBuilding> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum NodeViewKind {
     Single(LegatoNode),
     Multiple(Vec<LegatoNode>),
@@ -803,10 +817,6 @@ impl<'a> SelectionView<'a> {
         }
     }
 
-    pub fn clone_node(&mut self, key: NodeKey) -> Option<LegatoNode> {
-        self.runtime.get_node(&key).cloned()
-    }
-
     pub fn get_selection_owned(self) -> SelectionKind {
         self.selection
     }
@@ -870,6 +880,29 @@ impl<'a> ResourceBuilderView<'a> {
 
     pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
         self.resource_builder.add_param(unique_name, meta)
+    }
+
+    /// Hand the application one end of whatever this node uses to talk across
+    /// threads. It is stored under this instance's path and taken back with
+    /// [`crate::LegatoFrontend::take_handle`].
+    ///
+    /// Each instance may export one handle; bundle several ends into a struct.
+    pub fn export_handle<H: std::any::Any + Send>(
+        &mut self,
+        handle: H,
+    ) -> Result<(), ValidationError> {
+        if self
+            .resource_builder
+            .handles_mut()
+            .insert(self.instance_alias, handle)
+        {
+            Ok(())
+        } else {
+            Err(ValidationError::DuplicateHandle(format!(
+                "'{}' already exported a handle; bundle multiple ends into one struct",
+                self.instance_alias
+            )))
+        }
     }
 
     pub fn get_external_buffer_key(

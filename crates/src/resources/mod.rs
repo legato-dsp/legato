@@ -6,6 +6,8 @@ use rtrb::RingBuffer;
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 
+use crate::handles::HandleStore;
+
 use crate::resources::{
     arena::{Arena, RuntimeArena},
     buffer::{AudioSampleError, ExternalBuffer},
@@ -189,6 +191,8 @@ pub struct ResourceBuilder {
     audio_input_key_lookup: HashMap<String, AudioInputKey>,
     // RtSafe param store builder
     param_builder: ParamStoreBuilder,
+    // Application-side ends exported by node factories
+    handles: HandleStore,
 }
 
 impl ResourceBuilder {
@@ -259,6 +263,14 @@ impl ResourceBuilder {
 
     pub fn audio_input_keys(&self) -> &HashMap<String, AudioInputKey> {
         &self.audio_input_key_lookup
+    }
+
+    pub fn handles_mut(&mut self) -> &mut HandleStore {
+        &mut self.handles
+    }
+
+    pub fn take_handles(&mut self) -> HandleStore {
+        std::mem::take(&mut self.handles)
     }
 
     pub fn build(
