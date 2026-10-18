@@ -20,10 +20,10 @@ fn main() -> ExitCode {
 
     let result = match (args.next().as_deref(), args.next(), args.next()) {
         (Some("init"), path, None) => {
-            let dir = path.map_or_else(|| PathBuf::from("."), PathBuf::from);
+            let dir = path.map_or_else(|| PathBuf::from("./legato-example"), PathBuf::from);
             init(&dir)
         }
-        (Some("-h" | "--help" | "help"), ..) => {
+        (Some("-hx" | "--help" | "help"), ..) => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
