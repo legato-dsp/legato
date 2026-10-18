@@ -113,10 +113,10 @@ impl Env {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let attack = p.get_f32("attack").unwrap_or(5.0);
-        let decay = p.get_f32("decay").unwrap_or(200.0);
-        let sustain = p.get_f32("sustain").unwrap_or(0.7);
-        let release = p.get_f32("release").unwrap_or(300.0);
+        let attack = p.get_f32("attack")?.unwrap_or(5.0);
+        let decay = p.get_f32("decay")?.unwrap_or(200.0);
+        let sustain = p.get_f32("sustain")?.unwrap_or(0.7);
+        let release = p.get_f32("release")?.unwrap_or(300.0);
         Ok(Self::new(attack, decay, sustain, release))
     }
 }

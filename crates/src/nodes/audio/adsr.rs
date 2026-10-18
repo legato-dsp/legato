@@ -183,11 +183,11 @@ impl NodeDefinition for Adsr {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let attack = p.get_f32("attack").expect("Must provide attack to ADSR");
-        let decay = p.get_f32("decay").expect("Must provide decay to ADSR");
-        let sustain = p.get_f32("sustain").expect("Must provide sustain to ADSR");
-        let release = p.get_f32("release").expect("Must provide release to ADSR");
-        let chans = p.get_usize("chans").expect("Must provide chans to ADSR");
+        let attack = p.require_f32("attack")?;
+        let decay = p.require_f32("decay")?;
+        let sustain = p.require_f32("sustain")?;
+        let release = p.require_f32("release")?;
+        let chans = p.require_usize("chans")?;
         Ok(Box::new(Self::new(chans, attack, decay, sustain, release)))
     }
 }

@@ -265,7 +265,7 @@ mod tests {
     use super::*;
     use crate::builder::{LegatoBuilder, Unconfigured};
 
-    fn sine_app() -> LegatoApp {
+    fn saw_app() -> LegatoApp {
         let config = Config {
             sample_rate: 48_000,
             block_size: 64,
@@ -274,10 +274,10 @@ mod tests {
         };
         let src = r#"
             audio {
-                sine { freq: 440.0, chans: 2 },
+                saw { freq: 440.0, chans: 2 },
             }
 
-            { sine }
+            { saw }
         "#;
         LegatoBuilder::<Unconfigured>::new(config)
             .build_dsl(src)
@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn render(callbacks: &[usize], device_chans: usize) -> Vec<f32> {
-        let mut app = sine_app();
+        let mut app = saw_app();
         let mut cursor = BlockCursor::new(&app, device_chans);
         let mut out = Vec::new();
         for &frames in callbacks {

@@ -176,17 +176,15 @@ impl NodeDefinition for Sampler {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let name = p
-            .get_str("sampler_name")
-            .expect("Could not find required parameter sampler_name");
-        let chans = p.get_usize("chans").unwrap_or(2);
-        let speed = p.get_f32("speed").unwrap_or(1.0);
-        let start = p.get_usize("start").unwrap_or(0);
-        let end = p.get_usize("end").unwrap_or(usize::MAX);
+        let name = p.require_str("sampler_name")?;
+        let chans = p.get_usize("chans")?.unwrap_or(2);
+        let speed = p.get_f32("speed")?.unwrap_or(1.0);
+        let start = p.get_usize("start")?.unwrap_or(0);
+        let end = p.get_usize("end")?.unwrap_or(usize::MAX);
         let key = rb.add_external_buffer_key(&name);
 
         let node = Self::new(key, start, end, speed, chans);
-        let node = match p.get_f32("pitch") {
+        let node = match p.get_f32("pitch")? {
             Some(freq) => node.with_pitch(freq),
             None => node,
         };

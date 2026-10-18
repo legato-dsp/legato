@@ -594,16 +594,20 @@ impl Modtap4 {
 
     /// Apply any declared params present in `params`, leaving the rest
     /// at their defaults.
-    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
-        if let Some(value) = params.get_f32("depth") {
+    pub fn apply_params(
+        &mut self,
+        params: &legato::dsl::ir::DSLParams,
+    ) -> Result<(), legato::builder::ValidationError> {
+        if let Some(value) = params.get_f32("depth")? {
             self.set_depth(value);
         }
-        if let Some(value) = params.get_f32("feedback") {
+        if let Some(value) = params.get_f32("feedback")? {
             self.set_feedback(value);
         }
-        if let Some(value) = params.get_f32("rate") {
+        if let Some(value) = params.get_f32("rate")? {
             self.set_rate(value);
         }
+        Ok(())
     }
 }
 
@@ -881,7 +885,7 @@ impl legato::spec::NodeDefinition for Modtap4 {
         params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
         let mut node = Self::new(rb)?;
-        node.apply_params(params);
+        node.apply_params(params)?;
         Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }

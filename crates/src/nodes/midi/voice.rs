@@ -331,9 +331,7 @@ impl NodeDefinition for Voice {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let channel = p
-            .get_usize("chan")
-            .expect("Must provide midi channel (chan) (0-15) to voice!");
+        let channel = p.require_usize("chan")?;
         assert!(channel <= 15);
         Ok(Box::new(Self::new(channel)))
     }
@@ -350,12 +348,8 @@ impl NodeDefinition for PolyVoice {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let channel = p
-            .get_usize("chan")
-            .expect("Must provide midi channel (chan) (0-15) to voice!");
-        let voices = p
-            .get_usize("voices")
-            .expect("Must provide number of voices to poly voice!");
+        let channel = p.require_usize("chan")?;
+        let voices = p.require_usize("voices")?;
         assert!(channel <= 15);
         assert!(
             voices < 10,

@@ -85,7 +85,7 @@ impl Pan {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let pan = p.get_f32("pan").unwrap_or(0.5);
+        let pan = p.get_f32("pan")?.unwrap_or(0.5);
         Ok(Self::new(pan))
     }
 }

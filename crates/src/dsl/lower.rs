@@ -12,6 +12,22 @@ fn duplicate_alias(alias: &str, scope: Option<&str>) -> ValidationError {
     ))
 }
 
+fn unknown_alias(alias: &str, scope: Option<&str>) -> ValidationError {
+    let scope = scope.map_or_else(|| "top level".to_string(), |s| format!("patch '{s}'"));
+    ValidationError::NodeNotFound(format!("'{alias}' is used at {scope} but never declared"))
+}
+
+fn lookup(
+    aliases: &HashMap<String, NodeId>,
+    alias: &str,
+    scope: Option<&str>,
+) -> Result<NodeId, ValidationError> {
+    aliases
+        .get(alias)
+        .copied()
+        .ok_or_else(|| unknown_alias(alias, scope))
+}
+
 /// Convert the ASTMacro to the IRMacro
 fn convert_macro(
     name: &str,
@@ -25,7 +41,7 @@ fn convert_macro(
 
     let ast_macro = ast_map
         .remove(name)
-        .unwrap_or_else(|| panic!("Macro '{}' not found", name));
+        .ok_or_else(|| ValidationError::Expansion(format!("patch '{name}' not found")))?;
 
     // Resolve dependencies first
     for scope in &ast_macro.declarations {
@@ -50,10 +66,10 @@ fn convert_macro(
             // Kernel bodies are lowered whole into a single per-sample node,
             // so they can only contain kernel-capable leaves.
             if ast_macro.kind == MacroKind::Kernel && kind != IRNodeKind::Leaf {
-                panic!(
+                return Err(ValidationError::UnsupportedInKernel(format!(
                     "kernel '{}' declares '{}' ({}), but kernels may only contain leaf nodes",
                     name, alias, decl.node_type
-                );
+                )));
             }
 
             if local_alias_to_id.contains_key(&alias) {
@@ -78,13 +94,8 @@ fn convert_macro(
             continue;
         }
 
-        let src = *local_alias_to_id
-            .get(&conn.source.node)
-            .unwrap_or_else(|| panic!("Could not find src node for alias {}", conn.source.node));
-
-        let snk = *local_alias_to_id
-            .get(&conn.sink.node)
-            .unwrap_or_else(|| panic!("Could not find sink node for alias {}", conn.sink.node));
+        let src = lookup(&local_alias_to_id, &conn.source.node, Some(name))?;
+        let snk = lookup(&local_alias_to_id, &conn.sink.node, Some(name))?;
 
         body.connect_multi(
             src,
@@ -103,14 +114,14 @@ fn convert_macro(
         .iter()
         .filter(|c| ast_macro.virtual_ports_in.contains(&c.source.node))
     {
-        let target_id = local_alias_to_id[&c.sink.node];
+        let target_id = lookup(&local_alias_to_id, &c.sink.node, Some(name))?;
         virtual_input_map
             .entry(c.source.node.clone())
             .or_default()
             .push((target_id, c.sink.node_selector.clone(), c.sink.port.clone()));
     }
 
-    let sink_id = local_alias_to_id[&ast_macro.sink];
+    let sink_id = lookup(&local_alias_to_id, &ast_macro.sink, Some(name))?;
     body.sink = Some(sink_id);
 
     converted.insert(
@@ -187,12 +198,8 @@ pub fn ast_to_graph(ast: Ast) -> Result<IRGraph, ValidationError> {
     // Preserve connections verbatim.  Virtual ports are not resolved here;
     // they pass through as `Port::Named` and are handled by MacroExpansionPass.
     for conn in &ast.connections {
-        let src = *alias_to_id
-            .get(&conn.source.node)
-            .unwrap_or_else(|| panic!("ast_to_graph: source '{}' not found", conn.source.node));
-        let snk = *alias_to_id
-            .get(&conn.sink.node)
-            .unwrap_or_else(|| panic!("ast_to_graph: sink '{}' not found", conn.sink.node));
+        let src = lookup(&alias_to_id, &conn.source.node, None)?;
+        let snk = lookup(&alias_to_id, &conn.sink.node, None)?;
         graph.connect_multi(
             src,
             conn.source.node_selector.clone(),
@@ -203,11 +210,12 @@ pub fn ast_to_graph(ast: Ast) -> Result<IRGraph, ValidationError> {
         );
     }
 
-    graph.sink = alias_to_id.get(&ast.sink).copied();
+    graph.sink = Some(lookup(&alias_to_id, &ast.sink, None)?);
     graph.source = ast
         .source
         .as_ref()
-        .and_then(|s| alias_to_id.get(s).copied());
+        .map(|s| lookup(&alias_to_id, s, None))
+        .transpose()?;
 
     Ok(graph)
 }

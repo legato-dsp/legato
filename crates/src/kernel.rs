@@ -110,11 +110,11 @@ pub fn build_kernel_node(
     seed: u32,
 ) -> Result<KernelNode, ValidationError> {
     let op = |kind: ApplyOpKind, default: f32, chans: usize, p: &DSLParams| {
-        mult_node_factory(
-            p.get_f32("val").unwrap_or(default),
-            p.get_usize("chans").unwrap_or(chans),
+        Ok::<_, ValidationError>(KernelNode::Op(mult_node_factory(
+            p.get_f32("val")?.unwrap_or(default),
+            p.get_usize("chans")?.unwrap_or(chans),
             kind,
-        )
+        )))
     };
 
     Ok(match node_type {
@@ -128,7 +128,7 @@ pub fn build_kernel_node(
         // An explicit `seed:` pins the stream; otherwise it comes from the
         // node's plan identity, so it is stable across builds but still
         // distinct per node and per kernel instantiation.
-        "noise" => KernelNode::Noise(Noise::with_seed(p.get_u32("seed").unwrap_or(seed))),
+        "noise" => KernelNode::Noise(Noise::with_seed(p.get_u32("seed")?.unwrap_or(seed))),
         "householder" => KernelNode::Householder(HouseholderMixer::from_params(rb, p)?),
         "hadamard" => KernelNode::Hadamard(HadamardMixer::from_params(rb, p)?),
         "pan" => KernelNode::Pan(Pan::from_params(rb, p)?),
@@ -136,11 +136,11 @@ pub fn build_kernel_node(
         "quantize" => KernelNode::Quantize(Quantize::from_params(rb, p)?),
         "trig_to_gate" => KernelNode::TrigToGate(TrigToGate::from_params(rb, p)?),
         // These match block rate defaults, perhaps we make a single source of truth in the future?
-        "mult" => KernelNode::Op(op(ApplyOpKind::Mult, 1.0, 1, p)),
-        "add" => KernelNode::Op(op(ApplyOpKind::Add, 0.0, 1, p)),
-        "sub" => KernelNode::Op(op(ApplyOpKind::Subtract, 0.0, 1, p)),
-        "div" => KernelNode::Op(op(ApplyOpKind::Div, 0.0, 1, p)),
-        "gain" => KernelNode::Op(op(ApplyOpKind::Gain, 1.0, 2, p)),
+        "mult" => op(ApplyOpKind::Mult, 1.0, 1, p)?,
+        "add" => op(ApplyOpKind::Add, 0.0, 1, p)?,
+        "sub" => op(ApplyOpKind::Subtract, 0.0, 1, p)?,
+        "div" => op(ApplyOpKind::Div, 1.0, 1, p)?,
+        "gain" => op(ApplyOpKind::Gain, 1.0, 2, p)?,
         other => {
             return Err(ValidationError::NotKernelCapable(format!(
                 "node type '{other}' has no per-sample implementation"

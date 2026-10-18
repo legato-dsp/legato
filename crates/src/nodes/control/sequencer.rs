@@ -146,9 +146,7 @@ impl NodeDefinition for StepSequencer {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let num_steps = p
-            .get_usize("num_steps")
-            .expect("Must pass num_steps to sequencer");
+        let num_steps = p.require_usize("num_steps")?;
         Ok(Box::new(Self::new(num_steps)))
     }
 }

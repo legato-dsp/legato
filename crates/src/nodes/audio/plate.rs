@@ -161,11 +161,11 @@ impl Plate480 {
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
         let sr = rb.get_config().sample_rate;
-        let predelay = p.get_f32("predelay").unwrap_or(0.0);
-        let decay = p.get_f32("decay").unwrap_or(0.7);
-        let damping = p.get_f32("damping").unwrap_or(0.3);
-        let bandwidth = p.get_f32("bandwidth").unwrap_or(0.9995);
-        let mix = p.get_f32("mix").unwrap_or(0.3);
+        let predelay = p.get_f32("predelay")?.unwrap_or(0.0);
+        let decay = p.get_f32("decay")?.unwrap_or(0.7);
+        let damping = p.get_f32("damping")?.unwrap_or(0.3);
+        let bandwidth = p.get_f32("bandwidth")?.unwrap_or(0.9995);
+        let mix = p.get_f32("mix")?.unwrap_or(0.3);
         Ok(Self::new(sr, predelay, decay, damping, bandwidth, mix))
     }
 }

@@ -60,13 +60,11 @@ impl NodeDefinition for Signal {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let name = p.get_str("name").expect("Must pass name to signal!");
-        let min = p.get_f32("min").expect("Must provide min to signal!");
-        let max = p.get_f32("max").expect("Must provide max to signal!");
-        let default = p
-            .get_f32("default")
-            .expect("Must provide default(f32) to signal!");
-        let smoothing = p.get_f32("smoothing").unwrap_or(0.5).clamp(0.0, 1.0);
+        let name = p.require_str("name")?;
+        let min = p.require_f32("min")?;
+        let max = p.require_f32("max")?;
+        let default = p.require_f32("default")?;
+        let smoothing = p.get_f32("smoothing")?.unwrap_or(0.5).clamp(0.0, 1.0);
         let meta = ParamMeta {
             name: name.clone(),
             min,

@@ -77,7 +77,7 @@ impl NodeDefinition for Phasor {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let freq = p.get_f32("freq").expect("Must pass frequency to phasor");
+        let freq = p.require_f32("freq")?;
         Ok(Box::new(Self::new(freq)))
     }
 }
@@ -97,11 +97,9 @@ impl NodeDefinition for ClockDef {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let bpm = p.get_usize("bpm").expect("Must pass bpm to clock");
-        let division = p
-            .get_usize("division")
-            .expect("Must pass division to clock");
-        let steps = p.get_usize("steps").expect("Must pass steps to clock");
+        let bpm = p.require_usize("bpm")?;
+        let division = p.require_usize("division")?;
+        let steps = p.require_usize("steps")?;
         let freq = (bpm * division) as f32 / (60.0 * steps as f32);
         Ok(Box::new(Phasor::new(freq)))
     }

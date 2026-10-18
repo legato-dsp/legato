@@ -256,11 +256,9 @@ impl Saw {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
+        let chans = p.require_usize("chans")?;
 
-        let freq = p.get_f32("freq").unwrap_or(440.0);
+        let freq = p.get_f32("freq")?.unwrap_or(440.0);
 
         let sr = rb.get_config().sample_rate as f32;
 

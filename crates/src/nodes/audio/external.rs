@@ -53,18 +53,13 @@ impl NodeDefinition for ExternalInput {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Box<dyn DynNode>, ValidationError> {
-        let interface_name = p.get_str("interface_name").expect(
-            "Must pass in the name the interface was defined with to the audio_input node!",
-        );
-        let chans = p
-            .get_usize("chans")
-            .expect("Must provide chans to audio_input");
-        let key = rb.get_audio_input_key(&interface_name).unwrap_or_else(|_| {
-            panic!(
-                "Could not find AudioInputKey for interface {}",
-                interface_name,
-            )
-        });
+        let interface_name = p.require_str("interface_name")?;
+        let chans = p.require_usize("chans")?;
+        let key = rb.get_audio_input_key(&interface_name).map_err(|_| {
+            ValidationError::ResourceNotFound(format!(
+                "external: no audio input registered as '{interface_name}'"
+            ))
+        })?;
         Ok(Box::new(Self::new(chans, key)))
     }
 }

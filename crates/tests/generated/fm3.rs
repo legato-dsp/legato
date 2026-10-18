@@ -203,8 +203,12 @@ impl Fm3 {
 
     /// Apply any declared params present in `params`, leaving the rest
     /// at their defaults.
-    pub fn apply_params(&mut self, params: &legato::dsl::ir::DSLParams) {
+    pub fn apply_params(
+        &mut self,
+        params: &legato::dsl::ir::DSLParams,
+    ) -> Result<(), legato::builder::ValidationError> {
         let _ = params;
+        Ok(())
     }
 }
 
@@ -287,7 +291,7 @@ impl legato::spec::NodeDefinition for Fm3 {
         params: &legato::dsl::ir::DSLParams,
     ) -> Result<Box<dyn legato::node::DynNode>, legato::builder::ValidationError> {
         let mut node = Self::new(rb)?;
-        node.apply_params(params);
+        node.apply_params(params)?;
         Ok(Box::new(legato::persample::PerSample::new(node)))
     }
 }

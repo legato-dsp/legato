@@ -358,12 +358,12 @@ impl Svf {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let cutoff = p.get_f32("cutoff").unwrap_or(7500.0);
-        let chans = p.get_usize("chans").unwrap_or(2);
-        let gain = p.get_f32("gain").unwrap_or(1.0);
-        let q = p.get_f32("q").unwrap_or(0.4);
+        let cutoff = p.get_f32("cutoff")?.unwrap_or(7500.0);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
+        let gain = p.get_f32("gain")?.unwrap_or(1.0);
+        let q = p.get_f32("q")?.unwrap_or(0.4);
 
-        let filter_type = match p.get_str("type").as_deref() {
+        let filter_type = match p.get_str("type")?.as_deref() {
             None | Some("lowpass") => FilterType::LowPass,
             Some("highpass") => FilterType::HighPass,
             Some("allpass") => FilterType::AllPass,

@@ -59,12 +59,40 @@ pub enum ValidationError {
     ArityExceeded(String),
     /// A node input marked [`crate::ports::Unpatched::Required`] has no connection.
     UnconnectedInput(String),
+    /// A connection could not be added to the graph, e.g. it would form a cycle.
+    InvalidConnection(String),
     /// Two declarations resolve to the same alias, so one would shadow the other.
     DuplicateAlias(String),
     /// Two node selections cannot be paired: neither is single and they differ.
     SelectionArity(String),
     /// A graph pass could not expand the program as written.
     Expansion(String),
+}
+
+impl ValidationError {
+    /// Prefix the message with where the error happened, e.g. the node alias.
+    pub fn context(self, ctx: &str) -> Self {
+        use ValidationError::*;
+        let wrap = |m: String| format!("{ctx}: {m}");
+        match self {
+            ParseError(m) => ParseError(wrap(m)),
+            NodeNotFound(m) => NodeNotFound(wrap(m)),
+            NamespaceNotFound(m) => NamespaceNotFound(wrap(m)),
+            InvalidParameter(m) => InvalidParameter(wrap(m)),
+            MissingRequiredParameters(m) => MissingRequiredParameters(wrap(m)),
+            MissingRequiredParameter(m) => MissingRequiredParameter(wrap(m)),
+            ResourceNotFound(m) => ResourceNotFound(wrap(m)),
+            PipeNotFound(m) => PipeNotFound(wrap(m)),
+            NotKernelCapable(m) => NotKernelCapable(wrap(m)),
+            UnsupportedInKernel(m) => UnsupportedInKernel(wrap(m)),
+            ArityExceeded(m) => ArityExceeded(wrap(m)),
+            UnconnectedInput(m) => UnconnectedInput(wrap(m)),
+            InvalidConnection(m) => InvalidConnection(wrap(m)),
+            DuplicateAlias(m) => DuplicateAlias(wrap(m)),
+            SelectionArity(m) => SelectionArity(wrap(m)),
+            Expansion(m) => Expansion(wrap(m)),
+        }
+    }
 }
 
 // Typestates for the builder
@@ -221,12 +249,12 @@ where
         self.namespaces.insert(name.into(), registry);
         self
     }
-    /// Register a node to the "user" namespace
+    /// Register a node into `namespace`, creating the namespace if it does not exist yet.
     pub fn register_node(mut self, namespace: &'static str, spec: NodeSpec) -> Self {
-        match self.namespaces.get_mut(namespace) {
-            Some(ns) => ns.declare_node(spec),
-            None => panic!("Cannot find namespace {}", namespace),
-        }
+        self.namespaces
+            .entry(namespace.into())
+            .or_default()
+            .declare_node(spec);
         self
     }
     /// Register an AudioInput
@@ -272,11 +300,15 @@ where
         node_kind: &String,
         alias: &String,
         params: &DSLParams,
-    ) {
-        let ns = self
-            .namespaces
-            .get(namespace)
-            .unwrap_or_else(|| panic!("Could not find namespace {}", namespace));
+    ) -> Result<(), ValidationError> {
+        let ns = self.namespaces.get(namespace).ok_or_else(|| {
+            let mut known: Vec<&str> = self.namespaces.keys().map(String::as_str).collect();
+            known.sort_unstable();
+            ValidationError::NamespaceNotFound(format!(
+                "'{alias}': unknown namespace '{namespace}' (expected one of: {})",
+                known.join(", ")
+            ))
+        })?;
 
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
@@ -288,7 +320,7 @@ where
 
         let node = ns
             .get_node(&mut resource_builder_view, node_kind, params)
-            .unwrap_or_else(|_| panic!("Could not find node {}", node_kind));
+            .map_err(|e| e.context(&format!("'{alias}' ({namespace}::{node_kind})")))?;
 
         let legato_node = LegatoNode::new(alias.into(), node_kind.into(), node);
 
@@ -298,6 +330,7 @@ where
 
         // Set the last node_ref_added
         self.last_selection = Some(SelectionKind::Single(key));
+        Ok(())
     }
     pub fn add_node(
         mut self,
@@ -305,9 +338,9 @@ where
         node_kind: &String,
         alias: &String,
         params: &DSLParams,
-    ) -> LegatoBuilder<ContainsNodes> {
-        self._add_node_ref_self(namespace, node_kind, alias, params);
-        self.into_state()
+    ) -> Result<LegatoBuilder<ContainsNodes>, ValidationError> {
+        self._add_node_ref_self(namespace, node_kind, alias, params)?;
+        Ok(self.into_state())
     }
 
     /// Skip the ceremony with namespaces, specs, etc. and just add a LegatoNode. This still requires an alias for connections and debugging
@@ -327,76 +360,11 @@ where
     S: CanConnect,
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
-    fn _connect_ref_self(&mut self, connection: AddConnectionProps) {
-        let source_indicies: Vec<usize> = match connection.source_kind {
-            Port::None => self
-                .runtime
-                .get_node_ports(&connection.source)
-                .default_out(),
-            Port::Index(port) => vec![port],
-            Port::Named(ref port) => {
-                let ports = self.runtime.get_node_ports(&connection.source);
-                let index = ports
-                    .ports_out
-                    .iter()
-                    .find(|x| x.name == port)
-                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
-                    .index;
-
-                vec![index]
-            }
-            Port::Slice(start, end) => {
-                if end < start {
-                    panic!("End slice cannot be less than start!");
-                }
-
-                (start..end).collect::<Vec<_>>()
-            }
-            Port::Stride { start, end, stride } => {
-                if end < start {
-                    panic!("End slice cannot be less than start!");
-                }
-
-                (start..end).step_by(stride).collect()
-            }
-        };
-
-        let sink_indicies: Vec<usize> = match connection.sink_kind {
-            Port::None => self.runtime.get_node_ports(&connection.sink).default_in(),
-            Port::Index(port) => vec![port],
-            Port::Named(ref port) => {
-                let ports = self.runtime.get_node_ports(&connection.sink);
-                let index = ports
-                    .ports_in
-                    .iter()
-                    .find(|x| x.name == port)
-                    .unwrap_or_else(|| panic!("Could not find index for named port {}", port))
-                    .index;
-
-                vec![index]
-            }
-            Port::Slice(start, end) => {
-                if end < start {
-                    panic!("End slice cannot be less than start!");
-                }
-
-                (start..end).collect::<Vec<_>>()
-            }
-            Port::Stride { start, end, stride } => {
-                if end < start {
-                    panic!("End slice cannot be less than start!");
-                }
-
-                (start..end).step_by(stride).collect()
-            }
-        };
-
-        // Guard against port indices that exceed the instantiated node's port
-        // counts (e.g. reading `mixer[2..4]` from a node with only 2 outputs).
-        // Without this the bad index slips through to the audio thread and
-        // panics mid-process; here it fails loudly at build time instead.
-        self.assert_ports_in_range(&connection.source, &source_indicies, PortDir::Out);
-        self.assert_ports_in_range(&connection.sink, &sink_indicies, PortDir::In);
+    fn _connect_ref_self(&mut self, connection: AddConnectionProps) -> Result<(), ValidationError> {
+        let source_indicies =
+            self.port_indices(&connection.source, &connection.source_kind, PortDir::Out)?;
+        let sink_indicies =
+            self.port_indices(&connection.sink, &connection.sink_kind, PortDir::In)?;
 
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
@@ -416,15 +384,11 @@ where
                 sink_indicies.as_slice(),
             ),
             (n, 1) if n > 1 && bare_sink => {
-                let (alias, node_kind) = self
-                    .runtime
-                    .get_node(&connection.sink)
-                    .map(|node| (node.name.clone(), node.node_kind.clone()))
-                    .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
-                panic!(
+                let (alias, node_kind) = self.describe(&connection.sink);
+                Err(ValidationError::SelectionArity(format!(
                     "bare `>>` into '{alias}' ({node_kind}) would reduce {n} channels to 1: \
                      name a target port or route through a mixer (e.g. track_mixer)"
-                );
+                )))
             }
             (n, 1) if n > 1 => n_to_one(
                 &mut self.runtime,
@@ -439,66 +403,93 @@ where
                 &sink_indicies,
             ),
             (n, m) => {
-                let src = self.runtime.get_node(&connection.source);
-                let sink = self.runtime.get_node(&connection.sink);
-
-                unimplemented!(
-                    "Cannot match request arity {}:{} for nodes {:?}:{:?}",
-                    n,
-                    m,
-                    src,
-                    sink
-                )
+                let (src, src_kind) = self.describe(&connection.source);
+                let (sink, sink_kind) = self.describe(&connection.sink);
+                Err(ValidationError::SelectionArity(format!(
+                    "cannot connect {n} port(s) of '{src}' ({src_kind}) to {m} port(s) of \
+                     '{sink}' ({sink_kind}): counts must match, or one side must be a single port"
+                )))
             }
         }
     }
-    pub fn connect(mut self, connection: AddConnectionProps) -> LegatoBuilder<Connected> {
-        self._connect_ref_self(connection);
-        self.into_state()
+    pub fn connect(
+        mut self,
+        connection: AddConnectionProps,
+    ) -> Result<LegatoBuilder<Connected>, ValidationError> {
+        self._connect_ref_self(connection)?;
+        Ok(self.into_state())
     }
 
-    /// Panic with a descriptive message if any resolved port index falls outside
-    /// the node's instantiated port range for the given direction.
-    fn assert_ports_in_range(&self, key: &NodeKey, indices: &[usize], dir: PortDir) {
+    /// The alias and node kind for error messages.
+    fn describe(&self, key: &NodeKey) -> (String, String) {
+        self.runtime
+            .get_node(key)
+            .map(|n| (n.name.clone(), n.node_kind.clone()))
+            .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()))
+    }
+
+    /// Resolve a port spec to concrete indices on `key`, rejecting unknown
+    /// names, empty or reversed ranges, zero strides and out-of-range indices.
+    ///
+    /// Range checking here keeps a bad index (e.g. `mixer[2..4]` on a node with
+    /// only 2 outputs) from slipping through to the audio thread.
+    fn port_indices(
+        &self,
+        key: &NodeKey,
+        port: &Port,
+        dir: PortDir,
+    ) -> Result<Vec<usize>, ValidationError> {
         let ports = self.runtime.get_node_ports(key);
-        let available = match dir {
-            PortDir::In => ports.ports_in.len(),
-            PortDir::Out => ports.ports_out.len(),
+        let side = match dir {
+            PortDir::In => &ports.ports_in,
+            PortDir::Out => &ports.ports_out,
         };
-        if let Some(&bad) = indices.iter().find(|&&i| i >= available) {
-            let (alias, kind) = self
-                .runtime
-                .get_node(key)
-                .map(|n| (n.name.clone(), n.node_kind.clone()))
-                .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
-            panic!(
-                "Connection {dir:?} port index {bad} is out of range for node '{alias}' ({kind}): \
-                 it has {available} audio {} port(s) (valid indices 0..{available})",
-                match dir {
-                    PortDir::In => "input",
-                    PortDir::Out => "output",
-                },
-            );
-        }
-    }
+        let dir_name = match dir {
+            PortDir::In => "input",
+            PortDir::Out => "output",
+        };
+        let invalid = |msg: String| {
+            let (alias, kind) = self.describe(key);
+            ValidationError::InvalidConnection(format!("'{alias}' ({kind}): {msg}"))
+        };
 
-    /// The audio-out port indices a source spec resolves to on its node.
-    fn source_out_indices(&self, key: &NodeKey, port: &Port) -> Vec<usize> {
-        let ports = self.runtime.get_node_ports(key);
-        match port {
-            Port::None => ports.default_out(),
+        let indices: Vec<usize> = match port {
+            Port::None => match dir {
+                PortDir::In => ports.default_in(),
+                PortDir::Out => ports.default_out(),
+            },
             Port::Index(i) => vec![*i],
-            Port::Named(name) => vec![
-                ports
-                    .ports_out
-                    .iter()
-                    .find(|p| p.name == name)
-                    .unwrap_or_else(|| panic!("Could not find index for named port {name}"))
-                    .index,
-            ],
+            Port::Named(name) => match side.iter().find(|p| p.name == name) {
+                Some(p) => vec![p.index],
+                None => {
+                    let known: Vec<&str> = side.iter().map(|p| p.name).collect();
+                    return Err(invalid(format!(
+                        "no {dir_name} port named '{name}' (expected one of: {})",
+                        known.join(", ")
+                    )));
+                }
+            },
+            Port::Slice(start, end) | Port::Stride { start, end, .. } if end <= start => {
+                return Err(invalid(format!(
+                    "port range {start}..{end} is empty: the end must be greater than the start"
+                )));
+            }
+            Port::Stride { stride: 0, .. } => {
+                return Err(invalid("port stride must be at least 1".into()));
+            }
             Port::Slice(start, end) => (*start..*end).collect(),
             Port::Stride { start, end, stride } => (*start..*end).step_by(*stride).collect(),
+        };
+
+        let available = side.len();
+        if let Some(&bad) = indices.iter().find(|&&i| i >= available) {
+            return Err(invalid(format!(
+                "{dir_name} port index {bad} is out of range: it has {available} audio \
+                 {dir_name} port(s) (valid indices 0..{available})"
+            )));
         }
+
+        Ok(indices)
     }
 
     /// The bare-`>>` target input indices on `sink`.
@@ -518,9 +509,14 @@ impl<S> LegatoBuilder<S>
 where
     S: CanSetSink,
 {
-    pub fn set_sink(mut self, key: NodeKey) -> LegatoBuilder<ReadyToBuild> {
-        self.runtime.set_sink_key(key).expect("Sink key not found");
-        self.into_state()
+    pub fn set_sink(
+        mut self,
+        key: NodeKey,
+    ) -> Result<LegatoBuilder<ReadyToBuild>, ValidationError> {
+        self.runtime
+            .set_sink_key(key)
+            .map_err(|e| ValidationError::NodeNotFound(format!("sink node: {e:?}")))?;
+        Ok(self.into_state())
     }
 }
 
@@ -578,11 +574,10 @@ impl LegatoBuilder<DslBuilding> {
         &mut self,
         ir: &crate::dsl::ir::IRGraph,
         node: &crate::dsl::ir::IRNode,
-    ) {
-        let ir_macro = ir
-            .macro_registry
-            .get(&node.node_type)
-            .unwrap_or_else(|| panic!("Kernel '{}' not found in registry", node.node_type));
+    ) -> Result<(), ValidationError> {
+        let ir_macro = ir.macro_registry.get(&node.node_type).ok_or_else(|| {
+            ValidationError::NodeNotFound(format!("kernel '{}' is not defined", node.node_type))
+        })?;
 
         let mut resource_builder_view = ResourceBuilderView {
             config: &self.runtime.get_config(),
@@ -594,7 +589,7 @@ impl LegatoBuilder<DslBuilding> {
 
         let kernel_graph =
             crate::kernel::lower_kernel(ir_macro, &node.params, &mut resource_builder_view)
-                .unwrap_or_else(|e| panic!("Could not build kernel '{}': {:?}", node.alias, e));
+                .map_err(|e| e.context(&format!("kernel '{}'", node.alias)))?;
 
         let legato_node = LegatoNode::new(
             node.alias.clone(),
@@ -605,6 +600,7 @@ impl LegatoBuilder<DslBuilding> {
         let key = self.runtime.add_node(legato_node);
         self.working_name_lookup.insert(node.alias.clone(), key);
         self.last_selection = Some(SelectionKind::Single(key));
+        Ok(())
     }
 
     fn _build_dsl(mut self, content: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
@@ -624,13 +620,18 @@ impl LegatoBuilder<DslBuilding> {
             let node = ir.get_node(node_id).unwrap().clone();
 
             if node.kind == crate::dsl::ir::IRNodeKind::KernelRef {
-                self._add_kernel_ref_self(&ir, &node);
+                self._add_kernel_ref_self(&ir, &node)?;
             } else {
                 let dsl_params = DSLParams::new(&node.params);
 
                 // _add_node_ref_self populates working_name_lookup (needed by
                 // pipes) and sets last_selection.
-                self._add_node_ref_self(&node.namespace, &node.node_type, &node.alias, &dsl_params);
+                self._add_node_ref_self(
+                    &node.namespace,
+                    &node.node_type,
+                    &node.alias,
+                    &dsl_params,
+                )?;
             }
 
             let runtime_key = *self
@@ -650,7 +651,7 @@ impl LegatoBuilder<DslBuilding> {
             }
             let source = ir_to_runtime[&edge.source];
             let sink = ir_to_runtime[&edge.sink];
-            let out_indices = self.source_out_indices(&source, &edge.source_port);
+            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
             let matched = self.default_in(&sink);
             if out_indices.len() < matched.len() {
                 *narrow_bare_count.entry(sink).or_default() += 1;
@@ -664,7 +665,7 @@ impl LegatoBuilder<DslBuilding> {
             let source = ir_to_runtime[&edge.source];
             let sink = ir_to_runtime[&edge.sink];
 
-            let out_indices = self.source_out_indices(&source, &edge.source_port);
+            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
             let matched = self.default_in(&sink);
 
             let in_fan_group = matches!(edge.sink_port, Port::None)
@@ -677,7 +678,7 @@ impl LegatoBuilder<DslBuilding> {
                     source_kind: edge.source_port.clone(),
                     sink,
                     sink_kind: edge.sink_port.clone(),
-                });
+                })?;
                 continue;
             }
 
@@ -685,11 +686,7 @@ impl LegatoBuilder<DslBuilding> {
             let cursor = zip_cursor.entry(sink).or_insert(0);
 
             if *cursor + out_indices.len() > matched.len() {
-                let (alias, node_kind) = self
-                    .runtime
-                    .get_node(&sink)
-                    .map(|n| (n.name.clone(), n.node_kind.clone()))
-                    .unwrap_or_else(|| ("<unknown>".into(), "<unknown>".into()));
+                let (alias, node_kind) = self.describe(&sink);
                 return Err(ValidationError::SelectionArity(format!(
                     "bare `>>` fan into '{alias}' ({node_kind}) overruns its {} matching input(s): \
                      name the ports explicitly (e.g. `>> {alias}[0..N]`) to fan or mix deliberately",
@@ -705,18 +702,20 @@ impl LegatoBuilder<DslBuilding> {
                     source_kind: Port::Index(out),
                     sink,
                     sink_kind: Port::Index(sink_index),
-                });
+                })?;
             }
         }
 
-        let sink_id = ir
-            .sink
-            .expect("IRGraph has no sink — check the DSL for a `sink:` declaration");
+        let sink_id = ir.sink.ok_or_else(|| {
+            ValidationError::NodeNotFound(
+                "the graph has no sink: end it with an output like `{ node }`".into(),
+            )
+        })?;
         self.runtime
             .set_sink_key(ir_to_runtime[&sink_id])
-            .expect("Could not set sink");
+            .map_err(|e| ValidationError::NodeNotFound(format!("sink node: {e:?}")))?;
 
-        Ok(self.build())
+        self.try_build()
     }
 }
 
@@ -921,24 +920,48 @@ pub enum AddConnectionKind {
 
 // Utility functions for handling only audio connections for now
 
+fn add_edge(
+    runtime: &mut Runtime,
+    (source, source_index): (NodeKey, usize),
+    (sink, sink_index): (NodeKey, usize),
+) -> Result<(), ValidationError> {
+    runtime
+        .add_edge(Connection {
+            source: ConnectionEntry {
+                node_key: source,
+                port_index: source_index,
+            },
+            sink: ConnectionEntry {
+                node_key: sink,
+                port_index: sink_index,
+            },
+        })
+        .map(|_| ())
+        .map_err(|e| {
+            let name = |key| {
+                runtime
+                    .get_node(&key)
+                    .map_or("<unknown>".to_string(), |n| n.name.clone())
+            };
+            ValidationError::InvalidConnection(format!(
+                "could not connect '{}'[{source_index}] to '{}'[{sink_index}]: {e:?}",
+                name(source),
+                name(sink),
+            ))
+        })
+}
+
 fn one_to_one(
     runtime: &mut Runtime,
     props: AddConnectionProps,
     source_index: usize,
     sink_index: usize,
-) {
-    runtime
-        .add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: props.source,
-                port_index: source_index,
-            },
-            sink: ConnectionEntry {
-                node_key: props.sink,
-                port_index: sink_index,
-            },
-        })
-        .expect("Could not add edge");
+) -> Result<(), ValidationError> {
+    add_edge(
+        runtime,
+        (props.source, source_index),
+        (props.sink, sink_index),
+    )
 }
 
 fn one_to_n(
@@ -946,7 +969,7 @@ fn one_to_n(
     props: AddConnectionProps,
     source_index: usize,
     sink_indicies: &[usize],
-) {
+) -> Result<(), ValidationError> {
     let n = sink_indicies.len();
 
     // Fanout mixer going from 1 -> n
@@ -956,36 +979,13 @@ fn one_to_n(
         Box::new(MonoFanOut::new(n)),
     ));
 
-    // Wire mono to mixer
-    runtime
-        .add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: props.source,
-                port_index: source_index,
-            },
-            sink: ConnectionEntry {
-                node_key: mixer,
-                port_index: 0,
-            },
-        })
-        .expect("Could not add edge");
+    add_edge(runtime, (props.source, source_index), (mixer, 0))?;
 
     // Wire fanout connection to each sink. We add this node in order to change the gain when fanning out
-
     for sink_index in sink_indicies.iter() {
-        runtime
-            .add_edge(Connection {
-                source: ConnectionEntry {
-                    node_key: mixer,
-                    port_index: 0,
-                },
-                sink: ConnectionEntry {
-                    node_key: props.sink,
-                    port_index: *sink_index,
-                },
-            })
-            .expect("Could not add edge");
+        add_edge(runtime, (mixer, 0), (props.sink, *sink_index))?;
     }
+    Ok(())
 }
 
 fn n_to_one(
@@ -993,7 +993,7 @@ fn n_to_one(
     props: AddConnectionProps,
     source_indicies: &[usize],
     sink_index: usize,
-) {
+) -> Result<(), ValidationError> {
     let n = source_indicies.len();
 
     // Make mixer with n mono tracks
@@ -1003,35 +1003,11 @@ fn n_to_one(
         Box::new(TrackMixer::new(1, n, vec![1.0 / f32::sqrt(n as f32); n])),
     ));
 
-    // Build connections into track mixer
     for (i, source_index) in source_indicies.iter().enumerate() {
-        runtime
-            .add_edge(Connection {
-                source: ConnectionEntry {
-                    node_key: props.source,
-                    port_index: *source_index,
-                },
-                sink: ConnectionEntry {
-                    node_key: mixer,
-                    port_index: i,
-                },
-            })
-            .expect("Could not add edge");
+        add_edge(runtime, (props.source, *source_index), (mixer, i))?;
     }
 
-    // Wire track mixer to sink index
-    runtime
-        .add_edge(Connection {
-            source: ConnectionEntry {
-                node_key: mixer,
-                port_index: 0,
-            },
-            sink: ConnectionEntry {
-                node_key: props.sink,
-                port_index: sink_index,
-            },
-        })
-        .expect("Could not add edge");
+    add_edge(runtime, (mixer, 0), (props.sink, sink_index))
 }
 
 fn n_to_n(
@@ -1039,23 +1015,10 @@ fn n_to_n(
     props: AddConnectionProps,
     source_indicies: &[usize],
     sink_indicies: &[usize],
-) {
+) -> Result<(), ValidationError> {
     assert!(source_indicies.len() == sink_indicies.len());
-    source_indicies
-        .iter()
-        .zip(sink_indicies)
-        .for_each(|(source, sink)| {
-            runtime
-                .add_edge(Connection {
-                    source: ConnectionEntry {
-                        node_key: props.source,
-                        port_index: *source,
-                    },
-                    sink: ConnectionEntry {
-                        node_key: props.sink,
-                        port_index: *sink,
-                    },
-                })
-                .expect("Could not add edge");
-        });
+    for (source, sink) in source_indicies.iter().zip(sink_indicies) {
+        add_edge(runtime, (props.source, *source), (props.sink, *sink))?;
+    }
+    Ok(())
 }

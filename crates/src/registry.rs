@@ -79,7 +79,7 @@ impl NodeRegistry {
     ) -> Result<Box<dyn DynNode>, ValidationError> {
         let node = match self.data.get(node_name) {
             Some(spec) => {
-                spec.check_for_bad_params(params);
+                spec.validate_params(params)?;
                 (spec.build)(resource_builder, params)
             }
             None => Err(ValidationError::NodeNotFound(format!(

@@ -106,15 +106,17 @@ impl OnePole {
         rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let chans = p.get_usize("chans").unwrap_or(2);
+        let chans = p.get_usize("chans")?.unwrap_or(2);
         // Either a cutoff in Hz, or the pole coefficient `a` directly (handy
         // when porting designs specified as raw one-pole coefficients).
-        if let Some(a) = p.get_f32("a") {
+        if let Some(a) = p.get_f32("a")? {
             Ok(Self::from_coefficient(a, chans))
         } else {
-            let cutoff = p
-                .get_f32("cutoff")
-                .expect("onepole requires either `cutoff` (Hz) or `a` (pole coefficient)");
+            let cutoff = p.get_f32("cutoff")?.ok_or_else(|| {
+                ValidationError::MissingRequiredParameter(
+                    "onepole requires either `cutoff` (Hz) or `a` (pole coefficient)".into(),
+                )
+            })?;
             let sr = rb.get_config().sample_rate;
             Ok(Self::new(cutoff, chans, sr))
         }

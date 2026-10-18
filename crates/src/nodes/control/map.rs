@@ -123,12 +123,8 @@ impl Map {
         _rb: &mut ResourceBuilderView,
         p: &DSLParams,
     ) -> Result<Self, ValidationError> {
-        let range = p
-            .get_array_f32("range")
-            .expect("Must pass original range to map");
-        let new_range = p
-            .get_array_f32("new_range")
-            .expect("Must pass new_range to map");
+        let range = p.require_array_f32("range")?;
+        let new_range = p.require_array_f32("new_range")?;
         assert!(range.len() == 2);
         assert!(new_range.len() == 2);
         let mut r_0 = [0.0; 2];

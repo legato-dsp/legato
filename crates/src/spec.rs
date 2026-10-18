@@ -27,14 +27,33 @@ pub struct NodeSpec {
 }
 
 impl NodeSpec {
-    /// A quick pass to simply see if there are any keys
-    /// we do not need in this context.
-    pub fn check_for_bad_params(&self, params: &DSLParams) {
+    /// Reject unknown params and missing required ones before the factory runs.
+    pub fn validate_params(&self, params: &DSLParams) -> Result<(), ValidationError> {
         for k in params.0.keys() {
             if !self.required_params.contains(k) && !self.optional_params.contains(k) {
-                panic!("Invalid params {} found on node {}", k, self.name);
+                let mut known: Vec<&str> = self
+                    .required_params
+                    .iter()
+                    .chain(&self.optional_params)
+                    .map(String::as_str)
+                    .collect();
+                known.sort_unstable();
+                return Err(ValidationError::InvalidParameter(format!(
+                    "{} has no parameter '{k}' (expected one of: {})",
+                    self.name,
+                    known.join(", ")
+                )));
             }
         }
+        for k in &self.required_params {
+            if !params.0.contains_key(k) {
+                return Err(ValidationError::MissingRequiredParameter(format!(
+                    "{} requires parameter '{k}'",
+                    self.name
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
