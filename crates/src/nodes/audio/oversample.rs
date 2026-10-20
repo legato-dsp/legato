@@ -49,32 +49,6 @@ impl Oversampler2X {
     }
 }
 
-/// Upsampler and Downsampler are not clone.
-///
-/// So, we lose state, but likely that is not what we want anyways.
-impl Clone for Oversampler2X {
-    fn clone(&self) -> Self {
-        let upsamplers = (0..self.chans)
-            .map(|_| Upsampler16::default())
-            .collect::<Vec<Upsampler16>>()
-            .into();
-
-        let downsamplers = (0..self.chans)
-            .map(|_| Downsampler16::default())
-            .collect::<Vec<Downsampler16>>()
-            .into();
-
-        Self {
-            node: self.node.clone(),
-            upsamplers,
-            downsamplers,
-            upsampled: self.upsampled.clone(),
-            node_outputs: self.node_outputs.clone(),
-            chans: self.chans,
-        }
-    }
-}
-
 impl Node for Oversampler2X {
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let cfg = ctx.get_config();

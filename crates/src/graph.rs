@@ -33,7 +33,7 @@ pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
 const INITIAL_INPUTS: usize = 8;
 
 /// A DAG for grabbing nodes and their dependencies via topological sort.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct AudioGraph {
     nodes: SlotMap<NodeKey, LegatoNode>,
     incoming_edges: EdgeMap,

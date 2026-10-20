@@ -25,7 +25,7 @@ pub struct OutputView<'a> {
     pub chans: usize,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Executor {
     data: Box<[f32]>,
     scratch: Box<[f32]>,

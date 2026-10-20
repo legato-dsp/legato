@@ -26,24 +26,8 @@ pub trait Node {
     fn ports(&self) -> &Ports;
 }
 
-// This ceremony with NodeClone and DynNode is needed so that we can "clone" nodes by cloning the interior and boxing the result,
-// otherwise, it's not object safe.
-
-pub trait NodeClone {
-    fn clone_box(&self) -> Box<dyn DynNode>;
-}
-
-pub trait DynNode: Node + NodeClone + Send {}
-impl<T> DynNode for T where T: Node + NodeClone + Send {}
-
-impl<T> NodeClone for T
-where
-    T: Node + Clone + Send + 'static,
-{
-    fn clone_box(&self) -> Box<dyn DynNode> {
-        Box::new(self.clone())
-    }
-}
+pub trait DynNode: Node + Send {}
+impl<T> DynNode for T where T: Node + Send {}
 
 /// A small wrapper type for debugging nodes at runtime.
 pub struct LegatoNode {
@@ -74,16 +58,6 @@ impl LegatoNode {
     #[inline(always)]
     pub fn handle_msg(&mut self, msg: NodeMessage) {
         self.get_node_mut().as_mut().handle_msg(msg);
-    }
-}
-
-impl Clone for LegatoNode {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            node_kind: self.node_kind.clone(),
-            node: self.node.clone_box(),
-        }
     }
 }
 

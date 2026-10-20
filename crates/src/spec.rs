@@ -3,7 +3,7 @@
 
 #![allow(unused_mut)]
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
@@ -11,13 +11,22 @@ use crate::{
     node::DynNode,
 };
 
-/// A NodeFactory type. The resource builder allows your plugin to register shared delay or sample lines, maybe in the future generic buffers as well.
+/// Builds one node instance from its DSL params.
+///
+/// The factory runs once per spawned instance (`voice * 5` calls it five
+/// times), so it may capture only what it can hand out repeatedly: `Copy`
+/// config or an `Arc` it clones into each node. Anything unique, like one end
+/// of a channel, should be created inside the call, with the application's
+/// end exported through [`ResourceBuilderView::export_handle`].
 pub type NodeFactory =
-    fn(&mut ResourceBuilderView, &DSLParams) -> Result<Box<dyn DynNode>, ValidationError>;
+    Arc<dyn Fn(&mut ResourceBuilderView, &DSLParams) -> NodeResult + Send + Sync>;
+
+/// What a factory returns: a boxed node, or why it could not be built.
+pub type NodeResult = Result<Box<dyn DynNode>, ValidationError>;
 
 /// This struct defines the node display/debug name, required and optional params,
 /// as well as a node factory for a node definition.
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct NodeSpec {
     pub name: String,
     pub description: &'static str,
@@ -26,7 +35,58 @@ pub struct NodeSpec {
     pub build: NodeFactory,
 }
 
+impl std::fmt::Debug for NodeSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeSpec")
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("required_params", &self.required_params)
+            .field("optional_params", &self.optional_params)
+            .finish_non_exhaustive()
+    }
+}
+
 impl NodeSpec {
+    /// A spec built from a closure, for nodes that need state from the
+    /// application at construction time.
+    ///
+    /// ```
+    /// # use legato::prelude::*;
+    /// # use legato::spec::NodeSpec;
+    /// # #[derive(Clone)] struct Level { gain: f32, ports: Ports }
+    /// # impl Node for Level {
+    /// #     fn process(&mut self, _: &mut AudioContext, _: &Inputs, _: &mut [&mut [f32]]) {}
+    /// #     fn ports(&self) -> &Ports { &self.ports }
+    /// # }
+    /// let default_gain = 0.5;
+    /// let spec = NodeSpec::from_fn("level", &[], &["gain"], move |_rb, p| {
+    ///     let gain = p.get_f32("gain")?.unwrap_or(default_gain);
+    ///     Ok(Box::new(Level { gain, ports: PortBuilder::default().audio_out(1).build() }))
+    /// });
+    /// ```
+    pub fn from_fn<F>(
+        name: &str,
+        required_params: &[&str],
+        optional_params: &[&str],
+        build: F,
+    ) -> Self
+    where
+        F: Fn(&mut ResourceBuilderView, &DSLParams) -> NodeResult + Send + Sync + 'static,
+    {
+        Self {
+            name: name.to_string(),
+            description: "",
+            required_params: required_params.iter().map(|s| s.to_string()).collect(),
+            optional_params: optional_params.iter().map(|s| s.to_string()).collect(),
+            build: Arc::new(build),
+        }
+    }
+
+    pub fn with_description(mut self, description: &'static str) -> Self {
+        self.description = description;
+        self
+    }
+
     /// Reject unknown params and missing required ones before the factory runs.
     pub fn validate_params(&self, params: &DSLParams) -> Result<(), ValidationError> {
         for k in params.0.keys() {
@@ -74,6 +134,8 @@ pub trait NodeDefinition {
     ) -> Result<Box<dyn DynNode>, ValidationError>;
 
     fn spec() -> NodeSpec {
+        // A plain fn pointer is 'static whatever Self is, so Self needs no bound.
+        let create: fn(&mut ResourceBuilderView, &DSLParams) -> NodeResult = Self::create;
         NodeSpec {
             name: Self::NAME.to_string(),
             description: Self::DESCRIPTION,
@@ -85,7 +147,7 @@ pub trait NodeDefinition {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            build: Self::create,
+            build: Arc::new(create),
         }
     }
 
@@ -131,7 +193,7 @@ macro_rules! node_spec {
                 description: $desc,
                 required_params: req_params,
                 optional_params: opt_params,
-                build: $build,
+                build: std::sync::Arc::new($build),
             })
         }
     };

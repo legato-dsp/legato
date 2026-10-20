@@ -1,13 +1,14 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![doc = include_str!("../README.md")]
 
-use std::{collections::HashMap, fmt::Debug, path::Path};
+use std::{any::Any, collections::HashMap, fmt::Debug, path::Path};
 
 use crate::{
     builder::ValidationError,
     config::Config,
     executor::OutputView,
     graph::Connection,
+    handles::{ExportsHandle, HandleError, HandleStore},
     midi::{MidiError, MidiMessage},
     msg::{LegatoMsg, NodeMessage},
     resources::{
@@ -26,6 +27,7 @@ pub mod context;
 pub mod dsl;
 pub mod executor;
 pub mod graph;
+pub mod handles;
 pub mod harness;
 pub mod input;
 pub mod interface;
@@ -170,6 +172,7 @@ pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
     producer: rtrb::Producer<LegatoMsg>,
     node_registry: HashMap<String, NodeKey>,
+    handles: HandleStore,
 }
 
 impl LegatoFrontend {
@@ -177,12 +180,49 @@ impl LegatoFrontend {
         runtime_frontend: RuntimeFrontend,
         producer: rtrb::Producer<LegatoMsg>,
         node_registry: HashMap<String, NodeKey>,
+        handles: HandleStore,
     ) -> Self {
         Self {
             runtime_frontend,
             producer,
             node_registry,
+            handles,
         }
+    }
+
+    /// Take the handle a node exported at `path`, e.g. `keys` or `voice.0.keys`.
+    pub fn take_handle<H: Any + Send>(&mut self, path: &str) -> Result<H, HandleError> {
+        self.handles.take(path)
+    }
+
+    /// Take the handle a node of type `N` exported at `path`. The handle type
+    /// comes from `N`, so only a wrong path or node kind can fail.
+    pub fn take_handle_of<N: ExportsHandle>(
+        &mut self,
+        path: &str,
+    ) -> Result<N::Handle, HandleError> {
+        self.handles.take_of::<N>(path)
+    }
+
+    /// Take every handle at or under `prefix`, e.g. all of `voice * 5`, in
+    /// instance order. Either all of them are taken or none are.
+    pub fn take_handles<H: Any + Send>(
+        &mut self,
+        prefix: &str,
+    ) -> Result<Vec<(String, H)>, HandleError> {
+        self.handles.take_all(prefix)
+    }
+
+    pub fn take_handles_of<N: ExportsHandle>(
+        &mut self,
+        prefix: &str,
+    ) -> Result<Vec<(String, N::Handle)>, HandleError> {
+        self.handles.take_all_of::<N>(prefix)
+    }
+
+    /// Paths with a handle that has not been taken yet.
+    pub fn handle_paths(&self) -> Vec<String> {
+        self.handles.paths()
     }
 
     pub fn load_sample(

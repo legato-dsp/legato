@@ -7,10 +7,11 @@ pub use crate::{
     config::Config,
     context::AudioContext,
     dsl::ir::DSLParams,
+    handles::{ExportsHandle, HandleError},
     interface::AudioInterface,
     midi::{MidiMessage, MidiMessageKind, MidiPortKind, start_midi_thread},
     msg::{NodeMessage, ParamPayload, RtValue},
     node::{DynNode, Inputs, Node},
     ports::{PortBuilder, Ports},
-    spec::NodeDefinition,
+    spec::{NodeDefinition, NodeSpec},
 };
