@@ -9,10 +9,13 @@ use std::{collections::VecDeque, fmt::Debug};
 
 use crate::{node::LegatoNode, runtime::NodeKey};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum GraphError {
+    #[error("bad connection")]
     BadConnection,
+    #[error("connection would create a cycle")]
     CycleDetected,
+    #[error("node does not exist")]
     NodeDoesNotExist,
 }
 

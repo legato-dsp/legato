@@ -38,33 +38,50 @@ use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 ///
 /// These might be bad parameters,
 /// bad values, nodes that don't exist, etc.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum ValidationError {
+    #[error("parse error: {0}")]
     ParseError(String),
+    #[error("node not found: {0}")]
     NodeNotFound(String),
+    #[error("namespace not found: {0}")]
     NamespaceNotFound(String),
+    #[error("invalid parameter: {0}")]
     InvalidParameter(String),
+    #[error("missing required parameters: {0}")]
     MissingRequiredParameters(String),
+    #[error("missing required parameter: {0}")]
     MissingRequiredParameter(String),
+    #[error("resource not found: {0}")]
     ResourceNotFound(String),
+    #[error("pipe not found: {0}")]
     PipeNotFound(String),
     /// A node type inside a `kernel` body has no per-sample implementation.
+    #[error("node cannot be used in a kernel: {0}")]
     NotKernelCapable(String),
     /// A construct is valid in patches but not (yet) supported inside kernels.
+    #[error("not supported in kernels: {0}")]
     UnsupportedInKernel(String),
     /// A node has more audio ports on input/output side than [`crate::executor::MAX_ARITY`].
+    #[error("too many ports: {0}")]
     ArityExceeded(String),
     /// A node input marked [`crate::ports::Unpatched::Required`] has no connection.
+    #[error("required input is unconnected: {0}")]
     UnconnectedInput(String),
     /// A connection could not be added to the graph, e.g. it would form a cycle.
+    #[error("invalid connection: {0}")]
     InvalidConnection(String),
     /// Two declarations resolve to the same alias, so one would shadow the other.
+    #[error("duplicate alias: {0}")]
     DuplicateAlias(String),
     /// Two node selections cannot be paired: neither is single and they differ.
+    #[error("selection arity mismatch: {0}")]
     SelectionArity(String),
     /// A graph pass could not expand the program as written.
+    #[error("expansion failed: {0}")]
     Expansion(String),
     /// A factory exported more than one handle for the same instance.
+    #[error("duplicate handle: {0}")]
     DuplicateHandle(String),
 }
 

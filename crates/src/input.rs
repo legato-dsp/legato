@@ -15,42 +15,25 @@ pub enum DeviceSelection {
     ByName(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CpalInputError {
+    #[error("No default input device available")]
     NoDefaultDevice,
+    #[error("Input device not found: {0}")]
     DeviceNotFound(String),
-    DevicesEnumerationFailed(cpal::Error),
-    UnsupportedConfig(cpal::Error),
+    #[error("Failed to enumerate devices: {0}")]
+    DevicesEnumerationFailed(#[source] cpal::Error),
+    #[error("Unsupported stream config: {0}")]
+    UnsupportedConfig(#[source] cpal::Error),
+    #[error("{0}")]
     NoMatchingConfig(String),
-    BuildStreamFailed(cpal::Error),
-    PlayStreamFailed(cpal::Error),
+    #[error("Failed to build input stream: {0}")]
+    BuildStreamFailed(#[source] cpal::Error),
+    #[error("Failed to start input stream: {0}")]
+    PlayStreamFailed(#[source] cpal::Error),
+    #[error("Requested {requested} channels but device only has {available}")]
     ChannelMismatch { requested: usize, available: usize },
 }
-
-impl std::fmt::Display for CpalInputError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoDefaultDevice => write!(f, "No default input device available"),
-            Self::DeviceNotFound(n) => write!(f, "Input device not found: {n}"),
-            Self::DevicesEnumerationFailed(e) => write!(f, "Failed to enumerate devices: {e}"),
-            Self::UnsupportedConfig(e) => write!(f, "Unsupported stream config: {e}"),
-            Self::NoMatchingConfig(e) => write!(f, "{e}"),
-            Self::BuildStreamFailed(e) => write!(f, "Failed to build input stream: {e}"),
-            Self::PlayStreamFailed(e) => write!(f, "Failed to start input stream: {e}"),
-            Self::ChannelMismatch {
-                requested,
-                available,
-            } => {
-                write!(
-                    f,
-                    "Requested {requested} channels but device only has {available}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for CpalInputError {}
 
 pub(crate) fn build_input_stream(
     host: &Host,

@@ -29,20 +29,23 @@ pub trait ExportsHandle: NodeDefinition {
     type Handle: Any + Send;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum HandleError {
     /// No handle was exported at this path (or under this prefix).
+    #[error("no handle at '{path}' ({})", available_list(available))]
     NotFound {
         path: String,
         available: Vec<String>,
     },
     /// A handle exists at `path`, but it is not the requested type.
+    #[error("{}", type_mismatch(path, expected, found))]
     TypeMismatch {
         path: String,
         expected: &'static str,
         found: &'static str,
     },
     /// The handle at `path` was exported by a different kind of node.
+    #[error("handle at '{path}' was exported by a `{found}` node, not a `{expected}`")]
     WrongNodeKind {
         path: String,
         expected: &'static str,
@@ -50,47 +53,24 @@ pub enum HandleError {
     },
 }
 
-impl std::fmt::Display for HandleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotFound { path, available } if available.is_empty() => {
-                write!(f, "no handle at '{path}' (no nodes exported handles)")
-            }
-            Self::NotFound { path, available } => write!(
-                f,
-                "no handle at '{path}' (available: {})",
-                available.join(", ")
-            ),
-            Self::TypeMismatch {
-                path,
-                expected,
-                found,
-            } if expected == found => write!(
-                f,
-                "handle at '{path}' is not a `{expected}`, although the names match: \
-                 this usually means two versions of the same crate are in the dependency tree"
-            ),
-            Self::TypeMismatch {
-                path,
-                expected,
-                found,
-            } => write!(
-                f,
-                "handle at '{path}' is a `{found}`, not the requested `{expected}`"
-            ),
-            Self::WrongNodeKind {
-                path,
-                expected,
-                found,
-            } => write!(
-                f,
-                "handle at '{path}' was exported by a `{found}` node, not a `{expected}`"
-            ),
-        }
+fn available_list(available: &[String]) -> String {
+    if available.is_empty() {
+        "no nodes exported handles".into()
+    } else {
+        format!("available: {}", available.join(", "))
     }
 }
 
-impl std::error::Error for HandleError {}
+fn type_mismatch(path: &str, expected: &str, found: &str) -> String {
+    if expected == found {
+        format!(
+            "handle at '{path}' is not a `{expected}`, although the names match: \
+             this usually means two versions of the same crate are in the dependency tree"
+        )
+    } else {
+        format!("handle at '{path}' is a `{found}`, not the requested `{expected}`")
+    }
+}
 
 struct StoredHandle {
     value: Box<dyn Any + Send>,

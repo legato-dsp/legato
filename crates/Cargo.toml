@@ -1,15 +1,14 @@
 [workspace]
 members = ["legato-macros", "cargo-legato"]
 
-# Bump `version` here and in [workspace.dependencies] together; members inherit both.
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 repository = "https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [workspace.dependencies]
-legato = { version = "0.2.0", path = ".", default-features = false }
+legato = { version = "0.2.1", path = ".", default-features = false }
 
 [package]
 name = "legato"
@@ -45,6 +44,7 @@ ariadne = "0.6.0"
 chumsky = { version = "0.12.0", default-features = false, features = ["std"] }
 cpal = { version = "0.18" }
 rtrb = "0.3.3"
+thiserror = "2"
 
 [dev-dependencies]
 legato-macros = { path = "legato-macros" }

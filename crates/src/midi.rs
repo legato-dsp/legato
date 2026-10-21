@@ -16,14 +16,21 @@ pub type MidiProducer = Sender<(MidiMessage, Instant)>;
 pub type MidiReceiver = Receiver<(MidiMessage, Instant)>;
 
 /// A number of errors that can occur when parsing midi messages
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MidiError {
+    #[error("could not parse MIDI message")]
     CouldNotParse,
+    #[error("MIDI message type not implemented")]
     NotImplemented,
+    #[error("invalid MIDI port")]
     InvalidPort,
+    #[error("MIDI ring buffer is full")]
     RingbufferFull,
+    #[error("MIDI connection error: {0}")]
     ConnectionError(String),
+    #[error("MIDI send error: {0}")]
     SendError(String),
+    #[error("MIDI runtime is missing")]
     MissingRuntime,
 }
 

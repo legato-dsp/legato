@@ -12,35 +12,20 @@ use crate::config::Config;
 use crate::input::{CpalInputError, DeviceSelection};
 use crate::{LegatoApp, input::build_input_stream};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InterfaceError {
+    #[error("No default output device available")]
     NoDefaultOutputDevice,
+    #[error("Output device not found: {0}")]
     OutputDeviceNotFound(String),
-    EnumerateDevices(cpal::Error),
-    BuildOutputStream(cpal::Error),
-    PlayOutputStream(cpal::Error),
-    Input(CpalInputError),
-}
-
-impl std::fmt::Display for InterfaceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoDefaultOutputDevice => write!(f, "No default output device available"),
-            Self::OutputDeviceNotFound(n) => write!(f, "Output device not found: {n}"),
-            Self::EnumerateDevices(e) => write!(f, "Failed to enumerate devices: {e}"),
-            Self::BuildOutputStream(e) => write!(f, "Failed to build output stream: {e}"),
-            Self::PlayOutputStream(e) => write!(f, "Failed to start output stream: {e}"),
-            Self::Input(e) => write!(f, "Input error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for InterfaceError {}
-
-impl From<CpalInputError> for InterfaceError {
-    fn from(e: CpalInputError) -> Self {
-        Self::Input(e)
-    }
+    #[error("Failed to enumerate devices: {0}")]
+    EnumerateDevices(#[source] cpal::Error),
+    #[error("Failed to build output stream: {0}")]
+    BuildOutputStream(#[source] cpal::Error),
+    #[error("Failed to start output stream: {0}")]
+    PlayOutputStream(#[source] cpal::Error),
+    #[error("Input error: {0}")]
+    Input(#[from] CpalInputError),
 }
 
 pub struct InputSpec {

@@ -56,9 +56,11 @@ pub mod window;
 pub mod docs;
 pub mod nodes;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, thiserror::Error)]
 pub enum LegatoError {
+    #[error(transparent)]
     ValidationError(ValidationError),
+    #[error(transparent)]
     ParamError(ParamError),
 }
 
@@ -150,23 +152,14 @@ impl Debug for LegatoApp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FrontendError {
+    #[error("no node named '{0}' in the graph")]
     NodeNotFound(String),
     /// The message queue to the audio thread is full; the message was not sent.
+    #[error("the message queue to the audio thread is full")]
     QueueFull,
 }
-
-impl std::fmt::Display for FrontendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NodeNotFound(name) => write!(f, "no node named '{name}' in the graph"),
-            Self::QueueFull => write!(f, "the message queue to the audio thread is full"),
-        }
-    }
-}
-
-impl std::error::Error for FrontendError {}
 
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,

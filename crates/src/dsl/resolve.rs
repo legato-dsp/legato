@@ -37,20 +37,11 @@ pub fn source_ports(source_port: &Port) -> Vec<Port> {
 
 /// The two selections of a connection could not be matched under the
 /// broadcasting rules (i.e. an `n:m` connection with `n != m`, neither being 1).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("cannot broadcast connection of arity {src}:{snk} (neither side is 1 and lengths differ)")]
 pub struct BroadcastError {
     pub src: usize,
     pub snk: usize,
-}
-
-impl std::fmt::Display for BroadcastError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "cannot broadcast connection of arity {}:{} (neither side is 1 and lengths differ)",
-            self.src, self.snk
-        )
-    }
 }
 
 /// How a source selection maps onto a sink selection.

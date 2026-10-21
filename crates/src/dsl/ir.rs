@@ -828,7 +828,8 @@ impl<'a> From<&'a Object> for DSLParams<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum BuildAstError {
+    #[error("failed to build AST: {0}")]
     ConstructionError(String),
 }
