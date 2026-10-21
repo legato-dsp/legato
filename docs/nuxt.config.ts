@@ -25,7 +25,7 @@ export default defineNuxtConfig({
     build: {
       markdown: {
         highlight: {
-          langs: ["rust", "shell", "typescript", legato],
+          langs: ["rust", "shell", "sh", "typescript", "toml", legato],
           theme: "vitesse-dark",
         },
       },

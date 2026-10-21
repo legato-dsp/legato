@@ -1,88 +1,301 @@
 <img width="801" height="163" alt="Logo" src="https://github.com/user-attachments/assets/c15ecbbf-604c-450d-843f-d6108f96700a" />
 
-## What is Legato?
+Legato is an open source, graph-based [Rust](https://rust-lang.org/) framework for making audio and MIDI applications such as VST plugins, synthesizers, samplers, sequencers, and more.
 
-Simply put, Legato is an opinionated DX for creative audio applications.
+Legato has the following goals:
 
-It aims to fuse the quick prototyping of tools like MaxMSP/PureData, with the performance and utilities found in frameworks like JUCE or KFR. Rather than providing a UI solution, Legato aims for a minimal DSL for graph orchestration. 
+- Opinionated workflows that make audio programming accessible without alienating experienced audio programmers
+- A minimal DSL for graph orchestration, while more advanced users can write custom nodes, UIs, and extensions with Rust
+- A performant, portable runtime that can be used for a variety of applications
+- A standard library and ecosystem of nodes, patches, and example applications
 
-Users can bring their own UI and custom nodes using Rust, avoiding complicated SDKs.
+If you've worked with tools like Max/MSP, Pure Data, FunDSP, or even VCV Rack and JUCE, a lot of these concepts will look familiar.
 
-## Example Patch
+### Getting Started
 
-Here is a quick example of the DSL. 
+To get started, you will want to install a [Rust toolchain](https://rust-lang.org/tools/install/) and create a Legato template:
 
-```rust
+```sh
+# alternatively just clone an example or add legato as a dependency
+cargo install cargo-legato
+cargo legato init # optionally specify the path
+
+cd legato-example
+cargo run --release 
+```
+
+This will make a barebones application with a cross-platform `cpal` audio device. You can also take a look at some of the examples
+if you would rather avoid downloading an additional binary.
+
+> Note: Legato has additional examples, including [VST](https://github.com/legato-dsp/legato/tree/main/examples/vst), [TUI](https://github.com/legato-dsp/terminal-sequencer), and [NixOS](https://github.com/legato-dsp/legato-nix-sbc-example) examples.
+
+If you want to squeeze more performance out of your builds, I would suggest installing a nightly 1.98 toolchain and enabling the `simd` feature. 
+
+SIMD allows Legato to process audio more efficiently, and this extra performance budget can be used to make larger graphs or lower latency applications.
+
+For `nix` users, there is a development flake with a nightly toolchain that builds, deploys, and tests with SIMD enabled by default. There is also an [example project](https://github.com/legato-dsp/legato-nix-sbc-example) that uses a Raspberry Pi 4B as a realtime synthesizer with effects.
+
+### A Minimal Graph
+
+With the example project created, let's take a peek at our first graph.
+
+We will start with a simple example, where we will spawn a sine node, give it a default value, fan the audio out to two channels, and tell Legato where to pull samples from in the end.
+
+```legato
+// Here we have a namespace, a named collection of node recipes
+audio {
+    // We instantiate one sine node and pass in an initial frequency
+    sine { freq: 440.0 },
+    // Next, we fan this out to two channels.
+    // Some nodes can specify how many channels they output
+    mono_fan_out: master { chans: 2 }
+}
+
+// We run our sine wave, and then forward this to our stereo-out master
+sine >> master
+
+// Here, we've selected our sink. This is where we pull the samples from.
+{ master }
+```
+
+This is admittedly a pretty barebones example, but let's go over the concepts first.
+
+#### Namespaces and Declarations
+
+The `audio` block is a namespace, a collection of nodes grouped by a name. This is mostly an organizational tool; all nodes, for instance, run at a sample-accurate audio rate, and there is really not much difference between them. Namespaces can be created and extended at application startup, enabling users to *create* and *share* custom nodes.
+
+Next, we define the node and pass in various parameters. Nodes can have required and optional attributes and will fail early and loudly if they are missing any required data.
+
+You'll notice that the `mono_fan_out` node has some additional syntax. We can create an alias for that node to avoid collisions and create more meaningful names in the graph.
+
+#### Connections and Sinks
+
+After our namespace, we declare where in the graph our nodes will process. This is quite similar to frameworks like Pure Data, except we can handle this all in code and track our application in `git` as opposed to using a graphical interface.
+
+This is a very simple connection. Legato supports a few more types, including named selection, port selection, port slicing, and port striding.
+
+Finally, we declare where we want the runtime to pull samples from. This is explicitly defined because we *could* continue processing elsewhere if we wanted to.
+
+### Adding a Patch
+
+My favorite Legato feature, and admittedly the most frustrating to implement, is the macro patching feature. We can declare a recipe for a patch, instantiate that same patch multiple times, and even nest patches inside of each other. The best part is that these nodes are inlined into the graph as normal nodes without any additional performance hit.
+
+Here is a more complicated polyphonic synth example. This does require registering a MIDI runtime, which can be seen in the complete demo at [`crates/examples/poly.rs`](https://github.com/legato-dsp/legato/blob/main/crates/examples/poly.rs).
+
+```legato
 patch voice(
-    attack = 1200.0,
-    decay = 300.0,
-    sustain = 0.8,
-    release = 700.0
+    attack = 50.0,
+    decay = 30.0,
+    sustain = 0.3,
+    release = 50.0
 ) {
     in freq gate
 
     audio {
-        sine: lfo { freq: 0.1 },
-        grain { sampler_name: "main", chans: 2, size: 70, shape: 0.5, scan: 0.05 },
-        adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 2 },
+        saw { chans: 1 },
+        adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
     }
 
-    control { 
-        map { range: [-1.0, 1.0], new_range: [100, 300] }
-    }
-
-    lfo >> map
-    map >> grain.size
-
-    freq >> grain.freq
-    gate >> grain.trig
-
+    freq >> saw
     gate >> adsr.gate
-    grain >> adsr[1..3]
+    saw >> adsr[1]
 
     { adsr }
 }
 
 patches {
-    voice * 3 { },
+    voice * 5 { },
 }
 
 audio {
-    track_mixer { tracks: 3, chans_per_track: 2 },
-    plate480: verb { predelay: 32.0, decay: 0.4, damping: 0.3, mix: 0.8 },
+    svf { chans: 1, cutoff: 5400.0, q: 0.4, type: "lowpass" },
+    track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
+    mono_fan_out { chans: 2 },
 }
 
 midi {
-    poly_voice { chan: 0, voices: 3 }
+    poly_voice { chan: 0, voices: 5 }
 }
 
-poly_voice[0:10:3] >> voice(*).gate
-poly_voice[1:10:3] >> voice(*).freq
+poly_voice[0:13:3] >> voice(*).gate
+poly_voice[1:13:3] >> voice(*).freq
+voice(*) >> osc_mixer[0..5]
 
-voice(*)[0] >> track_mixer[0:6:2]
-voice(*)[1] >> track_mixer[1:6:2]
+osc_mixer >> svf
 
-track_mixer >> verb
+svf >> mono_fan_out
 
-{ verb }
+{ mono_fan_out }
 ```
 
-It does NOT aim to be an incredibly feature complete langauge, a la CSound or Super Collider. 
+#### Parameters, Templates and Defaults
 
-For more complicated functionality, I encourage users to add their own custom nodes, written in Rust, at application startup.
+When we first declare a patch, we give it a name and define a number of attributes with default values that can be used within the patch.
 
-Legato is generally block based, but the `kernel` feature can be used for per-sample nodes in the DSL, at the cost of some performance (IMO, strong for prototyping!)
+These variables are then passed into the nodes spawned inside the graph with a `$value` syntax. This is nice, as we can spawn the same patch with different parameters multiple times.
 
-## Integrations (TBD)
+#### Virtual Inputs
 
-For now, I have a NixOS + PiSound flake that I have really enjoyed working with. That being said, I hope to onboard more hardware, particular SBCs, as well as writing a number of VST examples. Contributions here are more than welcome.
+We quickly see the `in` keyword, where we can declare a number of virtual inputs. These virtual inputs are then used to wire in connections with other nodes. We can now use `our_patch.freq` to create connections like this is a normal node.
 
-## Additional Tooling
+#### Spawning a Patch
 
-The repository comes with a few example scripts that may be helpful for testing aliasing, designing filters, etc. For the time being, I parked the oversampling feature, but the blocks are already here, I am more working on the semantics for the language.
+We then spawn patches in the `patches` namespace, like typical nodes. In the above example, we actually spawn five of them. Nodes spawned multiple times need to be accessed differently, with a syntax similar to ports, such as `voice(*)`.
 
-There is a vibecoded Tree Sitter grammar in my personal repository, that I made by basically sticking an agent at my projects Chumsky grammar. It works for quick syntax highlighting via Zed, Helix, NeoVim, etc.
+### Working With Feedback Cycles
 
-## License
+Legato is designed around block-based processing. This mirrors what most DAWs do internally. In fact, a good way to think about Legato is that it is a headless DAW.
 
-Legato is AGPLv3, with additional permissions to remove the source disclosure requirements for most creative applications. You can read more about this in the ADDITIONAL_PERMISSIONS distributed with the repository.
+This design comes from the fact that block-based processing is generally more performant than per-sample processing: it works intuitively with the OS threading model, we have stronger cache locality, and we can more easily take advantage of SIMD processing.
+
+However, there is an issue with this design. Many effects and instruments, such as FM synthesizers with feedback, Karplus-Strong synthesis, reverb, and chorus, require feedback shorter than the audio block size.
+
+To get around this, Legato has four suggested paths, depending on the use case:
+
+- Interpreted `kernel` nodes: users can define `kernel` nodes and gain access to primitives that process one sample at a time. This is nice for rapid iteration and prototyping.
+- Generated `kernel` nodes: rather than interpreting these nodes, we can generate some Rust code and compile our node instead. This is a strong middle ground for most users, although experimental.
+- Custom Rust nodes: more technical users that want the best performance possible can write nodes in Rust and register them at startup.
+- If you require feedback that is longer than the audio block length, you can do so with the `delay_read` and `delay_write` nodes. This may be enough for traditional tape-style devices.
+
+Now, let's look at an example `kernel` declaration, a minimal two-operator FM synth.
+
+This can be interpreted at runtime (in the graph), or declared and later registered with the `include_node!` macro.
+
+```legato
+kernel fm(
+    ratio = 2.0,
+    index = 300.0,
+    feedback = 80.0
+) {
+    in freq
+
+    audio {
+        mult: mod_freq { val: $ratio },
+        mult: fb { val: $feedback },
+        sine: modulator { freq: 0.0 },
+        mult: depth { val: $index },
+        add: car_freq { val: 0.0 },
+        sine: carrier { freq: 0.0 },
+    }
+
+    freq >> mod_freq >> modulator
+    modulator >> fb >> modulator
+
+    freq >> car_freq
+    modulator >> depth >> car_freq
+    car_freq >> carrier
+
+    { carrier }
+}
+
+patches {
+    fm: voice { ratio: 3.0, index: 400.0, feedback: 120.0 },
+}
+
+audio {
+    adsr { attack: 5.0, decay: 300.0, sustain: 0.2, release: 400.0, chans: 1 },
+    mult: level { val: 0.3 },
+    mono_fan_out { chans: 2 },
+}
+
+modular {
+    random { rate: 180.0, prob: 0.6, range: [36.0, 72.0] },
+    quantize { notes: [0, 3, 5, 7, 10] },
+    trig_to_gate { gate_time: 120.0 },
+}
+
+random.stepped >> quantize
+quantize.trig >> trig_to_gate >> adsr.gate
+quantize.freq >> voice.freq
+
+voice >> adsr[1]
+adsr >> level >> mono_fan_out
+
+{ mono_fan_out }
+```
+
+A kernel is declared just like a patch, but the declared graph runs one sample at a time.
+
+The difference between this graph and the other examples is the graph cycle.
+
+`modulator >> fb >> modulator` creates a cycle, which is illegal for traditional legato nodes.
+
+Within kernel nodes, Legato adds a one sample delay where the edge of the cycle exists, so the modulator
+can receive its own output from one sample ago.
+
+This can then be used like a normal node within the graph, without having to write Rust code (but you should try!).
+
+*This is less performant than a custom node, and myself I typically just use this for prototyping.*
+
+Legato additionally ships the `include_node!` macro to make code-gen nodes, and you can then later graduate to a custom node if you feel comfortable writing Rust.
+
+### Custom Nodes
+
+One of my favorite Legato features is how easy it is to add custom nodes and use them in the DSL, just
+like any of the other nodes in Legato. Since these can be tracked in `git` like normal software, it 
+makes it very easy to share and build a library or "garden" of nodes and integrations.
+
+A more detailed guide for creating custom nodes can be found [here](https://legato.gg/docs/custom-nodes).
+
+Version 0.2.0 now makes it easier to add thread synchronization primitives to nodes, more easily enabling users
+to synchronize their nodes with other threads or processes.
+
+This makes it easy to compose realtime audio-visual performances, OpenCV integrations like hand and eye tracking,
+as well as integrating custom controllers and other software.
+
+
+### Comparison to Existing Tools
+
+I tried a few existing tools beforehand for making audio applications, but I found a lot of things frustrating 
+with existing tools. I'll talk about a few differences and some inspiration that I took from each of them.
+
+- PureData: I really enjoyed working with PureData, but found dragging and dropping a UI to be quite confusing. Additionally, sometimes I just want to write my own node in a modern language, track it in `git`, and ignore all of the strange port behaviors, bangs behaviors, etc.
+- MaxMSP: Similar to PureData, but I also wanted a much more permissive license
+- JUCE: I wanted a first-class Rust codebase. Additionally, the license is not permissive and we are solving different problems.
+- FunDSP: I really got my ass-handed to me by this project while just starting to learn Rust. You quickly run into a lot of `typenum` and trait bounds issues, and I found this frustrating to work on. In hindsight, my `fundsp` project was pretty terrible and I hope to fix it one day, but I wanted something that felt more like a text-based PureData than using the compiler to compute port arities and things of this nature.
+- SuperCollider/CSound: I want to easily write custom nodes in Rust, and I felt that the language was doing a bit too much. I want the language to be soley for graph orchestration, rather than actual functionality.
+
+### What's Next?
+
+I'm now at the point where I feel that I can very quickly create hardware and software using Legato. That being said, I have a number of features and integrations that I would like to create in the upcoming year(s).
+
+Here is a brief list of some of the features I am prioritizing:
+
+#### Oversampling
+
+There are some considerations here that are still ongoing. I would like to implement this as a DSL feature, where I compute the edge boundaries of sample rates and insert resamplers along these boundaries.
+
+I have played around with a few different oversampling algorithms, primarily naive FIR, halfband FIR filters, and polyphase FIR filters. How these features work together is something I am still playing around with, but it's the next larger feature that I expect to ship.
+
+#### `#![no_std]` Support
+
+This is going to be quite important for me; I want to run Legato on a number of embedded platforms in realtime.
+
+Early on in this project I made a bet that embedded Linux and SBCs were going to become increasingly popular and inexpensive, and with the RAM shortages and AI spend this decision has aged somewhat poorly.
+
+I want to prioritize getting Legato working on a number of different embedded devices, hopefully with a few example projects for doing so. It's unclear exactly how big of an effort this will be, and there are likely some quick patches I could use, as well as more proper reengineering efforts.
+
+#### More Nodes
+
+I don't want Legato to ship every node under the sun, but I *do* want a number of suitably general nodes to be added to the project. At this point, nodes are generally fairly easy for Rust or audio developers to add.
+
+Feel free to open an issue and submit a PR if you have made a sufficiently general node!
+
+A few nodes I will likely add in the next months:
+
+- Wave folding tools
+- Envelope followers
+- Matrix, M/S mixers, etc.
+- Convolution
+- Higher quality pitch shifters (difficult)
+- Various modular inspired tools
+
+#### Community and License
+
+I would really love for Legato to grow and have an active community that can be used by novice audio programmers and experienced professionals alike.
+
+Legato uses the additional permissions outlined in AGPLv3 to let *most* developers waive the source disclosure requirements, on any size of project.
+
+See ADDITIONAL_PERMISSIONS for the actual agreement, but in summary I am enforcing source disclosure for framework extensions, DAWs, "non-creative" projects, and generative AI. 
+
+This gives me a nice balance of letting creatives do their own thing, selling or distributing plugins and tools how they'd like, while encouraging entities that are traditionally backed by capital to develop and extend the ecosystem in the open.

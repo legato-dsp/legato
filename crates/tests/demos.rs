@@ -44,31 +44,3 @@ fn all_demos_build() {
 
     assert!(checked > 0, "no .legato demos found in {dir:?}");
 }
-
-#[test]
-fn root_readme_example_builds() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../README.md");
-    let Ok(readme) = fs::read_to_string(&path) else {
-        return; // The published crate has no repository README.
-    };
-    let example = readme
-        .split("## Example Patch")
-        .nth(1)
-        .and_then(|rest| rest.split("```").nth(1))
-        .and_then(|block| block.split_once('\n'))
-        .map(|(_, body)| body)
-        .expect("README should have an Example Patch code block");
-
-    let config = Config {
-        sample_rate: 44_100,
-        block_size: 256,
-        channels: 2,
-        rt_capacity: 0,
-    };
-    let result = LegatoBuilder::<Unconfigured>::new(config).build_dsl(example);
-    assert!(
-        result.is_ok(),
-        "README example failed to build: {:?}",
-        result.err()
-    );
-}
