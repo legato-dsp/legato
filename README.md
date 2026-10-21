@@ -227,8 +227,7 @@ This can then be used like a normal node within the graph, without having to wri
 
 *This is less performant than a custom node, and myself I typically just use this for prototyping.*
 
-Legato additionally ships the `include_node!` macro to make code-gen nodes, and you can then later
-graduate to a custom node if you feel comfortable writing Rust.
+Legato additionally ships the `include_node!` macro to make code-gen nodes, and you can then later graduate to a custom node if you feel comfortable writing Rust.
 
 ### Custom Nodes
 
