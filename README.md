@@ -1,5 +1,7 @@
 <img width="801" height="163" alt="Logo" src="https://github.com/user-attachments/assets/c15ecbbf-604c-450d-843f-d6108f96700a" />
 
+### What is Legato?
+
 Legato is an open source, graph-based [Rust](https://rust-lang.org/) framework for making audio and MIDI applications such as VST plugins, synthesizers, samplers, sequencers, and more.
 
 Legato has the following goals:
