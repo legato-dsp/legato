@@ -4,9 +4,11 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum ParamError {
+    #[error("param not found")]
     ParamNotFound,
+    #[error("param metadata not found")]
     ParamMetaNotFound,
 }
 

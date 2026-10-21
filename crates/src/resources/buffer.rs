@@ -102,35 +102,23 @@ pub fn decode_with_ffmpeg(
     })
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AudioSampleError {
+    #[error("sample file not found: {0}")]
     PathNotFound(String),
     /// No `ffmpeg` binary on the PATH; it is needed to decode samples.
+    #[error("ffmpeg not found on PATH; it is required to load samples")]
     FfmpegNotFound,
+    #[error("failed to decode sample: {0}")]
     FailedDecoding(String),
     /// No sampler or grain node declared this buffer name.
+    #[error("no sample buffer named '{0}' in the graph")]
     BufferNotFound(String),
+    #[error("frontend not found")]
     FrontendNotFound,
+    #[error("the runtime's sample queue is full")]
     FailedToSendToRuntime,
 }
-
-impl std::fmt::Display for AudioSampleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PathNotFound(p) => write!(f, "sample file not found: {p}"),
-            Self::FfmpegNotFound => write!(
-                f,
-                "ffmpeg not found on PATH; it is required to load samples"
-            ),
-            Self::FailedDecoding(why) => write!(f, "failed to decode sample: {why}"),
-            Self::BufferNotFound(n) => write!(f, "no sample buffer named '{n}' in the graph"),
-            Self::FrontendNotFound => write!(f, "frontend not found"),
-            Self::FailedToSendToRuntime => write!(f, "the runtime's sample queue is full"),
-        }
-    }
-}
-
-impl std::error::Error for AudioSampleError {}
 
 #[cfg(test)]
 mod test {
