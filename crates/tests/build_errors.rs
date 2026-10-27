@@ -120,3 +120,35 @@ fn constant_and_fractional_bpm_build() {
                clock >> sequencer\n{ sequencer }";
     build(src).expect("fractional bpm");
 }
+
+#[test]
+fn signal_default_outside_range_is_rejected() {
+    let src = "control { signal { name: \"cut\", min: 0.0, max: 1.0, default: 2.0 } }\n{ signal }";
+    let err = build(src).unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidParameter(m) if m.contains("min <= default <= max")),
+        "{err:?}"
+    );
+}
+
+fn two_signals(max_b: f32) -> String {
+    format!(
+        "control {{ signal: a {{ name: \"cut\", min: 0.0, max: 1.0, default: 0.5 }}, \
+         signal: b {{ name: \"cut\", min: 0.0, max: {max_b:?}, default: 0.5 }} }}\n\
+         audio {{ mult }}\na >> mult\nb >> mult.val\n{{ mult }}"
+    )
+}
+
+#[test]
+fn signals_with_same_name_and_meta_share_a_param() {
+    build(&two_signals(1.0)).expect("shared param");
+}
+
+#[test]
+fn signals_with_same_name_and_different_meta_are_rejected() {
+    let err = build(&two_signals(2.0)).unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidParameter(m) if m.contains("different metadata")),
+        "{err:?}"
+    );
+}

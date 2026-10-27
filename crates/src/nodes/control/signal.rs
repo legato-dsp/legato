@@ -71,7 +71,7 @@ impl NodeDefinition for Signal {
             max,
             default,
         };
-        let key = rb.add_param(name, meta);
+        let key = rb.add_param(name, meta)?;
         Ok(Box::new(Self::new(key, default, smoothing)))
     }
 }

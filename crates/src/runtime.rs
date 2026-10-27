@@ -12,7 +12,7 @@ use crate::graph::{Connection, GraphError};
 use crate::msg::LegatoMsg;
 use crate::node::LegatoNode;
 use crate::ports::Ports;
-use crate::resources::buffer::{AudioSampleError, decode_with_ffmpeg};
+use crate::resources::buffer::{AudioSampleError, ExternalBuffer, decode_with_ffmpeg};
 use crate::resources::params::{ParamError, ParamKey};
 use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
@@ -179,6 +179,18 @@ impl RuntimeFrontend {
     ) -> Result<(), AudioSampleError> {
         let decoded = decode_with_ffmpeg(path, chans, sr)?;
         self.resource_frontend.send_external_buffer(name, decoded)
+    }
+
+    pub fn send_buffer(
+        &mut self,
+        name: &str,
+        buffer: ExternalBuffer,
+    ) -> Result<(), AudioSampleError> {
+        self.resource_frontend.send_external_buffer(name, buffer)
+    }
+
+    pub fn drain_garbage(&mut self) {
+        self.resource_frontend.drain_garbage();
     }
 
     pub fn set_param(&mut self, name: &str, val: f32) -> Result<(), ParamError> {

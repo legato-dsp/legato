@@ -10,6 +10,10 @@ pub enum ParamError {
     ParamNotFound,
     #[error("param metadata not found")]
     ParamMetaNotFound,
+    #[error("param '{0}' was already registered with different metadata")]
+    ConflictingMeta(String),
+    #[error("param '{0}' needs min <= default <= max")]
+    InvalidRange(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -136,27 +140,38 @@ pub struct ParamStoreBuilder {
 }
 
 impl ParamStoreBuilder {
-    // Add a param to our builder, with the given meta information.
-    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+    /// Add a param, or return the existing key if `unique_name` is already
+    /// registered with identical meta.
+    pub fn add_param(
+        &mut self,
+        unique_name: String,
+        meta: ParamMeta,
+    ) -> Result<ParamKey, ParamError> {
+        // Written so NaN in any field is rejected.
+        if !(meta.min <= meta.default && meta.default <= meta.max) {
+            return Err(ParamError::InvalidRange(unique_name));
+        }
+
+        if let Some(&key) = self.param_lookup.get(&unique_name) {
+            return if self.meta[key.0] == meta {
+                Ok(key)
+            } else {
+                Err(ParamError::ConflictingMeta(unique_name))
+            };
+        }
+
         let key = ParamKey(self.meta.len());
         self.meta.push(meta);
-
-        // Put it in this string to key lookup for later use in the frontend
         self.param_lookup.insert(unique_name, key);
 
-        key
+        Ok(key)
     }
 
     pub fn build(self) -> (ParamStoreFrontend, ParamStore) {
         let data_vec = self
             .meta
             .iter()
-            .map(|x| {
-                // Quickly check bounds on param
-                assert!(x.default <= x.max);
-                assert!(x.default >= x.min);
-                AtomicF32::new(x.default)
-            })
+            .map(|x| AtomicF32::new(x.default))
             .collect::<Vec<AtomicF32>>();
 
         let data: Arc<[AtomicF32]> = Arc::from(data_vec);
@@ -166,5 +181,78 @@ impl ParamStoreBuilder {
         let frontend = ParamStoreFrontend::new(data, self.meta.into(), self.param_lookup);
 
         (frontend, store)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(max: f32) -> ParamMeta {
+        ParamMeta {
+            name: "cutoff".into(),
+            min: 0.0,
+            max,
+            default: 0.0,
+        }
+    }
+
+    #[test]
+    fn same_name_and_meta_shares_one_slot() {
+        let mut b = ParamStoreBuilder::default();
+        let a = b.add_param("cutoff".into(), meta(1.0)).unwrap();
+        let c = b.add_param("cutoff".into(), meta(1.0)).unwrap();
+        assert_eq!(a, c);
+
+        let (frontend, _) = b.build();
+        assert_eq!(frontend.get_all().len(), 1);
+    }
+
+    #[test]
+    fn same_name_with_different_meta_is_rejected() {
+        let mut b = ParamStoreBuilder::default();
+        b.add_param("cutoff".into(), meta(1.0)).unwrap();
+        assert_eq!(
+            b.add_param("cutoff".into(), meta(2.0)),
+            Err(ParamError::ConflictingMeta("cutoff".into()))
+        );
+    }
+
+    #[test]
+    fn default_outside_range_is_rejected() {
+        let mut b = ParamStoreBuilder::default();
+        for (min, max, default) in [(0.0, 1.0, 2.0), (0.0, 1.0, -1.0), (1.0, 0.0, 0.5)] {
+            let m = ParamMeta {
+                name: "cutoff".into(),
+                min,
+                max,
+                default,
+            };
+            assert_eq!(
+                b.add_param("cutoff".into(), m),
+                Err(ParamError::InvalidRange("cutoff".into()))
+            );
+        }
+    }
+
+    #[test]
+    fn nan_in_meta_is_rejected() {
+        let mut b = ParamStoreBuilder::default();
+        let m = ParamMeta {
+            default: f32::NAN,
+            ..meta(1.0)
+        };
+        assert_eq!(
+            b.add_param("cutoff".into(), m),
+            Err(ParamError::InvalidRange("cutoff".into()))
+        );
+    }
+
+    #[test]
+    fn distinct_names_get_distinct_slots() {
+        let mut b = ParamStoreBuilder::default();
+        let a = b.add_param("a.cutoff".into(), meta(1.0)).unwrap();
+        let c = b.add_param("b.cutoff".into(), meta(2.0)).unwrap();
+        assert_ne!(a, c);
     }
 }

@@ -49,9 +49,8 @@ pub struct Sampler {
     active: bool,
     last_trig: f32,
     /// Used to load shared resources, in this case an [`ExternalBuffer`].
-    /// This is an Arc<[f32]> loaded in by another thread.
-    ///
-    /// TODO: Audit who owns the drop, probably not realtime safe!
+    /// This is an Arc<[f32]> loaded in by another thread; swapped-out buffers
+    /// are returned to the frontend to drop.
     sample_key: ExternalBufferKey,
     ports: Ports,
 }

@@ -895,8 +895,27 @@ impl<'a> ResourceBuilderView<'a> {
         }
     }
 
-    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
-        self.resource_builder.add_param(unique_name, meta)
+    /// Register a param shared by every node using `unique_name`.
+    ///
+    /// Registering the same name with different meta is an error.
+    pub fn add_param(
+        &mut self,
+        unique_name: String,
+        meta: ParamMeta,
+    ) -> Result<ParamKey, ValidationError> {
+        self.resource_builder
+            .add_param(unique_name, meta)
+            .map_err(|e| ValidationError::InvalidParameter(e.to_string()))
+    }
+
+    /// Register a param owned by this instance, stored as `<alias>.<name>`.
+    pub fn add_instance_param(
+        &mut self,
+        name: &str,
+        meta: ParamMeta,
+    ) -> Result<ParamKey, ValidationError> {
+        let unique_name = format!("{}.{name}", self.instance_alias);
+        self.add_param(unique_name, meta)
     }
 
     /// Hand the application one end of whatever this node uses to talk across

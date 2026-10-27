@@ -13,7 +13,7 @@ use crate::{
     msg::{LegatoMsg, NodeMessage},
     resources::{
         AudioInputKey,
-        buffer::AudioSampleError,
+        buffer::{AudioSampleError, ExternalBuffer},
         params::{ParamError, ParamKey},
     },
     runtime::{NodeKey, Runtime, RuntimeFrontend},
@@ -227,6 +227,21 @@ impl LegatoFrontend {
     ) -> Result<(), AudioSampleError> {
         self.runtime_frontend
             .load_file(buffer_name, path, chans, sr)
+    }
+
+    /// Swap an already decoded buffer into `buffer_name` on the next block.
+    pub fn send_buffer(
+        &mut self,
+        buffer_name: &str,
+        buffer: ExternalBuffer,
+    ) -> Result<(), AudioSampleError> {
+        self.runtime_frontend.send_buffer(buffer_name, buffer)
+    }
+
+    /// Free buffers the audio thread has swapped out. Sending a buffer also
+    /// does this, so call it only to release memory sooner.
+    pub fn drain_garbage(&mut self) {
+        self.runtime_frontend.drain_garbage();
     }
 
     pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
