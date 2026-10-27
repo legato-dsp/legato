@@ -312,6 +312,10 @@ impl PerSampleNode for Svf {
             }
         }
     }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        Node::handle_msg(self, msg);
+    }
 }
 
 impl Node for Svf {

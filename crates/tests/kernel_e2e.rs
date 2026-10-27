@@ -6,6 +6,7 @@ use legato::{
     LegatoApp,
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
+    msg::{NodeMessage, ParamPayload, RtValue},
     ports::PortBuilder,
 };
 
@@ -168,6 +169,67 @@ fn kernel_params_apply_at_instantiation() {
     // the outputs must agree exactly.
     assert_eq!(block_out[0], kernel_out[0]);
     assert!(block_out[0].iter().any(|x| x.abs() > 1e-3));
+}
+
+/// In this test we want to ensure that we can update a parameter inside a kernel node
+/// at runtime. We do this by checking a block, then updating and checking another
+#[test]
+fn kernel_params_are_settable_at_runtime() {
+    let src = r#"
+        kernel scaled(amount = 0.5) {
+            in audio_in
+
+            audio {
+                mult { val: $amount }
+            }
+
+            audio_in >> mult[0]
+
+            { mult }
+        }
+
+        patches {
+            scaled: s { }
+        }
+
+        control {
+            constant { val: 1.0 }
+        }
+
+        constant >> s.audio_in
+
+        { s }
+    "#;
+
+    let config = Config {
+        sample_rate: 48_000,
+        block_size: BLOCK,
+        channels: 1,
+        rt_capacity: 0,
+    };
+    let (mut app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config)
+        .build_dsl(src)
+        .expect("graph should build");
+
+    let before = app.next_block().channels[0].to_vec();
+
+    assert!(
+        before.iter().all(|&x| x == 0.5),
+        "default amount: {before:?}"
+    );
+
+    frontend
+        .send_node_msg(
+            "s",
+            NodeMessage::SetParam(ParamPayload {
+                param_name: "amount",
+                value: RtValue::F32(2.5),
+            }),
+        )
+        .expect("message should queue");
+
+    let after = app.next_block().channels[0].to_vec();
+    assert!(after.iter().all(|&x| x == 2.5), "updated amount: {after:?}");
 }
 
 /// `kernel_inst * N` spawning plus port-selection wiring into a mixer — the
