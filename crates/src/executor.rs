@@ -2,12 +2,16 @@ use crate::{
     builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
-    ports::Unpatched,
+    node_state::{NodeRuntime, NodeState, Plan},
+    ports::{Ports, Unpatched},
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
 
 pub const MAX_ARITY: usize = 32;
+
+/// (input, output) port index pairs.
+type BypassPairs = Box<[(usize, usize)]>;
 
 /// For the time being, we just check if it has been prepared or not,
 /// but in the future we might pause, stop, etc.
@@ -33,6 +37,9 @@ pub struct Executor {
     node_offsets: SecondaryMap<NodeKey, usize>,
     sink_key: Option<NodeKey>,
     state: ExecutorState,
+    node_states: SecondaryMap<NodeKey, NodeRuntime>,
+    /// (input, output) port pairs a bypassed node copies; `None` if it can't be bypassed.
+    bypass_pairs: SecondaryMap<NodeKey, Option<BypassPairs>>,
 }
 
 impl Executor {
@@ -100,7 +107,7 @@ impl Executor {
     /// Prepare the flat buffer allocation for the graph, as well as the node offsets.
     ///
     /// NOTE: This is not realtime safe!
-    pub fn prepare(&mut self, block_size: usize) {
+    pub fn prepare(&mut self, block_size: usize, fade_len: u32) {
         // Allocate flat buffer
         let num_ports = self.graph.total_ports();
         let buffer_size = num_ports * block_size;
@@ -138,7 +145,41 @@ impl Executor {
             total_ports += arity;
         }
 
+        self.node_states.clear();
+        self.bypass_pairs.clear();
+
+        for (key, node) in self.graph.iter() {
+            self.node_states.insert(key, NodeRuntime::new(fade_len));
+            self.bypass_pairs
+                .insert(key, bypass_pairs(node.get_node().ports()));
+        }
+
         self.state = ExecutorState::Prepared;
+    }
+
+    /// Whether `key` has matching default inputs and outputs to bypass.
+    ///
+    /// This is because we don't want to say bypass three total inputs to a stereo output,
+    /// we want developers to mark their default_in ports so we know what we can treat as
+    /// bypassable audio. This also matches what various VST hosts expect.
+    pub fn can_bypass(&self, key: NodeKey) -> bool {
+        matches!(self.bypass_pairs.get(key), Some(Some(_)))
+    }
+
+    /// Fade `key` toward `state` from the next block. Returns false, changing
+    /// nothing, for an unknown node or a bypass it can't do.
+    pub fn set_state(&mut self, key: NodeKey, state: NodeState) -> bool {
+        if state == NodeState::Bypassed && !self.can_bypass(key) {
+            return false;
+        }
+        match self.node_states.get_mut(key) {
+            Some(rt) if rt.target() != state => {
+                rt.set_target(state);
+                true
+            }
+            Some(_) => true,
+            None => false,
+        }
     }
 
     #[inline(always)]
@@ -155,6 +196,19 @@ impl Executor {
             let audio_inputs_size = ports.ports_in.len();
             let audio_outputs_size = ports.ports_out.len();
 
+            let node_start = *self.node_offsets.get(*node_key).unwrap();
+            let node_end = node_start + audio_outputs_size * block_size;
+
+            let plan = self.node_states[*node_key].plan();
+
+            // If the node is suspended, simply zero the buffer
+            if let Plan::Suspended { zero } = plan {
+                if zero {
+                    self.data[node_start..node_end].fill(0.0);
+                }
+                continue;
+            }
+
             // Fill the scratch buffer for the first N channels
             self.scratch[..audio_inputs_size * block_size].fill(0.0);
 
@@ -166,7 +220,19 @@ impl Executor {
                 .get(*node_key)
                 .expect("Invalid connection in executor!");
 
+            // Note(Luke): you'll notice that we may be able to skip a copy/addition here if we only have a single
+            // input to a single channel.
+            //
+            // For instance, if an audio node has only one incoming stream per channel, this can directly
+            // referenced instead of added/copied.
+            //
+            // However, this did not really show any provable gains, as the DSP math dwarfs this cost.
+            // I'm open to other solutions here, but I just wanted to provide more context.
+            //
+            // So we do the general case here, which is adding the incoming block/stream to the block
+            // that is being written to.
             for conn in incoming {
+                // We're panicking here if we can't find the offset, as something would have gone wildly wrong...
                 let base_offset = self
                     .node_offsets
                     .get(conn.source.node_key)
@@ -197,12 +263,23 @@ impl Executor {
                 }
             }
 
+            let pairs = self.bypass_pairs[*node_key].as_deref().unwrap_or_default();
+            let dry_in = |i: usize| &self.scratch[i * block_size..(i + 1) * block_size];
+
+            if plan == Plan::Bypassed {
+                // Zero this out first as we have no unified zero-ing out step
+                self.data[node_start..node_end].fill(0.0);
+                for &(i, o) in pairs {
+                    let out = node_start + o * block_size;
+                    self.data[out..out + block_size].copy_from_slice(dry_in(i));
+                }
+                continue;
+            }
+
             let node = nodes
                 .get_mut(*node_key)
                 .expect("Could not find node at index {node_index:?}")
                 .get_node_mut();
-
-            let node_start = *self.node_offsets.get(*node_key).unwrap();
 
             let mut active_outputs =
                 slice_node_ports_mut(&mut self.data, node_start, block_size, audio_outputs_size);
@@ -212,6 +289,42 @@ impl Executor {
                 &inputs[0..audio_inputs_size],
                 &mut active_outputs[0..audio_outputs_size],
             );
+
+            // We post process here given the state of the node.
+            //
+            // We do the following with these states:
+            //
+            // - Muted -> We still process and update internal state, but simply fill with 0 values.
+            //
+            // - Fading -> We post process and add a fade based on the internal state, we fade this against
+            // the incoming pairs, which are other default_in/out pairs. For instance, a distortion might have
+            // two default in ports, and one modulation port. We would not want to bypass the modulation as well.
+            //
+            // - Others -> The others were already silenced or bypassed, and don't require postprocessing
+            match plan {
+                Plan::Muted => self.data[node_start..node_end].fill(0.0),
+                Plan::Fading => {
+                    // Each channel replays the curve from the block's start.
+                    let rt = &mut self.node_states[*node_key];
+
+                    for chan in self.data[node_start..node_end].chunks_exact_mut(block_size) {
+                        chan.iter_mut()
+                            .zip(rt.gains())
+                            .for_each(|(y, (wet, _))| *y *= wet);
+                    }
+
+                    for &(i, o) in pairs {
+                        let out = node_start + o * block_size;
+                        self.data[out..out + block_size]
+                            .iter_mut()
+                            .zip(dry_in(i))
+                            .zip(rt.gains())
+                            .for_each(|((sample_out, gain), (_, dry))| *sample_out += gain * dry);
+                    }
+                    rt.advance(block_size);
+                }
+                _ => {}
+            }
         }
 
         ctx.set_instant();
@@ -239,6 +352,12 @@ impl Executor {
             chans: node_arity,
         }
     }
+}
+
+/// Default inputs paired with default outputs by position, if the counts match.
+fn bypass_pairs(ports: &Ports) -> Option<BypassPairs> {
+    let (ins, outs) = (ports.default_in(), ports.default_out());
+    (ins.len() == outs.len()).then(|| ins.into_iter().zip(outs).collect())
 }
 
 #[inline(always)]

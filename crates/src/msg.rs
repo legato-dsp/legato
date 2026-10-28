@@ -2,7 +2,7 @@
 //! These should not require allocation, as we don't want to
 //! affect realtime safety when something is dropped.
 
-use crate::runtime::NodeKey;
+use crate::{node_state::NodeState, runtime::NodeKey};
 
 /// A subset of the Values used in the AST that are realtime safe
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +23,9 @@ pub struct ParamPayload {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LegatoMsg {
     NodeMessage(NodeKey, NodeMessage),
+    /// Fade a node into a [`NodeState`]. A bypass the node can't do is ignored;
+    /// [`crate::LegatoFrontend::set_state`] rejects it before sending.
+    SetState(NodeKey, NodeState),
 }
 
 #[derive(Clone, Debug, PartialEq)]

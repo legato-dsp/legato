@@ -1,7 +1,12 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![doc = include_str!("../README.md")]
 
-use std::{any::Any, collections::HashMap, fmt::Debug, path::Path};
+use std::{
+    any::Any,
+    collections::HashMap,
+    fmt::Debug,
+    path::Path,
+};
 
 use crate::{
     builder::ValidationError,
@@ -11,6 +16,7 @@ use crate::{
     handles::{ExportsHandle, HandleError, HandleStore},
     midi::{MidiError, MidiMessage},
     msg::{LegatoMsg, NodeMessage},
+    node_state::NodeState,
     resources::{
         AudioInputKey,
         buffer::{AudioSampleError, ExternalBuffer},
@@ -39,6 +45,7 @@ pub mod math;
 pub mod midi;
 pub mod msg;
 pub mod node;
+pub mod node_state;
 pub mod out;
 pub mod persample;
 pub mod ports;
@@ -159,12 +166,26 @@ pub enum FrontendError {
     /// The message queue to the audio thread is full; the message was not sent.
     #[error("the message queue to the audio thread is full")]
     QueueFull,
+    /// The node's default input and output counts differ, so there is nothing to pass through.
+    #[error(
+        "'{node}' cannot be bypassed: bypass copies each default input to the matching \
+         default output, but it has {inputs} default inputs and {outputs} default outputs. \
+         If some inputs are modulation, mark the signal inputs with `PortBuilder::default_in()`; \
+         when none are marked, every input counts as default"
+    )]
+    CannotBypass {
+        node: String,
+        inputs: usize,
+        outputs: usize,
+    },
 }
 
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
     producer: rtrb::Producer<LegatoMsg>,
     node_registry: HashMap<String, NodeKey>,
+    /// Default (input, output) counts of nodes that can't be bypassed.
+    unbypassable: HashMap<NodeKey, (usize, usize)>,
     handles: HandleStore,
 }
 
@@ -173,12 +194,14 @@ impl LegatoFrontend {
         runtime_frontend: RuntimeFrontend,
         producer: rtrb::Producer<LegatoMsg>,
         node_registry: HashMap<String, NodeKey>,
+        unbypassable: HashMap<NodeKey, (usize, usize)>,
         handles: HandleStore,
     ) -> Self {
         Self {
             runtime_frontend,
             producer,
             node_registry,
+            unbypassable,
             handles,
         }
     }
@@ -279,6 +302,24 @@ impl LegatoFrontend {
             .get(node_name)
             .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))?;
         self.send_msg(LegatoMsg::NodeMessage(key, msg))
+    }
+
+    /// Fade a node into `state`, starting on the next block.
+    pub fn set_state(&mut self, node_name: &str, state: NodeState) -> Result<(), FrontendError> {
+        let key = *self
+            .node_registry
+            .get(node_name)
+            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))?;
+        if state == NodeState::Bypassed
+            && let Some(&(inputs, outputs)) = self.unbypassable.get(&key)
+        {
+            return Err(FrontendError::CannotBypass {
+                node: node_name.to_string(),
+                inputs,
+                outputs,
+            });
+        }
+        self.send_msg(LegatoMsg::SetState(key, state))
     }
 
     /// Send a message to the LegatoRuntime

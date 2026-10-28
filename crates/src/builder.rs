@@ -571,12 +571,19 @@ where
 
         let (producer, consumer) = rtrb::RingBuffer::new(512);
 
+        let unbypassable = runtime.unbypassable_nodes();
+
         let app = LegatoApp::new(runtime, consumer, audio_input_keys);
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
-        let frontend =
-            LegatoFrontend::new(rt_frontend, producer, self.working_name_lookup, handles);
+        let frontend = LegatoFrontend::new(
+            rt_frontend,
+            producer,
+            self.working_name_lookup,
+            unbypassable,
+            handles,
+        );
 
         Ok((app, frontend))
     }

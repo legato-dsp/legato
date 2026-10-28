@@ -11,11 +11,13 @@ use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
 use crate::msg::LegatoMsg;
 use crate::node::LegatoNode;
+use crate::node_state::fade_samples;
 use crate::ports::Ports;
 use crate::resources::buffer::{AudioSampleError, ExternalBuffer, decode_with_ffmpeg};
 use crate::resources::params::{ParamError, ParamKey};
 use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
 
@@ -78,7 +80,21 @@ impl Runtime {
         let block_size = self.context.get_config().block_size;
         assert!(block_size != 0 && block_size.is_multiple_of(2));
 
-        self.executor.prepare(block_size);
+        let fade_len = fade_samples(self.context.get_config().sample_rate);
+        self.executor.prepare(block_size, fade_len);
+    }
+
+    /// Nodes that can't be bypassed, with their default (input, output) counts.
+    pub fn unbypassable_nodes(&self) -> HashMap<NodeKey, (usize, usize)> {
+        self.executor
+            .graph
+            .iter()
+            .filter(|&(key, _)| !self.executor.can_bypass(key))
+            .map(|(key, node)| {
+                let ports = node.get_node().ports();
+                (key, (ports.default_in().len(), ports.default_out().len()))
+            })
+            .collect()
     }
 
     /// Handle the message from the LegatoFrontend
@@ -88,6 +104,9 @@ impl Runtime {
                 if let Some(node) = self.get_node_mut(&key) {
                     node.handle_msg(param_msg);
                 }
+            }
+            LegatoMsg::SetState(key, state) => {
+                self.executor.set_state(key, state);
             }
         }
     }

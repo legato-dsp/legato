@@ -13,6 +13,7 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     msg::{NodeMessage, ParamPayload, RtValue},
+    node_state::NodeState,
     resources::buffer::ExternalBuffer,
     spec::NodeDefinition,
 };
@@ -123,6 +124,26 @@ fn params_and_node_messages_do_not_allocate() {
                 }),
             )
             .unwrap();
+        assert_eq!(render_allocs(&mut app), 0, "block {i}");
+    }
+}
+
+#[test]
+fn node_state_changes_do_not_allocate() {
+    let src = "audio { saw { chans: 1 }, svf { chans: 1 } }\nsaw >> svf\n{ svf }";
+    let (mut app, mut frontend) = build(src);
+    use NodeState::*;
+    let svf_states = [Muted, Bypassed, Suspended, Active];
+    // `saw` has no input to pass through, so it can't be bypassed.
+    let saw_states = [Suspended, Active, Muted];
+
+    // Change both nodes' states every 3 blocks, so some land mid-fade.
+    for i in 0..BLOCKS * 4 {
+        if i % 3 == 0 {
+            let n = i / 3;
+            frontend.set_state("svf", svf_states[n % 4]).unwrap();
+            frontend.set_state("saw", saw_states[n % 3]).unwrap();
+        }
         assert_eq!(render_allocs(&mut app), 0, "block {i}");
     }
 }
