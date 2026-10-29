@@ -72,6 +72,15 @@ fn convert_macro(
                 )));
             }
 
+            // A kernel is one node to the executor, so its interior has no states.
+            if ast_macro.kind == MacroKind::Kernel && decl.state.is_some() {
+                return Err(ValidationError::UnsupportedInKernel(format!(
+                    "kernel '{}' gives '{}' an initial state, but states apply to the \
+                     whole kernel; put the keyword on the kernel instance instead",
+                    name, alias
+                )));
+            }
+
             if local_alias_to_id.contains_key(&alias) {
                 return Err(duplicate_alias(&alias, Some(name)));
             }
@@ -84,6 +93,7 @@ fn convert_macro(
                 decl.params.clone().unwrap_or_default(),
                 decl.count,
             );
+            body.get_node_mut(id).unwrap().state = decl.state;
             local_alias_to_id.insert(alias, id);
         }
     }
@@ -191,6 +201,7 @@ pub fn ast_to_graph(ast: Ast) -> Result<IRGraph, ValidationError> {
                 decl.params.clone().unwrap_or_default(),
                 decl.count,
             );
+            graph.get_node_mut(id).unwrap().state = decl.state;
             alias_to_id.insert(alias, id);
         }
     }

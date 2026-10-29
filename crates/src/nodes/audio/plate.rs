@@ -97,7 +97,11 @@ impl Plate480 {
         let predelay_s = ((predelay_ms / 1000.0) * sr as f32).round() as usize;
 
         Self {
-            ports: PortBuilder::default().audio_in(2).audio_out(2).build(),
+            ports: PortBuilder::default()
+                .audio_in(2)
+                .default_in()
+                .audio_out(2)
+                .build(),
             decay: decay.clamp(0.0, 0.9),
             damping: damping.clamp(0.0, 0.999),
             bandwidth: bandwidth.clamp(0.0, 1.0),

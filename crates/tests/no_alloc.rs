@@ -134,7 +134,7 @@ fn node_state_changes_do_not_allocate() {
     let (mut app, mut frontend) = build(src);
     use NodeState::*;
     let svf_states = [Muted, Bypassed, Suspended, Active];
-    // `saw` has no input to pass through, so it can't be bypassed.
+    // `saw` marks no signal input, so it can't be bypassed.
     let saw_states = [Suspended, Active, Muted];
 
     // Change both nodes' states every 3 blocks, so some land mid-fade.

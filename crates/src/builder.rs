@@ -18,6 +18,7 @@ use crate::{
     graph::{Connection, ConnectionEntry},
     midi::MidiRuntimeFrontend,
     node::LegatoNode,
+    node_state::NodeState,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
     registry::{NodeRegistry, default_namespaces},
     resources::{
@@ -81,6 +82,8 @@ pub enum ValidationError {
     #[error("expansion failed: {0}")]
     Expansion(String),
     /// A factory exported more than one handle for the same instance.
+    #[error("cannot bypass: {0}")]
+    CannotBypass(String),
     #[error("duplicate handle: {0}")]
     DuplicateHandle(String),
 }
@@ -107,6 +110,7 @@ impl ValidationError {
             DuplicateAlias(m) => DuplicateAlias(wrap(m)),
             SelectionArity(m) => SelectionArity(wrap(m)),
             Expansion(m) => Expansion(wrap(m)),
+            CannotBypass(m) => CannotBypass(wrap(m)),
             DuplicateHandle(m) => DuplicateHandle(wrap(m)),
         }
     }
@@ -171,6 +175,7 @@ impl<S> LegatoBuilder<S> {
             external_buffer_to_key: self.external_buffer_to_key,
             last_selection: self.last_selection,
             midi_runtime_frontend: self.midi_runtime_frontend,
+            initial_states: self.initial_states,
             _state: PhantomData,
         }
     }
@@ -191,6 +196,8 @@ pub struct LegatoBuilder<State> {
     last_selection: Option<SelectionKind>,
     // The midi runtime that can be added to the runtime
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
+    // States from DSL keywords, applied once the executor is prepared
+    initial_states: Vec<(String, NodeKey, NodeState)>,
     _state: PhantomData<State>,
 }
 
@@ -238,6 +245,7 @@ impl LegatoBuilder<Unconfigured> {
             working_name_lookup: HashMap::new(),
             last_selection: None,
             midi_runtime_frontend: None,
+            initial_states: Vec::new(),
             _state: std::marker::PhantomData,
         }
     }
@@ -564,14 +572,25 @@ where
         // Allocate all of the audio buffers needed at runtime
         runtime.prepare();
 
+        let unbypassable = runtime.unbypassable_nodes();
+
+        for (name, key, state) in self.initial_states.drain(..) {
+            if !runtime.set_initial_state(key, state) {
+                let (inputs, outputs) = unbypassable[&key];
+                return Err(ValidationError::CannotBypass(format!(
+                    "'{name}' is declared `bypassed`, but bypass copies each input marked \
+                     with `PortBuilder::default_in()` to the matching default output, and \
+                     it marks {inputs} inputs for {outputs} default outputs"
+                )));
+            }
+        }
+
         if let Some(fe) = self.midi_runtime_frontend.take() {
             let ctx = runtime.get_context_mut();
             ctx.set_midi_runtime_frontend(fe);
         }
 
         let (producer, consumer) = rtrb::RingBuffer::new(512);
-
-        let unbypassable = runtime.unbypassable_nodes();
 
         let app = LegatoApp::new(runtime, consumer, audio_input_keys);
 
@@ -666,6 +685,11 @@ impl LegatoBuilder<DslBuilding> {
                 .working_name_lookup
                 .get(&node.alias)
                 .expect("alias must be in lookup immediately after adding the node");
+
+            if let Some(state) = node.state {
+                self.initial_states
+                    .push((node.alias.clone(), runtime_key, state));
+            }
 
             ir_to_runtime.insert(node_id, runtime_key);
         }

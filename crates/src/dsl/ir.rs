@@ -6,7 +6,7 @@ use std::{
 
 use indexmap::IndexSet;
 
-use crate::builder::ValidationError;
+use crate::{builder::ValidationError, node_state::NodeState};
 
 // ---------------------------------------------------------------------------
 // Shared primitive types
@@ -76,6 +76,8 @@ pub struct NodeDeclaration {
     pub alias: Option<String>,
     pub params: Option<Object>,
     pub count: u32,
+    /// Initial state from a `muted` / `bypassed` / `suspended` prefix.
+    pub state: Option<NodeState>,
 }
 
 /// Yields a selection of a group of spawned nodes
@@ -236,6 +238,9 @@ pub struct IRNode {
     pub params: Object,
     /// How many times the node is spawned. After the multi-node pass, this should be 1.
     pub count: u32,
+    /// Initial state from a DSL prefix; `None` inherits from an enclosing
+    /// patch instance, or starts Active.
+    pub state: Option<NodeState>,
 }
 
 /// This struct lets us spawn a subgraph, and has the information to wire the
@@ -311,6 +316,7 @@ impl IRGraph {
             alias: alias.clone(),
             params,
             count,
+            state: None,
         };
         self.nodes.insert(id, node);
         self.alias_index.insert(alias, id);

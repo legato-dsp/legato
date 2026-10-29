@@ -61,6 +61,16 @@ impl Ports {
         default_indices(&self.ports_in)
     }
 
+    /// Input indices explicitly marked with [`PortBuilder::default_in`]: the
+    /// node's declared signal path, with no fallback. Bypass uses these.
+    pub fn marked_default_in(&self) -> Vec<usize> {
+        self.ports_in
+            .iter()
+            .filter(|p| p.default)
+            .map(|p| p.index)
+            .collect()
+    }
+
     /// Output indices a bare `>>` reads from: the ports marked default, or every output if none are.
     pub fn default_out(&self) -> Vec<usize> {
         default_indices(&self.ports_out)

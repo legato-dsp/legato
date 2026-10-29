@@ -86,7 +86,11 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
         "double".into(),
         "double".into(),
         Box::new(Double {
-            ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
+            ports: PortBuilder::default()
+                .audio_in(1)
+                .default_in()
+                .audio_out(1)
+                .build(),
         }),
     ));
     let entry = |node_key| ConnectionEntry {
@@ -269,7 +273,7 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
         b.control_in_named(&["drive", "tone"]).audio_out(2).build()
     };
 
-    // Forgetting `default_in()` makes all four inputs default: 4 in, 2 out.
+    // Without `default_in()` no input is marked, so there is no signal path.
     let mut forgot = Executor::default();
     let key = forgot.graph.add_node(LegatoNode::new(
         "dist".into(),
@@ -342,6 +346,19 @@ fn bypass_needs_paired_default_ports() {
     assert!(!r.executor.can_bypass(r.src));
     assert!(!r.executor.set_state(r.src, NodeState::Bypassed));
     assert!(r.executor.can_bypass(r.double));
+
+    // One unmarked input and one output, like an oscillator's `freq`: the
+    // counts match, but an unmarked input is never treated as signal.
+    let mut executor = Executor::default();
+    let osc = executor.graph.add_node(LegatoNode::new(
+        "osc".into(),
+        "osc".into(),
+        Box::new(Double {
+            ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
+        }),
+    ));
+    executor.prepare(BLOCK, FADE);
+    assert!(!executor.can_bypass(osc));
 }
 
 #[test]
@@ -353,12 +370,14 @@ fn frontend_rejects_bypass_without_paired_ports() {
         rt_capacity: 0,
     };
     let src = "control { constant { val: 1.0, chans: 1 } }\n\
-               audio { svf { chans: 1 } }\nconstant >> svf\n{ svf }";
+               audio { svf { chans: 1 }, saw { chans: 1 } }\nconstant >> svf\n{ svf }";
     let (_app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config)
         .build_dsl(src)
         .unwrap();
 
-    let err = frontend.set_state("constant", NodeState::Bypassed).unwrap_err();
+    let err = frontend
+        .set_state("constant", NodeState::Bypassed)
+        .unwrap_err();
     assert_eq!(
         err,
         FrontendError::CannotBypass {
@@ -369,10 +388,18 @@ fn frontend_rejects_bypass_without_paired_ports() {
     );
     assert_eq!(
         err.to_string(),
-        "'constant' cannot be bypassed: bypass copies each default input to the matching \
-         default output, but it has 0 default inputs and 1 default outputs. If some inputs \
-         are modulation, mark the signal inputs with `PortBuilder::default_in()`; when none \
-         are marked, every input counts as default"
+        "'constant' cannot be bypassed: bypass copies each input marked with \
+         `PortBuilder::default_in()` to the matching default output, but it marks \
+         0 inputs for 1 default outputs"
+    );
+    // `saw` has a `freq` input and one output, but marks no signal input.
+    assert_eq!(
+        frontend.set_state("saw", NodeState::Bypassed),
+        Err(FrontendError::CannotBypass {
+            node: "saw".into(),
+            inputs: 0,
+            outputs: 1,
+        })
     );
     assert_eq!(frontend.set_state("svf", NodeState::Bypassed), Ok(()));
     assert_eq!(

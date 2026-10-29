@@ -18,6 +18,7 @@ use legato::{
     harness::get_node_test_harness_stereo_4096,
     kernel::EXAMPLE_PLATE_KERNEL_PATCH,
     kernel_codegen::{Fm3, fm3_interpreter},
+    node_state::NodeState,
     nodes::audio::{
         fir::FirFilter,
         saw::Saw,
@@ -259,16 +260,8 @@ fn bench_delay_quality(c: &mut Criterion) {
 //     });
 // }
 
-fn bench_kitchen_sink(c: &mut Criterion) {
-    let config = Config {
-        block_size: 4096,
-        channels: 2,
-        sample_rate: 44_100,
-        rt_capacity: 0,
-    };
-
-    let (mut app, _) = LegatoBuilder::new(config).build_dsl(&String::from(
-       r#"
+/// Five FM voices into a mixer, stereo delay and feedback.
+const KITCHEN_SINK: &str = r#"
         patch voice(
             freq_m = 440.0,
             freq_c = 660.0,
@@ -339,11 +332,49 @@ fn bench_kitchen_sink(c: &mut Criterion) {
         feedback >> dw1
 
         { master }
-    "#,
-    )).expect("graph should build");
+    "#;
+
+fn kitchen_sink() -> (legato::LegatoApp, legato::LegatoFrontend) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 44_100,
+        rt_capacity: 0,
+    };
+    LegatoBuilder::new(config)
+        .build_dsl(KITCHEN_SINK)
+        .expect("graph should build")
+}
+
+fn bench_kitchen_sink(c: &mut Criterion) {
+    let (mut app, _) = kitchen_sink();
 
     c.bench_function("Kitchen Sink", |b| {
         b.iter(|| {
+            let out = app.next_block();
+            black_box(out);
+        });
+    });
+}
+
+/// Every node flips between Muted and Active each block, so every node takes
+/// the fade path for the whole block: the worst case for state changes.
+fn bench_kitchen_sink_fading(c: &mut Criterion) {
+    let (mut app, mut frontend) = kitchen_sink();
+    let names: Vec<String> = frontend.clone_registry().into_keys().collect();
+    let mut muted = false;
+
+    c.bench_function("Kitchen Sink (all nodes fading)", |b| {
+        b.iter(|| {
+            muted = !muted;
+            let state = if muted {
+                NodeState::Muted
+            } else {
+                NodeState::Active
+            };
+            for name in &names {
+                frontend.set_state(name, state).unwrap();
+            }
             let out = app.next_block();
             black_box(out);
         });
@@ -733,6 +764,7 @@ criterion_group!(
     bench_delay_quality,
     bench_svf,
     bench_kitchen_sink,
+    bench_kitchen_sink_fading,
     bench_plate_rust_vs_kernel
 );
 criterion_main!(benches);

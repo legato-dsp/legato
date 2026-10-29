@@ -1,12 +1,7 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![doc = include_str!("../README.md")]
 
-use std::{
-    any::Any,
-    collections::HashMap,
-    fmt::Debug,
-    path::Path,
-};
+use std::{any::Any, collections::HashMap, fmt::Debug, path::Path};
 
 use crate::{
     builder::ValidationError,
@@ -140,6 +135,11 @@ impl LegatoApp {
         self.runtime.get_config()
     }
 
+    /// The state a node is in or fading toward.
+    pub fn node_state(&self, key: NodeKey) -> Option<NodeState> {
+        self.runtime.node_state(key)
+    }
+
     /// The kind of every node in the built graph, for asserting graph shape.
     pub fn node_kinds(&self) -> Vec<&str> {
         self.runtime.node_kinds()
@@ -166,12 +166,11 @@ pub enum FrontendError {
     /// The message queue to the audio thread is full; the message was not sent.
     #[error("the message queue to the audio thread is full")]
     QueueFull,
-    /// The node's default input and output counts differ, so there is nothing to pass through.
+    /// The node doesn't mark one signal input per default output, so there is nothing to pass through.
     #[error(
-        "'{node}' cannot be bypassed: bypass copies each default input to the matching \
-         default output, but it has {inputs} default inputs and {outputs} default outputs. \
-         If some inputs are modulation, mark the signal inputs with `PortBuilder::default_in()`; \
-         when none are marked, every input counts as default"
+        "'{node}' cannot be bypassed: bypass copies each input marked with \
+         `PortBuilder::default_in()` to the matching default output, but it marks \
+         {inputs} inputs for {outputs} default outputs"
     )]
     CannotBypass {
         node: String,

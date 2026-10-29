@@ -182,6 +182,26 @@ impl Executor {
         }
     }
 
+    /// The state `key` is in or fading toward.
+    pub fn state(&self, key: NodeKey) -> Option<NodeState> {
+        self.node_states.get(key).map(NodeRuntime::target)
+    }
+
+    /// Start `key` in `state` with no fade. Returns false, changing nothing,
+    /// for an unknown node or a bypass it can't do.
+    pub fn set_initial_state(&mut self, key: NodeKey, state: NodeState) -> bool {
+        if state == NodeState::Bypassed && !self.can_bypass(key) {
+            return false;
+        }
+        match self.node_states.get_mut(key) {
+            Some(rt) => {
+                rt.set_immediate(state);
+                true
+            }
+            None => false,
+        }
+    }
+
     #[inline(always)]
     pub fn process(&mut self, ctx: &mut AudioContext) -> OutputView<'_> {
         assert!(self.state == ExecutorState::Prepared);
@@ -354,10 +374,12 @@ impl Executor {
     }
 }
 
-/// Default inputs paired with default outputs by position, if the counts match.
+/// Marked default inputs paired with default outputs by position, if the
+/// counts match. Unmarked inputs never count, so bypass is opt-in: an
+/// oscillator's `freq` is never passed through as signal.
 fn bypass_pairs(ports: &Ports) -> Option<BypassPairs> {
-    let (ins, outs) = (ports.default_in(), ports.default_out());
-    (ins.len() == outs.len()).then(|| ins.into_iter().zip(outs).collect())
+    let (ins, outs) = (ports.marked_default_in(), ports.default_out());
+    (!ins.is_empty() && ins.len() == outs.len()).then(|| ins.into_iter().zip(outs).collect())
 }
 
 #[inline(always)]

@@ -11,7 +11,7 @@ use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
 use crate::msg::LegatoMsg;
 use crate::node::LegatoNode;
-use crate::node_state::fade_samples;
+use crate::node_state::{NodeState, fade_samples};
 use crate::ports::Ports;
 use crate::resources::buffer::{AudioSampleError, ExternalBuffer, decode_with_ffmpeg};
 use crate::resources::params::{ParamError, ParamKey};
@@ -92,9 +92,23 @@ impl Runtime {
             .filter(|&(key, _)| !self.executor.can_bypass(key))
             .map(|(key, node)| {
                 let ports = node.get_node().ports();
-                (key, (ports.default_in().len(), ports.default_out().len()))
+                (
+                    key,
+                    (ports.marked_default_in().len(), ports.default_out().len()),
+                )
             })
             .collect()
+    }
+
+    /// The state a node is in or fading toward.
+    pub fn node_state(&self, key: NodeKey) -> Option<NodeState> {
+        self.executor.state(key)
+    }
+
+    /// Start a node in `state` with no fade; call after [`Self::prepare`].
+    /// False for an unknown node or a bypass it can't do.
+    pub fn set_initial_state(&mut self, key: NodeKey, state: NodeState) -> bool {
+        self.executor.set_initial_state(key, state)
     }
 
     /// Handle the message from the LegatoFrontend
