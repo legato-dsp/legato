@@ -73,6 +73,10 @@ impl Node for Phasor {
             }
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["freq", "bpm"])
+    }
 }
 
 use crate::{

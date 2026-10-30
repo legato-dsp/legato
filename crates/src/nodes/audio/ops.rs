@@ -125,6 +125,10 @@ impl PerSampleNode for ApplyOp {
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
+    }
 }
 
 impl Node for ApplyOp {
@@ -142,6 +146,10 @@ impl Node for ApplyOp {
         {
             self.val = value;
         }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["val"])
     }
 
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {

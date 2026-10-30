@@ -1,0 +1,108 @@
+// title: Presets
+// desc: Four FM voices through a filter, echo and plate; examples/presets.rs switches them with batches
+
+// Legato nodes run in blocks at an interior rate. This gives stronger performance, ease of SIMD processing,
+// better memory locality, etc.
+//
+// These graphs are DAG, meaning there are no cycles permitted. To get around this, we have the `kernel` feature.
+//
+// `kernel`s are capable of feedback cycles as they are interpreted nodes that can process one sample at a time.
+// You can then spawn them like reusable patches, which is quite convenient.
+//
+// In addition to being interpreted from the DSL, they can also compiled/generated with a macro as well,
+// this is a performance improvement but it is unclear if I want to continue building on this functionality.
+//
+// I generally feel that codegen is hard to maintain, and this feature was made with heavy AI assistance.
+// But it provides a nice middleground for users that don't want to write DSP in Rust but still want to
+// have somewhat performant reverb/fm/other algorithms with feedback cycles.
+//
+// There is a performance hit with both approaches, here, so I suggest moving to a custom Rust node
+// if this becomes a bottleneck or starts to show up on a
+kernel fm(
+    ratio = 2.0,
+    index = 400.0,
+    feedback = 80.0
+) {
+    in freq
+
+    audio {
+        mult: mod_freq { val: $ratio },
+        mult: fb { val: $feedback },
+        sine: modulator { freq: 0.0 },
+        mult: depth { val: $index },
+        add: car_freq { val: 0.0 },
+        sine: carrier { freq: 0.0 },
+    }
+
+    freq >> mod_freq >> modulator
+    modulator >> fb >> modulator
+
+    freq >> car_freq
+    modulator >> depth >> car_freq
+    car_freq >> carrier
+
+    { carrier }
+}
+
+// Each voice has its own random state so the melodies don't align.
+//
+// We then quantize the random state to a C-Min pentatonic scale
+// and update the frequency of the fm synth and trigger the envelope.
+patch voice() {
+    modular {
+        random { rate: 220.0, prob: 0.5, range: [40.0, 76.0] },
+        quantize { notes: [0, 3, 5, 7, 10] },
+        trig_to_gate { gate_time: 110.0 },
+    }
+
+    audio {
+        fm: op { ratio: 2.0, index: 300.0, feedback: 30.0 },
+        adsr: env { attack: 4.0, decay: 300.0, sustain: 0.1, release: 500.0, chans: 1 },
+    }
+
+    random.stepped >> quantize
+    quantize.trig >> trig_to_gate >> env.gate
+    quantize.freq >> op.freq
+    op >> env[1]
+
+    { env }
+}
+
+// Spawn the four voices, using the default parameters
+patches {
+    voice * 4 {},
+}
+
+control {
+    signal: cut { name: "cut", min: 80.0, max: 12000.0, default: 1800.0 }
+}
+
+audio {
+    track_mixer: voices { tracks: 4, chans_per_track: 1, gain: [0.15, 0.15, 0.15, 0.15] },
+
+    svf: tone { chans: 1, q: 0.8, type: "lowpass" },
+    mono_fan_out { chans: 2 },
+
+    // Echo send: muting `echo` silences the repeats and their feedback.
+    // It starts muted and the room starts bypassed; a preset or a toggle turns them on.
+    delay_write: echo_in { delay_name: "echo", delay_length: 1000.0, chans: 2 },
+    muted delay_read: echo { delay_name: "echo", delay_length: 375.0, chans: 2 },
+    track_mixer: echo_fb { tracks: 1, chans_per_track: 2, gain: [0.45] },
+
+    track_mixer: bus { tracks: 2, chans_per_track: 2, gain: [0.8, 0.5] },
+    bypassed plate480: room { mix: 0.3 },
+}
+
+voice(*) >> voices[0..4]
+voices >> tone
+cut >> tone.cutoff
+tone >> mono_fan_out
+
+mono_fan_out >> bus[0..2]
+mono_fan_out >> echo_in
+echo >> bus[2..4]
+echo >> echo_fb >> echo_in
+
+bus >> room
+
+{ room }

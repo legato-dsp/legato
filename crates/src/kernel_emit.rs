@@ -731,6 +731,18 @@ fn emit_tick(
         let _ = writeln!(out, "        }}");
     }
     let _ = writeln!(out, "    }}");
+
+    // The same names, so the frontend can reject one `handle_msg` would ignore.
+    let names: Vec<String> = plan
+        .params
+        .iter()
+        .map(|p| format!("{:?}", p.name))
+        .collect();
+    let _ = writeln!(
+        out,
+        "\n    fn runtime_params(&self) -> Option<Vec<&str>> {{\n        Some(vec![{}])\n    }}",
+        names.join(", ")
+    );
     let _ = writeln!(out, "}}");
 }
 

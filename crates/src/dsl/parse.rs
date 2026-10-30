@@ -1,4 +1,4 @@
-use crate::{builder::ValidationError, dsl::ir::*};
+use crate::{builder::ValidationError, dsl::ir::*, node_state::NodeState};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{extra::Err, prelude::*};
 use std::collections::BTreeMap;
@@ -145,16 +145,26 @@ fn node_declaration<'a>() -> impl Parser<'a, &'a str, NodeDeclaration, Err<Rich<
         .delimited_by(just('{').padded(), just('}').padded())
         .or_not();
 
-    ident
-        .then(alias)
-        .then(count)
-        .then(params)
-        .map(|(((node_type, alias), count), params)| NodeDeclaration {
+    // A keyword only when another identifier follows, so `muted` stays usable
+    // as a node type.
+    let state = choice((
+        text::keyword("muted").to(NodeState::Muted),
+        text::keyword("bypassed").to(NodeState::Bypassed),
+        text::keyword("suspended").to(NodeState::Suspended),
+    ))
+    .then_ignore(text::whitespace().at_least(1))
+    .then_ignore(text::ascii::ident().rewind())
+    .or_not();
+
+    state.then(ident).then(alias).then(count).then(params).map(
+        |((((state, node_type), alias), count), params)| NodeDeclaration {
             node_type,
             alias,
             params,
             count: count.unwrap_or(1),
-        })
+            state,
+        },
+    )
 }
 
 fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>> {
@@ -220,13 +230,15 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>>
         )
 }
 
-fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
-    let ident = text::ascii::ident().map(ToString::to_string);
+/// An instance selector after a name: `(3)`, `(0..2)` or `(*)`. Shared by
+/// connection endpoints and runtime selections (see [`crate::select`]).
+pub(crate) fn node_selector<'a>()
+-> impl Parser<'a, &'a str, NodeSelector, Err<Rich<'a, char>>> + Clone {
     let uint = text::digits(10)
         .to_slice()
         .map(|s: &str| s.parse::<u32>().unwrap());
 
-    let selector = choice((
+    choice((
         // Single node selection
         uint.delimited_by(just('('), just(')'))
             .map(|x| NodeSelector::Index(x as usize)),
@@ -240,8 +252,17 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
             .delimited_by(just('('), just(')'))
             .map(|_| NodeSelector::All),
     ))
-    .or_not()
-    .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
+}
+
+fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+    let uint = text::digits(10)
+        .to_slice()
+        .map(|s: &str| s.parse::<u32>().unwrap());
+
+    let selector = node_selector()
+        .or_not()
+        .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
 
     let port = choice((
         // node.mono
@@ -810,6 +831,26 @@ mod test {
             .unwrap();
         assert_eq!(audio_conn.sink.node, "env");
         assert_eq!(audio_conn.sink.port, Port::Index(1));
+    }
+
+    #[test]
+    fn state_prefix_is_a_keyword_only_before_another_identifier() {
+        let src = "audio { muted: m, mutedsaw, suspended saw * 3 { chans: 1 }, bypassed muted: n }\n{ m }";
+        let ast = legato_parser_inner().parse(src).into_result().unwrap();
+        let got: Vec<_> = ast.declarations[0]
+            .declarations
+            .iter()
+            .map(|d| (d.node_type.as_str(), d.alias.as_deref(), d.count, d.state))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("muted", Some("m"), 1, None),
+                ("mutedsaw", None, 1, None),
+                ("saw", None, 3, Some(NodeState::Suspended)),
+                ("muted", Some("n"), 1, Some(NodeState::Bypassed)),
+            ]
+        );
     }
 
     #[test]

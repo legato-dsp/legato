@@ -4,6 +4,7 @@
 //! The [`Runtime`] then has a [`RuntimeFrontend`] that can be used from a control
 //! thread to change params or pass messages to the [`Runtime`].
 
+use crate::batch::MessageBatch;
 use crate::builder::ValidationError;
 use crate::config::Config;
 use crate::context::AudioContext;
@@ -11,11 +12,13 @@ use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
 use crate::msg::LegatoMsg;
 use crate::node::LegatoNode;
+use crate::node_state::{NodeState, fade_samples};
 use crate::ports::Ports;
-use crate::resources::buffer::{AudioSampleError, decode_with_ffmpeg};
+use crate::resources::buffer::{AudioSampleError, ExternalBuffer, decode_with_ffmpeg};
 use crate::resources::params::{ParamError, ParamKey};
 use crate::resources::{ResourceFrontend, Resources};
 use slotmap::new_key_type;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
 
@@ -78,7 +81,59 @@ impl Runtime {
         let block_size = self.context.get_config().block_size;
         assert!(block_size != 0 && block_size.is_multiple_of(2));
 
-        self.executor.prepare(block_size);
+        let fade_len = fade_samples(self.context.get_config().sample_rate);
+        self.executor.prepare(block_size, fade_len);
+    }
+
+    /// What each node accepts in a `SetParam`, read once for the frontend.
+    pub fn node_params(&self) -> HashMap<NodeKey, NodeParams> {
+        self.executor
+            .graph
+            .iter()
+            .map(|(key, node)| {
+                let ports = node.get_node().ports();
+                let patched = self
+                    .executor
+                    .graph
+                    .incoming_connections(key)
+                    .into_iter()
+                    .flatten()
+                    .map(|c| ports.ports_in[c.sink.port_index].name.to_string())
+                    .collect();
+                let accepted = node
+                    .get_node()
+                    .runtime_params()
+                    .map(|names| names.into_iter().map(String::from).collect());
+                (key, NodeParams { accepted, patched })
+            })
+            .collect()
+    }
+
+    /// Nodes that can't be bypassed, with their default (input, output) counts.
+    pub fn unbypassable_nodes(&self) -> HashMap<NodeKey, (usize, usize)> {
+        self.executor
+            .graph
+            .iter()
+            .filter(|&(key, _)| !self.executor.can_bypass(key))
+            .map(|(key, node)| {
+                let ports = node.get_node().ports();
+                (
+                    key,
+                    (ports.marked_default_in().len(), ports.default_out().len()),
+                )
+            })
+            .collect()
+    }
+
+    /// The state a node is in or fading toward.
+    pub fn node_state(&self, key: NodeKey) -> Option<NodeState> {
+        self.executor.state(key)
+    }
+
+    /// Start a node in `state` with no fade; call after [`Self::prepare`].
+    /// False for an unknown node or a bypass it can't do.
+    pub fn set_initial_state(&mut self, key: NodeKey, state: NodeState) -> bool {
+        self.executor.set_initial_state(key, state)
     }
 
     /// Handle the message from the LegatoFrontend
@@ -88,6 +143,25 @@ impl Runtime {
                 if let Some(node) = self.get_node_mut(&key) {
                     node.handle_msg(param_msg);
                 }
+            }
+            LegatoMsg::SetState(key, state) => {
+                self.executor.set_state(key, state);
+            }
+            LegatoMsg::SetParam(key, val) => {
+                self.context.get_resources().set_param(&key, val);
+            }
+            // Dropped here if it was the last owner; `LegatoApp` returns
+            // batches instead of calling this.
+            LegatoMsg::Batch(batch) => self.apply_batch(&batch),
+        }
+    }
+
+    /// Apply every message in `batch`; nested batches are skipped (the
+    /// builder can't make them).
+    pub fn apply_batch(&mut self, batch: &MessageBatch) {
+        for msg in batch.messages() {
+            if !matches!(msg, LegatoMsg::Batch(_)) {
+                self.handle_msg(msg.clone());
             }
         }
     }
@@ -152,6 +226,15 @@ impl Debug for Runtime {
     }
 }
 
+/// A node's runtime params, as the frontend checks them.
+#[derive(Debug, Clone, Default)]
+pub struct NodeParams {
+    /// Names `handle_msg` accepts; `None` if the node skips the check.
+    pub accepted: Option<Vec<String>>,
+    /// Inputs with a connection, which override a param of the same name.
+    pub patched: Vec<String>,
+}
+
 /// The main frontend that you can use to send commands to the realtime
 /// audio thread.
 ///
@@ -181,6 +264,18 @@ impl RuntimeFrontend {
         self.resource_frontend.send_external_buffer(name, decoded)
     }
 
+    pub fn send_buffer(
+        &mut self,
+        name: &str,
+        buffer: ExternalBuffer,
+    ) -> Result<(), AudioSampleError> {
+        self.resource_frontend.send_external_buffer(name, buffer)
+    }
+
+    pub fn drain_garbage(&mut self) {
+        self.resource_frontend.drain_garbage();
+    }
+
     pub fn set_param(&mut self, name: &str, val: f32) -> Result<(), ParamError> {
         let key = self.resource_frontend.get_param_key(name)?;
         self.resource_frontend.set_param(key, val)
@@ -196,5 +291,9 @@ impl RuntimeFrontend {
 
     pub fn get_param_key(&self, param_name: &str) -> Result<ParamKey, ParamError> {
         self.resource_frontend.get_param_key(param_name)
+    }
+
+    pub fn clamp_param(&self, key: ParamKey, val: f32) -> Result<f32, ParamError> {
+        self.resource_frontend.clamp_param(key, val)
     }
 }

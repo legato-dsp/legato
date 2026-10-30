@@ -15,6 +15,7 @@ use std::ops::{Range, RangeInclusive};
 
 const SR: usize = 48_000;
 const BLOCK: usize = 64;
+const FADE: u32 = legato::node_state::fade_samples(SR);
 
 /// Port counts per side for a generated node.
 const PORTS: RangeInclusive<usize> = 1..=4;
@@ -235,7 +236,7 @@ proptest! {
         // Check every node by making each the sink in turn.
         for (i, key) in keys.iter().enumerate() {
             executor.set_sink(*key).unwrap();
-            executor.prepare(BLOCK);
+            executor.prepare(BLOCK, FADE);
 
             let view = executor.process(&mut ctx);
 
@@ -282,7 +283,7 @@ proptest! {
         }
 
         executor.set_sink(sink).unwrap();
-        executor.prepare(BLOCK);
+        executor.prepare(BLOCK, FADE);
 
         let mut ctx = context();
         let view = executor.process(&mut ctx);
@@ -333,7 +334,7 @@ proptest! {
         // Whatever it accepts, the executor must actually be able to run.
         if !any_oversized {
             executor.set_sink(*keys.last().unwrap()).unwrap();
-            executor.prepare(BLOCK);
+            executor.prepare(BLOCK, FADE);
 
             let view = executor.process(&mut context());
             prop_assert_eq!(view.chans, ports.last().unwrap().1);

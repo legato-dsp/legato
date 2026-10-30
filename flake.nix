@@ -81,6 +81,8 @@
       packages = forEachSystem ({ craneLib, commonArgs, cargoArtifacts, ... }: {
         default = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
+          # CI runs the tests in the dev shell.
+          doCheck = false;
         });
 
         generate-docs = craneLib.buildPackage (commonArgs // {

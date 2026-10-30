@@ -278,6 +278,10 @@ impl legato::persample::PerSampleNode for Fm3 {
     fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
         let _ = msg;
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec![])
+    }
 }
 
 impl legato::spec::NodeDefinition for Fm3 {

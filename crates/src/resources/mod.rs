@@ -2,7 +2,7 @@
 //!
 //! These can be accessed on the [`AudioContext`] passed to each node.
 
-use rtrb::RingBuffer;
+use rtrb::{PushError, RingBuffer};
 use slotmap::{SlotMap, new_key_type};
 use std::collections::HashMap;
 
@@ -130,6 +130,12 @@ impl Resources {
         self.param_store.get(param_key)
     }
 
+    /// Write a param clamped on the control thread, e.g. from a batch.
+    #[inline(always)]
+    pub fn set_param(&self, param_key: &ParamKey, val: f32) {
+        self.param_store.set(param_key, val);
+    }
+
     /// The entire buffer LLL RRR for an audio input
     #[inline(always)]
     pub fn get_audio_input(&self, key: AudioInputKey) -> &[f32] {
@@ -156,16 +162,21 @@ impl Resources {
     }
 
     pub fn drain(&mut self) {
-        // Drain external buffers
-        while let Ok(incoming) = self.external_buffer_update_receiver.pop() {
-            if let Some(buffer_ref) = self.external_buffers.get_mut(incoming.key) {
-                // This returns the old value, and we can then clean it up in another thread
-                let old_buffer = Option::replace(buffer_ref, incoming.buffer);
-                if let Some(inner) = old_buffer
-                    && self.garbage_sender.push(inner).is_err()
-                {
-                    panic!("Returned buffer was not sent to another thread to be dropped!")
-                }
+        // Only take an update while the old buffer has somewhere to go, so it is
+        // never dropped here; the rest wait until the frontend drains garbage.
+        while !self.garbage_sender.is_full() {
+            let Ok(incoming) = self.external_buffer_update_receiver.pop() else {
+                break;
+            };
+            let garbage = match self.external_buffers.get_mut(incoming.key) {
+                Some(slot) => slot.replace(incoming.buffer),
+                None => Some(incoming.buffer),
+            };
+            if let Some(old) = garbage
+                && let Err(PushError::Full(old)) = self.garbage_sender.push(old)
+            {
+                debug_assert!(false, "checked for a free garbage slot above");
+                std::mem::forget(old); // leak rather than free on the audio thread
             }
         }
 
@@ -227,7 +238,11 @@ impl ResourceBuilder {
         self.internal_buffers.insert(window)
     }
 
-    pub fn add_param(&mut self, unique_name: String, meta: ParamMeta) -> ParamKey {
+    pub fn add_param(
+        &mut self,
+        unique_name: String,
+        meta: ParamMeta,
+    ) -> Result<ParamKey, ParamError> {
         self.param_builder.add_param(unique_name, meta)
     }
 
@@ -336,12 +351,13 @@ impl ResourceFrontend {
         }
     }
 
-    /// Send an external buffer to the runtime
+    /// Send an external buffer to the runtime, first freeing any it returned.
     pub fn send_external_buffer(
         &mut self,
         name: &str,
         buffer: ExternalBuffer,
     ) -> Result<(), AudioSampleError> {
+        self.drain_garbage();
         let key = self
             .external_buffer_key_lookup
             .get(name)
@@ -353,10 +369,7 @@ impl ResourceFrontend {
             .map_err(|_| AudioSampleError::FailedToSendToRuntime)
     }
 
-    /// Garbage collect any external buffers that are no longer in use
-    ///
-    /// TODO: Find a consistent pattern to implement this
-    /// We are doing this here, and not on the audio thread to avoid any non-realtime ops
+    /// Drop the external buffers the runtime swapped out, off the audio thread.
     pub fn drain_garbage(&mut self) {
         while let Ok(garbage) = self.external_sample_garbage_receiver.pop() {
             drop(garbage);
@@ -376,7 +389,102 @@ impl ResourceFrontend {
         self.param_front_end.get_key(name)
     }
 
+    pub fn clamp_param(&self, key: ParamKey, val: f32) -> Result<f32, ParamError> {
+        self.param_front_end.clamp(key, val)
+    }
+
     pub fn get_all(&self) -> Vec<f32> {
         self.param_front_end.get_all()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The internal queue size
+    const QUEUE: usize = 512;
+
+    fn build_resources() -> (ResourceFrontend, Resources) {
+        let mut b = ResourceBuilder::default();
+        let key = b.add_external_buffer("s", Some(ExternalBuffer::default()));
+        b.build(0, HashMap::from([("s".to_string(), key)]))
+    }
+
+    /// Queue updates directly, bypassing the garbage drain in `send_external_buffer`.
+    ///
+    /// This means that this is only adding messages not dropping any in the process.
+    fn push(front: &mut ResourceFrontend, key: ExternalBufferKey, n: usize) {
+        for _ in 0..n {
+            front
+                .external_sample_producer
+                .push(ExternalBufferUpdate {
+                    key,
+                    buffer: ExternalBuffer::default(),
+                })
+                .unwrap();
+        }
+    }
+
+    fn key(front: &ResourceFrontend) -> ExternalBufferKey {
+        front.external_buffer_key_lookup["s"]
+    }
+
+    // `slots()` is the number of items waiting in a queue.
+
+    #[test]
+    fn full_garbage_queue_defers_updates_instead_of_panicking() {
+        let (mut front, mut res) = build_resources();
+        let k = key(&front);
+
+        // The slot starts filled, so every swap returns one old buffer.
+        push(&mut front, k, QUEUE);
+        res.drain();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), QUEUE);
+
+        // Garbage queue is full: the next update must wait, not panic.
+        push(&mut front, k, 1);
+        res.drain();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), QUEUE);
+        assert_eq!(res.external_buffer_update_receiver.slots(), 1);
+
+        // Once the frontend frees garbage, the waiting update lands.
+        front.drain_garbage();
+        res.drain();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), 1);
+        assert_eq!(res.external_buffer_update_receiver.slots(), 0);
+    }
+
+    #[test]
+    fn sending_a_buffer_frees_returned_garbage_first() {
+        let (mut front, mut res) = build_resources();
+        let k = key(&front);
+
+        // Fill the garbage queue.
+        push(&mut front, k, QUEUE);
+        res.drain();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), QUEUE);
+
+        // The public send path empties it before queuing.
+        front
+            .send_external_buffer("s", ExternalBuffer::default())
+            .unwrap();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), 0);
+    }
+
+    #[test]
+    fn update_for_unknown_key_is_returned_as_garbage() {
+        let (mut front, mut res) = build_resources();
+        // The null key matches no slot, so the new buffer itself is garbage.
+        front
+            .external_sample_producer
+            .push(ExternalBufferUpdate {
+                key: ExternalBufferKey::default(),
+                buffer: ExternalBuffer::default(),
+            })
+            .unwrap();
+
+        res.drain();
+        assert_eq!(front.external_sample_garbage_receiver.slots(), 1);
     }
 }

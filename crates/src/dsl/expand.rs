@@ -1,9 +1,9 @@
-use crate::builder::ValidationError;
 use crate::dsl::{
     ir::*,
     pipeline::GraphPass,
     resolve::{port_for_instance, source_ports},
 };
+use crate::{builder::ValidationError, node_state::NodeState};
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
@@ -104,7 +104,13 @@ impl MacroExpansionPass {
                 format!("{}.{}", node.alias, i)
             };
 
-            let id_map = self.clone_body_into(graph, &ir_macro, &instance_alias, &resolved_params);
+            let id_map = self.clone_body_into(
+                graph,
+                &ir_macro,
+                &instance_alias,
+                &resolved_params,
+                node.state,
+            );
             let new_sink = id_map[&ir_macro.sink];
             new_sinks.push(new_sink);
 
@@ -272,6 +278,7 @@ impl MacroExpansionPass {
         ir_macro: &IRMacro,
         instance_alias: &str,
         resolved_params: &Object,
+        instance_state: Option<NodeState>,
     ) -> HashMap<NodeId, NodeId> {
         let mut id_map: HashMap<NodeId, NodeId> = HashMap::new();
 
@@ -290,6 +297,8 @@ impl MacroExpansionPass {
                 params,
                 node.count,
             );
+            // A keyword in the body overrides the instance's.
+            graph.get_node_mut(new_id).unwrap().state = node.state.or(instance_state);
             id_map.insert(node.id, new_id);
         }
 

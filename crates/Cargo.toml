@@ -2,13 +2,13 @@
 members = ["legato-macros", "cargo-legato"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 repository = "https://github.com/legato-dsp/legato"
 license = "AGPL-3.0"
 
 [workspace.dependencies]
-legato = { version = "0.2.1", path = ".", default-features = false }
+legato = { version = "0.3.0", path = ".", default-features = false }
 
 [package]
 name = "legato"
@@ -48,6 +48,7 @@ thiserror = "2"
 
 [dev-dependencies]
 legato-macros = { path = "legato-macros" }
+assert_no_alloc = { version = "1.1.2", features = ["warn_debug"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 rustfft = "6"
 proptest = "1"

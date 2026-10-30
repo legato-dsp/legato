@@ -172,7 +172,14 @@ impl AudioGraph {
             }
             None => return Err(GraphError::BadConnection),
         }
-        self.invalidate_topo_sort()?;
+        if let Err(err) = self.invalidate_topo_sort() {
+            // Roll back so a rejected edge leaves the graph as it was.
+            self.outgoing_edges[connection.source.node_key].shift_remove(&connection);
+            self.incoming_edges[connection.sink.node_key].shift_remove(&connection);
+            let restored = self.invalidate_topo_sort();
+            debug_assert!(restored.is_ok(), "graph was acyclic before this edge");
+            return Err(err);
+        }
         Ok(connection)
     }
 
@@ -612,7 +619,7 @@ mod test {
             })
             .unwrap();
 
-        let _ = graph.add_edge(Connection {
+        let back = Connection {
             source: ConnectionEntry {
                 node_key: b,
                 port_index: 0,
@@ -621,10 +628,15 @@ mod test {
                 node_key: a,
                 port_index: 0,
             },
-        });
+        };
 
-        let res = graph.invalidate_topo_sort();
-        assert_eq!(res, Err(GraphError::CycleDetected));
+        assert_eq!(graph.add_edge(back), Err(GraphError::CycleDetected));
+
+        // The rejected edge is rolled back and the graph still sorts.
+        assert!(!graph.incoming_connections(a).unwrap().contains(&back));
+        assert!(!graph.outgoing_connections(b).unwrap().contains(&back));
+        assert_is_valid_topo(&mut graph);
+        assert_eq!(graph.topo_sorted, vec![a, b]);
     }
 
     #[test]
@@ -649,6 +661,8 @@ mod test {
         });
 
         assert_eq!(res, Err(GraphError::CycleDetected));
+        assert!(graph.incoming_connections(a).unwrap().is_empty());
+        assert_eq!(graph.topo_sorted, vec![a]);
     }
 
     #[test]

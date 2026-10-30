@@ -27,6 +27,7 @@ impl HadamardMixer {
         Self {
             ports: PortBuilder::default()
                 .audio_in(chans)
+                .default_in()
                 .audio_out(chans)
                 .build(),
             chans,

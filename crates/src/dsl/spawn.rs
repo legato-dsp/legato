@@ -49,6 +49,7 @@ impl SpawnKNodesPass {
                     node.params.clone(),
                     1,
                 );
+                graph.get_node_mut(new_id).unwrap().state = node.state;
                 instances.push(new_id);
             }
             expansion.insert(*orig_id, instances);

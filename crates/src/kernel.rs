@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     dsl::ir::{DSLParams, IRMacro, Object},
     kernel_plan::{KernelPlan, PlanSrc, PortOracle, ValueSlot, resolve_plan},
-    msg::NodeMessage,
+    msg::{NodeMessage, ParamPayload, RtValue},
     nodes::{
         audio::{
             allpass::Allpass,
@@ -97,6 +97,10 @@ impl PerSampleNode for KernelNode {
     fn handle_msg(&mut self, msg: NodeMessage) {
         dispatch!(self, inner => PerSampleNode::handle_msg(inner, msg))
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        dispatch!(self, inner => PerSampleNode::runtime_params(inner))
+    }
 }
 
 /// Build a node from kernels that process one sample at a time.
@@ -168,6 +172,14 @@ enum Src {
     Internal(ValueSlot),
 }
 
+/// A declared kernel param and the interior node params it sets.
+#[derive(Clone, Debug)]
+struct ParamRoute {
+    name: Box<str>,
+    /// `(index into nodes, node param name)` for each target.
+    targets: Box<[(u32, &'static str)]>,
+}
+
 /// Per-node indexing into the flat runtime tables, in execution order.
 #[derive(Clone, Copy, Debug)]
 struct NodeLayout {
@@ -209,6 +221,8 @@ pub struct KernelGraph {
     out_slots: Box<[ValueSlot]>,
     scratch_in: Box<[Option<f32>]>,
     ports: Ports,
+    /// Declared params, settable at runtime like codegen's setters.
+    param_routes: Box<[ParamRoute]>,
 }
 
 impl PerSampleNode for KernelGraph {
@@ -258,6 +272,35 @@ impl PerSampleNode for KernelGraph {
         for (out, &ValueSlot(slot)) in out_frame.iter_mut().zip(self.out_slots.iter()) {
             *out = self.values[slot as usize];
         }
+    }
+
+    /// Route a declared param to every interior node it feeds. Unknown names
+    /// and non-f32 values are ignored, matching generated kernels.
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        let NodeMessage::SetParam(payload) = msg else {
+            return;
+        };
+        let RtValue::F32(value) = payload.value else {
+            return;
+        };
+        let Some(route) = self
+            .param_routes
+            .iter()
+            .find(|r| *r.name == *payload.param_name)
+        else {
+            return;
+        };
+        for &(node, param_name) in &route.targets {
+            self.nodes[node as usize].handle_msg(NodeMessage::SetParam(ParamPayload {
+                param_name,
+                value: RtValue::F32(value),
+            }));
+        }
+    }
+
+    /// The kernel's declared params.
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(self.param_routes.iter().map(|r| &*r.name).collect())
     }
 }
 
@@ -345,6 +388,25 @@ impl KernelGraph {
             }
         }
 
+        // Param names are leaked for `ParamPayload`'s `&'static str`; bounded by
+        // the patch, as with `KernelPlan::ports`.
+        let param_routes = plan
+            .params
+            .iter()
+            .map(|param| ParamRoute {
+                name: param.name.as_str().into(),
+                targets: param
+                    .targets
+                    .iter()
+                    .filter_map(|t| {
+                        let node = plan.nodes.iter().position(|n| n.alias == t.node_alias)?;
+                        let name: &'static str = Box::leak(t.node_param.clone().into_boxed_str());
+                        Some((node as u32, name))
+                    })
+                    .collect(),
+            })
+            .collect();
+
         Ok(KernelGraph {
             nodes,
             layouts: layouts.into_boxed_slice(),
@@ -354,6 +416,7 @@ impl KernelGraph {
             out_slots: plan.output_slots.clone().into_boxed_slice(),
             scratch_in: vec![None; plan.max_node_inputs()].into_boxed_slice(),
             ports: plan.ports(),
+            param_routes,
         })
     }
 }

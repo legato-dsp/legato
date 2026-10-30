@@ -253,3 +253,44 @@ fn single_resource_spawned_twice_is_a_build_error() {
     );
     drop(tx);
 }
+
+#[test]
+fn handles_and_nodes_resolve_a_selection_to_the_same_paths() {
+    let src = r#"
+        patch voice {
+            user { knob, knob: knob2 }
+            audio { track_mixer: sum { tracks: 2, chans_per_track: 1 } }
+            knob >> sum[0]
+            knob2 >> sum[1]
+            { sum }
+        }
+        patches { voice * 3 }
+        audio { track_mixer: mix { tracks: 3, chans_per_track: 1 } }
+        voice(*) >> mix[0..3]
+        { mix }
+    "#;
+    for selection in [
+        "voice",
+        "voice(*).knob",
+        "voice(1..3)",
+        "voice.2.knob2",
+        "voice(0).knob",
+    ] {
+        let (_app, mut frontend) = build(src).unwrap();
+        // Only knobs export handles, so drop the mixers from the node side.
+        let nodes: Vec<String> = frontend
+            .select(selection)
+            .unwrap()
+            .into_iter()
+            .map(|(name, _)| name.to_string())
+            .filter(|name| name.contains("knob"))
+            .collect();
+        let handles: Vec<String> = frontend
+            .take_handles_of::<Knob>(selection)
+            .unwrap()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(nodes, handles, "{selection}");
+    }
+}

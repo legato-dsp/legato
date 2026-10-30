@@ -75,6 +75,10 @@ impl PerSampleNode for Allpass {
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
+    }
 }
 
 impl Node for Allpass {
@@ -133,6 +137,10 @@ impl Node for Allpass {
                 _ => (),
             }
         }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["feedback", "delay_length"])
     }
 }
 

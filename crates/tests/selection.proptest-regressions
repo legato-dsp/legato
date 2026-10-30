@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc cc733777ed969726d4637b2f040ee1ccd127bd0a4ee34cda53b1e46970c6131e # shrinks to trees = [Tree { name: "op10", count: 1, children: [Tree { name: "op", count: 1, children: [] }] }], segs = [("op10", Index(1), false)]
+cc 5433f0c912b0164bf8842467c6d7ff9c1e461789ff56b6fbfb27b2e58ab8cb1c # shrinks to trees = [Tree { name: "op1", count: 1, children: [Tree { name: "op", count: 1, children: [] }] }], segs = [("op", Single, false)]

@@ -1455,7 +1455,7 @@ mod build_dsl_automap {
             .expect("graph should build");
 
         let svf_key = *frontend
-            .clone_registry()
+            .node_registry()
             .get("svf")
             .expect("svf in registry");
         let mut sink_ports: Vec<usize> = app
@@ -1537,7 +1537,7 @@ mod build_dsl_automap {
         let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
-        let registry = frontend.clone_registry();
+        let registry = frontend.node_registry();
 
         // Narrow-bare fan: the 5 mono voices each land on their own mixer input
         // (ports 0..5), never summed onto one port.
@@ -1616,7 +1616,7 @@ mod build_dsl_automap {
         let (app, frontend) = LegatoBuilder::<Unconfigured>::new(config())
             .build_dsl(graph)
             .expect("graph should build");
-        let registry = frontend.clone_registry();
+        let registry = frontend.node_registry();
 
         // Strided sink placement: each voice owns a stereo track. Voice i's grain
         // channel 0 -> mixer port 2i, channel 1 -> port 2i+1, so the six inputs

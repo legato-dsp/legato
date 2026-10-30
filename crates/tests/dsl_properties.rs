@@ -70,6 +70,7 @@ fn build_decls(specs: Vec<DeclSpec>, macros: &[AstMacro], prefix: &str) -> Vec<N
                 alias: Some(format!("{prefix}{i}")),
                 params: Some(params),
                 count,
+                state: None,
             },
         )
         .collect();
@@ -131,6 +132,7 @@ fn leaf(alias: &str, count: u32) -> NodeDeclaration {
         alias: Some(alias.to_string()),
         params: Some(Object::new()),
         count,
+        state: None,
     }
 }
 
@@ -360,6 +362,7 @@ fn build_transparency(
         alias: Some(INSTANCE.to_string()),
         params: Some(overrides),
         count: 1,
+        state: None,
     });
     let mut patched_conns: Vec<Connection> = vports
         .iter()
@@ -477,6 +480,7 @@ fn build_multiplicity(
         alias: Some(alias.to_string()),
         params: Some(params.clone()),
         count,
+        state: None,
     };
 
     let clamped = |sel: Option<NodeSelector>| {
