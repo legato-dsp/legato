@@ -20,7 +20,7 @@ use crate::{
         buffer::{AudioSampleError, ExternalBuffer},
         params::{ParamError, ParamKey},
     },
-    runtime::{NodeKey, Runtime, RuntimeFrontend},
+    runtime::{NodeKey, NodeParams, Runtime, RuntimeFrontend},
 };
 
 pub mod batch;
@@ -187,6 +187,19 @@ pub enum FrontendError {
     NodeNotFound(String),
     #[error("param '{0}': {1}")]
     Param(String, ParamError),
+    /// The node's `handle_msg` doesn't take this param, so it would ignore it.
+    #[error("'{node}' has no runtime param '{param}' (accepts: {})", list_or_none(.accepted))]
+    UnknownNodeParam {
+        node: String,
+        param: String,
+        accepted: Vec<String>,
+    },
+    /// A patched input of the same name overrides the param, so setting it does nothing.
+    #[error(
+        "'{node}.{param}' is driven by its patched input, so setting it has no effect; \
+         change what feeds it instead"
+    )]
+    PatchedParam { node: String, param: String },
     /// The message queue to the audio thread is full; the message was not sent.
     #[error("the message queue to the audio thread is full")]
     QueueFull,
@@ -203,12 +216,21 @@ pub enum FrontendError {
     },
 }
 
+fn list_or_none(names: &[String]) -> String {
+    if names.is_empty() {
+        "none".into()
+    } else {
+        names.join(", ")
+    }
+}
+
 pub struct LegatoFrontend {
     runtime_frontend: RuntimeFrontend,
     producer: rtrb::Producer<LegatoMsg>,
     node_registry: HashMap<String, NodeKey>,
     /// Default (input, output) counts of nodes that can't be bypassed.
     unbypassable: HashMap<NodeKey, (usize, usize)>,
+    node_params: HashMap<NodeKey, NodeParams>,
     /// Batches the audio thread has applied, waiting to be freed here.
     batch_returns: rtrb::Consumer<Batch>,
     handles: HandleStore,
@@ -220,7 +242,8 @@ impl LegatoFrontend {
         producer: rtrb::Producer<LegatoMsg>,
         node_registry: HashMap<String, NodeKey>,
         unbypassable: HashMap<NodeKey, (usize, usize)>,
-            batch_returns: rtrb::Consumer<Batch>,
+        node_params: HashMap<NodeKey, NodeParams>,
+        batch_returns: rtrb::Consumer<Batch>,
         handles: HandleStore,
     ) -> Self {
         Self {
@@ -228,6 +251,7 @@ impl LegatoFrontend {
             producer,
             node_registry,
             unbypassable,
+            node_params,
             batch_returns,
             handles,
         }
@@ -274,6 +298,37 @@ impl LegatoFrontend {
                 inputs,
                 outputs,
             });
+        }
+        Ok(key)
+    }
+
+    /// The node's key, if it would act on `msg`: a `SetParam` must name a
+    /// param it accepts that isn't driven by a patched input.
+    pub(crate) fn checked_node_msg(
+        &self,
+        node_name: &str,
+        msg: &NodeMessage,
+    ) -> Result<NodeKey, FrontendError> {
+        let key = self.node_key(node_name)?;
+        if let NodeMessage::SetParam(payload) = msg
+            && let Some(params) = self.node_params.get(&key)
+        {
+            let param = payload.param_name;
+            if let Some(accepted) = &params.accepted
+                && !accepted.iter().any(|a| a == param)
+            {
+                return Err(FrontendError::UnknownNodeParam {
+                    node: node_name.to_string(),
+                    param: param.to_string(),
+                    accepted: accepted.clone(),
+                });
+            }
+            if params.patched.iter().any(|p| p == param) {
+                return Err(FrontendError::PatchedParam {
+                    node: node_name.to_string(),
+                    param: param.to_string(),
+                });
+            }
         }
         Ok(key)
     }
@@ -379,7 +434,7 @@ impl LegatoFrontend {
         node_name: &str,
         msg: NodeMessage,
     ) -> Result<(), FrontendError> {
-        let key = self.node_key(node_name)?;
+        let key = self.checked_node_msg(node_name, &msg)?;
         self.send_msg(LegatoMsg::NodeMessage(key, msg))
     }
 

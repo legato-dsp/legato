@@ -160,6 +160,10 @@ impl Node for Adsr {
             }
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["attack", "decay", "sustain", "release"])
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }

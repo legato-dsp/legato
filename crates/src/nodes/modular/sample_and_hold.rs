@@ -131,6 +131,10 @@ impl PerSampleNode for SampleAndHold {
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
+    }
 }
 
 impl Node for SampleAndHold {
@@ -153,6 +157,10 @@ impl Node for SampleAndHold {
             // Process handles the updating of any state, set minimum as 1 sample
             self.hold_time_in_samples = incoming.max(1);
         }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["hold_time"])
     }
     fn ports(&self) -> &Ports {
         &self.ports

@@ -872,6 +872,10 @@ impl legato::persample::PerSampleNode for Modtap4 {
             }
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["depth", "feedback", "rate"])
+    }
 }
 
 impl legato::spec::NodeDefinition for Modtap4 {

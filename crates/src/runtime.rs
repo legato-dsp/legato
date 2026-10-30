@@ -85,6 +85,30 @@ impl Runtime {
         self.executor.prepare(block_size, fade_len);
     }
 
+    /// What each node accepts in a `SetParam`, read once for the frontend.
+    pub fn node_params(&self) -> HashMap<NodeKey, NodeParams> {
+        self.executor
+            .graph
+            .iter()
+            .map(|(key, node)| {
+                let ports = node.get_node().ports();
+                let patched = self
+                    .executor
+                    .graph
+                    .incoming_connections(key)
+                    .into_iter()
+                    .flatten()
+                    .map(|c| ports.ports_in[c.sink.port_index].name.to_string())
+                    .collect();
+                let accepted = node
+                    .get_node()
+                    .runtime_params()
+                    .map(|names| names.into_iter().map(String::from).collect());
+                (key, NodeParams { accepted, patched })
+            })
+            .collect()
+    }
+
     /// Nodes that can't be bypassed, with their default (input, output) counts.
     pub fn unbypassable_nodes(&self) -> HashMap<NodeKey, (usize, usize)> {
         self.executor
@@ -200,6 +224,15 @@ impl Debug for Runtime {
             .entry(&"sink_key", self.executor.sink())
             .finish()
     }
+}
+
+/// A node's runtime params, as the frontend checks them.
+#[derive(Debug, Clone, Default)]
+pub struct NodeParams {
+    /// Names `handle_msg` accepts; `None` if the node skips the check.
+    pub accepted: Option<Vec<String>>,
+    /// Inputs with a connection, which override a param of the same name.
+    pub patched: Vec<String>,
 }
 
 /// The main frontend that you can use to send commands to the realtime

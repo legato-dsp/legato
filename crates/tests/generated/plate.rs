@@ -1882,6 +1882,19 @@ impl legato::persample::PerSampleNode for Plate {
             }
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec![
+            "bandwidth_a",
+            "damping",
+            "decay",
+            "dry",
+            "mod_range_l",
+            "mod_range_r",
+            "predelay",
+            "wet",
+        ])
+    }
 }
 
 impl legato::spec::NodeDefinition for Plate {

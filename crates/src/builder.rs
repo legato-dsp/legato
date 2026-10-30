@@ -573,6 +573,7 @@ where
         runtime.prepare();
 
         let unbypassable = runtime.unbypassable_nodes();
+        let node_params = runtime.node_params();
 
         for (name, key, state) in self.initial_states.drain(..) {
             if !runtime.set_initial_state(key, state) {
@@ -605,6 +606,7 @@ where
             producer,
             self.working_name_lookup,
             unbypassable,
+            node_params,
             return_consumer,
             handles,
         );

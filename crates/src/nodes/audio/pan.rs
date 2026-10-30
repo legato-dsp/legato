@@ -56,6 +56,10 @@ impl Node for Pan {
             self.pan = val.clamp(0.0, 1.0);
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["pan"])
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -77,6 +81,10 @@ impl PerSampleNode for Pan {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
     }
 }
 

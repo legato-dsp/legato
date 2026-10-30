@@ -22,6 +22,13 @@ pub trait Node {
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]);
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}
+    /// The param names [`Node::handle_msg`] accepts in a
+    /// [`NodeMessage::SetParam`]. Read once on the control thread, so the
+    /// frontend rejects a misspelled name instead of the node ignoring it.
+    /// The default accepts none; `None` skips the check.
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(Vec::new())
+    }
     // Get the port information for your node. This should not change after contruction.
     fn ports(&self) -> &Ports;
 }

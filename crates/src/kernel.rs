@@ -97,6 +97,10 @@ impl PerSampleNode for KernelNode {
     fn handle_msg(&mut self, msg: NodeMessage) {
         dispatch!(self, inner => PerSampleNode::handle_msg(inner, msg))
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        dispatch!(self, inner => PerSampleNode::runtime_params(inner))
+    }
 }
 
 /// Build a node from kernels that process one sample at a time.
@@ -292,6 +296,11 @@ impl PerSampleNode for KernelGraph {
                 value: RtValue::F32(value),
             }));
         }
+    }
+
+    /// The kernel's declared params.
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(self.param_routes.iter().map(|r| &*r.name).collect())
     }
 }
 

@@ -178,6 +178,10 @@ impl PerSampleNode for Saw {
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
+    }
 }
 
 impl Node for Saw {
@@ -195,6 +199,10 @@ impl Node for Saw {
         {
             self.freq = val;
         }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["freq"])
     }
 
     fn ports(&self) -> &Ports {

@@ -77,7 +77,7 @@ impl<'a> BatchBuilder<'a> {
     }
 
     pub fn node_msg(&mut self, node: &str, msg: NodeMessage) -> Result<&mut Self, FrontendError> {
-        let key = self.frontend.node_key(node)?;
+        let key = self.frontend.checked_node_msg(node, &msg)?;
         self.msgs.push(LegatoMsg::NodeMessage(key, msg));
         Ok(self)
     }

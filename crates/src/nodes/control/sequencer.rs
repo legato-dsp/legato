@@ -123,6 +123,10 @@ impl Node for StepSequencer {
         }
     }
 
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["num_steps"])
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

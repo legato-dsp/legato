@@ -23,6 +23,10 @@ pub trait PerSampleNode: Send {
     /// nodes keep their "fall back to the internal param" behavior.
     fn tick(&mut self, in_frame: &[Option<f32>], out_frame: &mut [f32]);
     fn handle_msg(&mut self, _msg: NodeMessage) {}
+    /// See [`crate::node::Node::runtime_params`].
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(Vec::new())
+    }
 }
 
 impl<T: PerSampleNode + ?Sized> PerSampleNode for Box<T> {
@@ -34,6 +38,9 @@ impl<T: PerSampleNode + ?Sized> PerSampleNode for Box<T> {
     }
     fn handle_msg(&mut self, msg: NodeMessage) {
         (**self).handle_msg(msg)
+    }
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        (**self).runtime_params()
     }
 }
 
@@ -114,6 +121,9 @@ impl<T: PerSampleNode + Clone + 'static> Node for PerSample<T> {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         self.inner.handle_msg(msg);
+    }
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        self.inner.runtime_params()
     }
 }
 

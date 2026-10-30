@@ -316,6 +316,10 @@ impl PerSampleNode for Svf {
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
+    }
 }
 
 impl Node for Svf {
@@ -347,6 +351,10 @@ impl Node for Svf {
             }
             self.set(self.filter_type, self.sample_rate, cutoff, q, gain);
         }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["cutoff", "q", "gain"])
     }
 }
 

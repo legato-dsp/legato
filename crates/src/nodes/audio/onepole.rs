@@ -63,6 +63,10 @@ impl Node for OnePole {
         }
     }
 
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["a"])
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -85,6 +89,10 @@ impl PerSampleNode for OnePole {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(self, msg);
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Node::runtime_params(self)
     }
 }
 

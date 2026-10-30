@@ -266,6 +266,10 @@ impl PerSampleNode for Plate480 {
             }
         }
     }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec!["decay", "damping", "bandwidth", "mix"])
+    }
 }
 
 impl NodeDefinition for Plate480 {
