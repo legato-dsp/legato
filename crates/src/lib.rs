@@ -187,16 +187,6 @@ impl Debug for LegatoApp {
 pub enum FrontendError {
     #[error("no node matches '{0}'")]
     NodeNotFound(String),
-    /// One node was asked for, but the selection matches several.
-    #[error(
-        "'{selection}' matches {} nodes ({}); use a batch to change several",
-        matches.len(),
-        matches.join(", ")
-    )]
-    Ambiguous {
-        selection: String,
-        matches: Vec<String>,
-    },
     #[error(transparent)]
     InvalidSelection(#[from] SelectionError),
     #[error("param '{0}': {1}")]
@@ -271,13 +261,14 @@ impl LegatoFrontend {
         }
     }
 
-    /// Start a [`Batch`]: messages that all land in the same block.
-    pub fn batch(&self) -> BatchBuilder<'_> {
+    /// Start a [`MessageBatch`] by hand; [`Self::batch`] and
+    /// [`Self::build_batch`] cover most uses.
+    pub fn batch_builder(&self) -> BatchBuilder<'_> {
         BatchBuilder::new(self)
     }
 
-    /// Build a [`Batch`] in `f`. Any error aborts it, so a failed build never
-    /// yields a partial batch.
+    /// Build a [`MessageBatch`] in `f` to keep and send with [`Self::send_batch`].
+    /// Any error aborts it, so a failed build never yields a partial batch.
     pub fn build_batch<E>(
         &self,
         f: impl FnOnce(&mut BatchBuilder<'_>) -> Result<(), E>,
@@ -285,14 +276,14 @@ impl LegatoFrontend {
     where
         E: From<FrontendError>,
     {
-        let mut builder = self.batch();
+        let mut builder = self.batch_builder();
         f(&mut builder)?;
         Ok(builder.finish())
     }
 
     /// Build a batch in `f` and send it, for one-off changes. Nothing is sent
     /// if `f` fails. Build presets once with [`Self::build_batch`] instead.
-    pub fn send_with<E>(
+    pub fn batch<E>(
         &mut self,
         f: impl FnOnce(&mut BatchBuilder<'_>) -> Result<(), E>,
     ) -> Result<(), E>
@@ -300,12 +291,12 @@ impl LegatoFrontend {
         E: From<FrontendError>,
     {
         let batch = self.build_batch(f)?;
-        Ok(self.send(&batch)?)
+        Ok(self.send_batch(&batch)?)
     }
 
     /// Send a batch. It is shared, not copied, so a preset can be sent again
     /// without allocating.
-    pub fn send(&mut self, batch: &MessageBatch) -> Result<(), FrontendError> {
+    pub fn send_batch(&mut self, batch: &MessageBatch) -> Result<(), FrontendError> {
         self.drain_batches();
         self.send_msg(LegatoMsg::Batch(batch.clone()))
     }
@@ -329,18 +320,6 @@ impl LegatoFrontend {
             .into_iter()
             .map(|name| (name, self.node_registry[name]))
             .collect())
-    }
-
-    /// The one node `selection` names.
-    pub(crate) fn select_one(&self, selection: &str) -> Result<(&str, NodeKey), FrontendError> {
-        let nodes = self.select(selection)?;
-        match nodes.as_slice() {
-            [one] => Ok(*one),
-            _ => Err(FrontendError::Ambiguous {
-                selection: selection.to_string(),
-                matches: nodes.iter().map(|(name, _)| name.to_string()).collect(),
-            }),
-        }
     }
 
     /// Whether `node` can take `state`.
@@ -489,21 +468,26 @@ impl LegatoFrontend {
         self.runtime_frontend.get_param_key(param_name)
     }
 
-    pub fn send_node_msg(
-        &mut self,
-        node_name: &str,
-        msg: NodeMessage,
-    ) -> Result<(), FrontendError> {
-        let (node, key) = self.select_one(node_name)?;
-        self.check_node_msg(node, key, &msg)?;
-        self.send_msg(LegatoMsg::NodeMessage(key, msg))
+    /// Send `msg` to every node `nodes` selects. Several go as one batch, so
+    /// they land in the same block.
+    pub fn send_node_msg(&mut self, nodes: &str, msg: NodeMessage) -> Result<(), FrontendError> {
+        let selected = self.select(nodes)?;
+        if let [(node, key)] = selected[..] {
+            self.check_node_msg(node, key, &msg)?;
+            return self.send_msg(LegatoMsg::NodeMessage(key, msg));
+        }
+        self.batch(|b| b.node_msg(nodes, msg).map(|_| ()))
     }
 
-    /// Fade a node into `state`, starting on the next block.
-    pub fn set_state(&mut self, node_name: &str, state: NodeState) -> Result<(), FrontendError> {
-        let (node, key) = self.select_one(node_name)?;
-        self.check_state(node, key, state)?;
-        self.send_msg(LegatoMsg::SetState(key, state))
+    /// Fade every node `nodes` selects into `state`, starting on the next
+    /// block. Several go as one batch, so they land in the same block.
+    pub fn set_state(&mut self, nodes: &str, state: NodeState) -> Result<(), FrontendError> {
+        let selected = self.select(nodes)?;
+        if let [(node, key)] = selected[..] {
+            self.check_state(node, key, state)?;
+            return self.send_msg(LegatoMsg::SetState(key, state));
+        }
+        self.batch(|b| b.set_state(nodes, state).map(|_| ()))
     }
 
     /// Send a message to the LegatoRuntime

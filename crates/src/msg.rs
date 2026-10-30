@@ -2,7 +2,9 @@
 //! These should not require allocation, as we don't want to
 //! affect realtime safety when something is dropped.
 
-use crate::{batch::MessageBatch, node_state::NodeState, resources::params::ParamKey, runtime::NodeKey};
+use crate::{
+    batch::MessageBatch, node_state::NodeState, resources::params::ParamKey, runtime::NodeKey,
+};
 
 /// A subset of the Values used in the AST that are realtime safe
 #[derive(Clone, Debug, PartialEq)]

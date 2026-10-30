@@ -159,11 +159,11 @@ fn batches_are_freed_on_the_frontend() {
     // only reference; freeing it on the audio thread would count. 1100 sends
     // cycle the 512-slot return ring twice.
     for i in 0..1100 {
-        let mut batch = frontend.batch();
+        let mut batch = frontend.batch_builder();
         batch.set_state("svf", [Muted, Active][i % 2]).unwrap();
         batch.set_param("cut", 100.0 + i as f32).unwrap();
         let batch = batch.finish();
-        frontend.send(&batch).unwrap();
+        frontend.send_batch(&batch).unwrap();
         drop(batch);
         assert_eq!(render_allocs(&mut app), 0, "batch {i}");
     }
@@ -173,14 +173,18 @@ fn batches_are_freed_on_the_frontend() {
 #[test]
 fn resending_a_preset_does_not_allocate() {
     let (mut app, mut frontend) = build(SVF);
-    let mut preset = frontend.batch();
+    let mut preset = frontend.batch_builder();
     preset.bypass("svf").unwrap();
     preset.set_param("cut", 400.0).unwrap();
     let preset = preset.finish();
 
     // Sending shares the preset, and the returns it frees are only refcounts.
     for i in 0..600 {
-        assert_eq!(allocs_in(|| frontend.send(&preset).unwrap()), 0, "send {i}");
+        assert_eq!(
+            allocs_in(|| frontend.send_batch(&preset).unwrap()),
+            0,
+            "send {i}"
+        );
         assert_eq!(render_allocs(&mut app), 0, "block {i}");
     }
 }

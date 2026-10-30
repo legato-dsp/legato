@@ -6,6 +6,7 @@ use legato::{
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
     dsl::ir::NodeSelector,
+    msg::{NodeMessage, ParamPayload, RtValue},
     node_state::NodeState::{self, *},
     select::Selection,
 };
@@ -189,7 +190,7 @@ fn changed(
 ) -> Vec<(String, NodeState)> {
     let (mut app, mut frontend) = build();
     let batch = f(&frontend);
-    frontend.send(&batch).unwrap();
+    frontend.send_batch(&batch).unwrap();
     app.next_block();
     let mut out: Vec<(String, NodeState)> = frontend
         .node_registry()
@@ -208,7 +209,7 @@ fn named(pairs: &[(&str, NodeState)]) -> Vec<(String, NodeState)> {
 #[test]
 fn a_batch_applies_to_every_selected_node() {
     let got = changed(|fe| {
-        let mut b = fe.batch();
+        let mut b = fe.batch_builder();
         b.mute("voice(*).osc").unwrap();
         b.bypass("voice(1).amp").unwrap();
         b.suspend("o.v").unwrap();
@@ -230,7 +231,7 @@ fn a_batch_applies_to_every_selected_node() {
 #[test]
 fn a_bare_instance_name_selects_everything_under_it() {
     let got = changed(|fe| {
-        let mut b = fe.batch();
+        let mut b = fe.batch_builder();
         b.mute("voice(0..2)").unwrap();
         b.finish()
     });
@@ -248,7 +249,7 @@ fn a_bare_instance_name_selects_everything_under_it() {
 #[test]
 fn a_failing_node_adds_nothing_from_that_call() {
     let (_app, frontend) = build();
-    let mut b = frontend.batch();
+    let mut b = frontend.batch_builder();
     // Every `osc` is a sine, which can't be bypassed, so the whole call fails.
     assert_eq!(
         b.bypass("voice(*)").err(),
@@ -261,16 +262,64 @@ fn a_failing_node_adds_nothing_from_that_call() {
     assert!(b.finish().messages().is_empty());
 }
 
+/// The state of every node after one block, by name.
+fn states_after_a_block(
+    app: &mut LegatoApp,
+    frontend: &LegatoFrontend,
+) -> Vec<(String, NodeState)> {
+    app.next_block();
+    let mut out: Vec<(String, NodeState)> = frontend
+        .node_registry()
+        .into_iter()
+        .map(|(name, key)| (name, app.node_state(key).unwrap()))
+        .filter(|(_, s)| *s != Active)
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
 #[test]
-fn single_node_calls_need_exactly_one_match() {
-    let (_app, mut frontend) = build();
-    let err = frontend.set_state("voice(*).osc", Muted).unwrap_err();
+fn set_state_on_a_selection_changes_every_match_in_one_block() {
+    let (mut app, mut frontend) = build();
+    assert_eq!(frontend.set_state("voice(*).osc", Muted), Ok(()));
+    assert_eq!(frontend.set_state("lone.amp", Bypassed), Ok(()));
     assert_eq!(
-        err.to_string(),
-        "'voice(*).osc' matches 3 nodes (voice.0.osc, voice.1.osc, voice.2.osc); \
-         use a batch to change several"
+        states_after_a_block(&mut app, &frontend),
+        named(&[
+            ("lone.amp", Bypassed),
+            ("voice.0.osc", Muted),
+            ("voice.1.osc", Muted),
+            ("voice.2.osc", Muted),
+        ])
     );
-    assert_eq!(frontend.set_state("voice(2).osc", Muted), Ok(()));
+}
+
+#[test]
+fn send_node_msg_on_a_selection_reaches_every_match() {
+    let (_app, mut frontend) = build();
+    let set = |val| {
+        NodeMessage::SetParam(ParamPayload {
+            param_name: "val",
+            value: RtValue::F32(val),
+        })
+    };
+    assert_eq!(frontend.send_node_msg("voice(*).amp", set(0.1)), Ok(()));
+    // Checked on every match: `osc` is a sine, which has no `val`.
+    assert!(matches!(
+        frontend.send_node_msg("voice(0)", set(0.1)),
+        Err(FrontendError::UnknownNodeParam { .. })
+    ));
+}
+
+#[test]
+fn a_selection_fails_whole_or_not_at_all() {
+    let (mut app, mut frontend) = build();
+    // Every `osc` is a sine, which can't be bypassed, so no `amp` is either.
+    assert!(matches!(
+        frontend.set_state("voice(*)", Bypassed),
+        Err(FrontendError::CannotBypass { .. })
+    ));
+    assert_eq!(states_after_a_block(&mut app, &frontend), named(&[]));
     assert_eq!(
         frontend.set_state("voice(7)", Muted),
         Err(FrontendError::NodeNotFound("voice(7)".into()))

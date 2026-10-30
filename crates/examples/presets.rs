@@ -105,7 +105,8 @@ impl Preset {
     fn apply(&self, frontend: &LegatoFrontend) -> Result<MessageBatch, FrontendError> {
         frontend.build_batch(|b| {
             voice_states(b, self.voices)?;
-            // Suspended voices take the params too, so they match when they return.
+            // Suspended voices take the params too, so they match when they return,
+            // although phase for instance would not match as this is only updated internally.
             for (param, val) in ["ratio", "index", "feedback"].into_iter().zip(self.fm) {
                 b.set("voice(*).op", param, val)?;
             }
@@ -157,7 +158,7 @@ fn make_host() -> Host {
 
 /// What the frontend last sent; the audio thread owns the real states.
 struct UiState {
-    /// `None` until a preset is sent: the patch plays as declared.
+    /// `None` until a preset is sent, then the patch plays as declared.
     preset: Option<usize>,
     voices: usize,
     effects: [bool; 3],
@@ -277,7 +278,7 @@ fn main() -> std::io::Result<()> {
             'q' => break,
             '1'..='4' => {
                 let i = c as usize - '1' as usize;
-                frontend.send(&batches[i]).map(|()| {
+                frontend.send_batch(&batches[i]).map(|()| {
                     ui.preset = Some(i);
                     ui.voices = PRESETS[i].voices;
                     ui.effects = PRESETS[i].effects;
@@ -287,7 +288,7 @@ fn main() -> std::io::Result<()> {
             'v' => {
                 let voices = ui.voices % VOICES + 1;
                 frontend
-                    .send_with(|b| voice_states(b, voices))
+                    .batch(|b| voice_states(b, voices))
                     .map(|()| ui.voices = voices)
             }
             _ => match EFFECTS.iter().position(|e| e.1 == c) {

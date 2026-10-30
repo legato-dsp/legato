@@ -54,7 +54,7 @@ fn a_misspelled_param_is_rejected_with_the_names_the_node_takes() {
         "'svf' has no runtime param 'Q' (accepts: cutoff, q, gain)"
     );
     // The batch builder applies the same check.
-    assert_eq!(fe.batch().set("svf", "Q", 1.0).err(), Some(err));
+    assert_eq!(fe.batch_builder().set("svf", "Q", 1.0).err(), Some(err));
     assert_eq!(fe.send_node_msg("svf", set("q")), Ok(()));
 }
 
@@ -71,8 +71,12 @@ fn a_node_without_runtime_params_rejects_every_name() {
 
 #[test]
 fn a_param_driven_by_a_patched_input_is_rejected() {
-    let mut fe = frontend(SRC);
-    let err = fe.batch().set("svf", "cutoff", 500.0).err().unwrap();
+    let fe = frontend(SRC);
+    let err = fe
+        .batch_builder()
+        .set("svf", "cutoff", 500.0)
+        .err()
+        .unwrap();
     assert_eq!(
         err,
         FrontendError::PatchedParam {
@@ -86,7 +90,7 @@ fn a_param_driven_by_a_patched_input_is_rejected() {
          change what feeds it instead"
     );
     // Unpatched params of the same node are still settable.
-    assert!(fe.batch().set("svf", "q", 0.5).is_ok());
+    assert!(fe.batch_builder().set("svf", "q", 0.5).is_ok());
 }
 
 #[test]

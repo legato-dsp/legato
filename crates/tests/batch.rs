@@ -36,12 +36,12 @@ fn state(app: &LegatoApp, frontend: &LegatoFrontend, name: &str) -> NodeState {
 #[test]
 fn a_batch_lands_whole_in_the_next_block() {
     let (mut app, mut frontend) = build();
-    let mut batch = frontend.batch();
+    let mut batch = frontend.batch_builder();
     batch.set_param("cut", 500.0).unwrap();
     batch.bypass("svf").unwrap();
     batch.mute("saw").unwrap();
     let batch = batch.finish();
-    frontend.send(&batch).unwrap();
+    frontend.send_batch(&batch).unwrap();
 
     // Nothing is applied until the audio thread takes the batch, not even the
     // shared param, which `set_param` would write immediately.
@@ -57,7 +57,7 @@ fn a_batch_lands_whole_in_the_next_block() {
 #[test]
 fn shared_params_are_clamped_when_the_batch_is_built() {
     let (mut app, mut frontend) = build();
-    let mut batch = frontend.batch();
+    let mut batch = frontend.batch_builder();
     batch.set_param("cut", 1e9).unwrap();
     assert_eq!(
         batch.finish().messages(),
@@ -66,10 +66,10 @@ fn shared_params_are_clamped_when_the_batch_is_built() {
             20000.0
         )]
     );
-    let mut batch = frontend.batch();
+    let mut batch = frontend.batch_builder();
     batch.set_param("cut", 1e9).unwrap();
     let batch = batch.finish();
-    frontend.send(&batch).unwrap();
+    frontend.send_batch(&batch).unwrap();
     app.next_block();
     assert_eq!(frontend.get_param("cut"), Ok(20000.0));
 }
@@ -77,7 +77,7 @@ fn shared_params_are_clamped_when_the_batch_is_built() {
 #[test]
 fn bad_entries_are_rejected_when_the_batch_is_built() {
     let (_app, frontend) = build();
-    let mut batch = frontend.batch();
+    let mut batch = frontend.batch_builder();
     assert_eq!(
         batch.mute("nope").err(),
         Some(FrontendError::NodeNotFound("nope".into()))
@@ -104,7 +104,7 @@ fn bad_entries_are_rejected_when_the_batch_is_built() {
 #[test]
 fn a_full_return_ring_holds_back_the_batch_and_everything_after_it() {
     let (mut app, mut frontend) = build();
-    let mut noop = frontend.batch();
+    let mut noop = frontend.batch_builder();
     noop.activate("svf").unwrap();
     let noop = noop.finish();
 
@@ -114,7 +114,7 @@ fn a_full_return_ring_holds_back_the_batch_and_everything_after_it() {
     }
     app.next_block();
 
-    let mut mute = frontend.batch();
+    let mut mute = frontend.batch_builder();
     mute.mute("svf").unwrap();
     frontend.send_msg(LegatoMsg::Batch(mute.finish())).unwrap();
     frontend.set_state("saw", Suspended).unwrap();
@@ -145,7 +145,7 @@ proptest! {
         let (mut batched, mut batched_fe) = build();
         let (mut single, mut single_fe) = build();
 
-        let mut batch = batched_fe.batch();
+        let mut batch = batched_fe.batch_builder();
         for &(on_svf, state, cut) in &changes {
             let node = if on_svf { "svf" } else { "saw" };
             // `saw` can't be bypassed; both sides skip it the same way.
@@ -157,7 +157,7 @@ proptest! {
             single_fe.set_param("cut", cut).unwrap();
         }
         let batch = batch.finish();
-        batched_fe.send(&batch).unwrap();
+        batched_fe.send_batch(&batch).unwrap();
 
         for _ in 0..blocks {
             let a = batched.next_block().channels[0].to_vec();
@@ -173,7 +173,7 @@ proptest! {
 #[test]
 fn build_batch_matches_the_builder() {
     let (_app, frontend) = build();
-    let mut builder = frontend.batch();
+    let mut builder = frontend.batch_builder();
     builder.mute("saw").unwrap().bypass("svf").unwrap();
     builder.set_param("cut", 500.0).unwrap();
 
@@ -191,7 +191,7 @@ fn build_batch_matches_the_builder() {
 fn a_failing_closure_sends_nothing() {
     let (mut app, mut frontend) = build();
     // The mute succeeds before the bypass fails; neither is sent.
-    let err = frontend.send_with(|b| {
+    let err = frontend.batch(|b| {
         b.mute("svf")?;
         b.bypass("saw")?;
         Ok(())
@@ -201,7 +201,7 @@ fn a_failing_closure_sends_nothing() {
     assert_eq!(state(&app, &frontend, "svf"), Active);
 
     frontend
-        .send_with(|b| {
+        .batch(|b| {
             b.mute("svf")?;
             Ok::<_, FrontendError>(())
         })
@@ -225,7 +225,7 @@ fn closures_can_use_the_callers_error_type() {
 
     let (mut app, mut frontend) = build();
     let loud = true;
-    let result = frontend.send_with(|b| {
+    let result = frontend.batch(|b| {
         b.mute("svf")?;
         if loud {
             return Err(AppError::TooLoud);
@@ -234,7 +234,7 @@ fn closures_can_use_the_callers_error_type() {
     });
     assert_eq!(result, Err(AppError::TooLoud));
     assert_eq!(
-        frontend.send_with::<AppError>(|b| {
+        frontend.batch::<AppError>(|b| {
             b.mute("nope")?;
             Ok(())
         }),

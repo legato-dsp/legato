@@ -30,7 +30,7 @@ impl MessageBatch {
     }
 }
 
-/// Builds a [`Batch`], checking names, bypasses and params on the control
+/// Builds a [`MessageBatch`], checking names, bypasses and params on the control
 /// thread. Messages apply in order, so the last state set for a node wins.
 pub struct BatchBuilder<'a> {
     frontend: &'a LegatoFrontend,
