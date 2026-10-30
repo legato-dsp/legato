@@ -21,6 +21,7 @@ use crate::{
         params::{ParamError, ParamKey},
     },
     runtime::{NodeKey, NodeParams, Runtime, RuntimeFrontend},
+    select::{Selection, SelectionError},
 };
 
 pub mod batch;
@@ -54,6 +55,7 @@ pub mod resources;
 pub mod ring;
 pub mod rng;
 pub mod runtime;
+pub mod select;
 pub mod simd;
 pub mod spec;
 pub mod window;
@@ -183,8 +185,20 @@ impl Debug for LegatoApp {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FrontendError {
-    #[error("no node named '{0}' in the graph")]
+    #[error("no node matches '{0}'")]
     NodeNotFound(String),
+    /// One node was asked for, but the selection matches several.
+    #[error(
+        "'{selection}' matches {} nodes ({}); use a batch to change several",
+        matches.len(),
+        matches.join(", ")
+    )]
+    Ambiguous {
+        selection: String,
+        matches: Vec<String>,
+    },
+    #[error(transparent)]
+    InvalidSelection(#[from] SelectionError),
     #[error("param '{0}': {1}")]
     Param(String, ParamError),
     /// The node's `handle_msg` doesn't take this param, so it would ignore it.
@@ -276,40 +290,59 @@ impl LegatoFrontend {
         }
     }
 
-    pub(crate) fn node_key(&self, node_name: &str) -> Result<NodeKey, FrontendError> {
-        self.node_registry
-            .get(node_name)
-            .copied()
-            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))
+    /// The nodes `selection` names, such as `voice(*).osc`, in instance
+    /// order; see [`crate::select`].
+    pub fn select(&self, selection: &str) -> Result<Vec<(&str, NodeKey)>, FrontendError> {
+        let names =
+            Selection::parse(selection)?.filter(self.node_registry.keys().map(String::as_str));
+        if names.is_empty() {
+            return Err(FrontendError::NodeNotFound(selection.to_string()));
+        }
+        Ok(names
+            .into_iter()
+            .map(|name| (name, self.node_registry[name]))
+            .collect())
     }
 
-    /// The node's key, if it can take `state`.
-    pub(crate) fn checked_state(
+    /// The one node `selection` names.
+    pub(crate) fn select_one(&self, selection: &str) -> Result<(&str, NodeKey), FrontendError> {
+        let nodes = self.select(selection)?;
+        match nodes.as_slice() {
+            [one] => Ok(*one),
+            _ => Err(FrontendError::Ambiguous {
+                selection: selection.to_string(),
+                matches: nodes.iter().map(|(name, _)| name.to_string()).collect(),
+            }),
+        }
+    }
+
+    /// Whether `node` can take `state`.
+    pub(crate) fn check_state(
         &self,
-        node_name: &str,
+        node: &str,
+        key: NodeKey,
         state: NodeState,
-    ) -> Result<NodeKey, FrontendError> {
-        let key = self.node_key(node_name)?;
+    ) -> Result<(), FrontendError> {
         if state == NodeState::Bypassed
             && let Some(&(inputs, outputs)) = self.unbypassable.get(&key)
         {
             return Err(FrontendError::CannotBypass {
-                node: node_name.to_string(),
+                node: node.to_string(),
                 inputs,
                 outputs,
             });
         }
-        Ok(key)
+        Ok(())
     }
 
-    /// The node's key, if it would act on `msg`: a `SetParam` must name a
-    /// param it accepts that isn't driven by a patched input.
-    pub(crate) fn checked_node_msg(
+    /// Whether `node` would act on `msg`: a `SetParam` must name a param it
+    /// accepts that isn't driven by a patched input.
+    pub(crate) fn check_node_msg(
         &self,
-        node_name: &str,
+        node: &str,
+        key: NodeKey,
         msg: &NodeMessage,
-    ) -> Result<NodeKey, FrontendError> {
-        let key = self.node_key(node_name)?;
+    ) -> Result<(), FrontendError> {
         if let NodeMessage::SetParam(payload) = msg
             && let Some(params) = self.node_params.get(&key)
         {
@@ -318,19 +351,19 @@ impl LegatoFrontend {
                 && !accepted.iter().any(|a| a == param)
             {
                 return Err(FrontendError::UnknownNodeParam {
-                    node: node_name.to_string(),
+                    node: node.to_string(),
                     param: param.to_string(),
                     accepted: accepted.clone(),
                 });
             }
             if params.patched.iter().any(|p| p == param) {
                 return Err(FrontendError::PatchedParam {
-                    node: node_name.to_string(),
+                    node: node.to_string(),
                     param: param.to_string(),
                 });
             }
         }
-        Ok(key)
+        Ok(())
     }
 
     pub(crate) fn clamped_param(
@@ -434,13 +467,15 @@ impl LegatoFrontend {
         node_name: &str,
         msg: NodeMessage,
     ) -> Result<(), FrontendError> {
-        let key = self.checked_node_msg(node_name, &msg)?;
+        let (node, key) = self.select_one(node_name)?;
+        self.check_node_msg(node, key, &msg)?;
         self.send_msg(LegatoMsg::NodeMessage(key, msg))
     }
 
     /// Fade a node into `state`, starting on the next block.
     pub fn set_state(&mut self, node_name: &str, state: NodeState) -> Result<(), FrontendError> {
-        let key = self.checked_state(node_name, state)?;
+        let (node, key) = self.select_one(node_name)?;
+        self.check_state(node, key, state)?;
         self.send_msg(LegatoMsg::SetState(key, state))
     }
 

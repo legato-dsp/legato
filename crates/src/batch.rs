@@ -37,38 +37,46 @@ impl<'a> BatchBuilder<'a> {
         }
     }
 
-    /// Fade `node` into `state`.
-    pub fn set_state(&mut self, node: &str, state: NodeState) -> Result<&mut Self, FrontendError> {
-        let key = self.frontend.checked_state(node, state)?;
-        self.msgs.push(LegatoMsg::SetState(key, state));
+    /// Fade every node `nodes` selects into `state`, e.g. `voice(*).op4`; see
+    /// [`crate::select`]. Every selected node is checked before any is added.
+    pub fn set_state(&mut self, nodes: &str, state: NodeState) -> Result<&mut Self, FrontendError> {
+        let selected = self.frontend.select(nodes)?;
+        for &(node, key) in &selected {
+            self.frontend.check_state(node, key, state)?;
+        }
+        self.msgs.extend(
+            selected
+                .iter()
+                .map(|&(_, key)| LegatoMsg::SetState(key, state)),
+        );
         Ok(self)
     }
 
-    pub fn activate(&mut self, node: &str) -> Result<&mut Self, FrontendError> {
-        self.set_state(node, NodeState::Active)
+    pub fn activate(&mut self, nodes: &str) -> Result<&mut Self, FrontendError> {
+        self.set_state(nodes, NodeState::Active)
     }
 
-    pub fn mute(&mut self, node: &str) -> Result<&mut Self, FrontendError> {
-        self.set_state(node, NodeState::Muted)
+    pub fn mute(&mut self, nodes: &str) -> Result<&mut Self, FrontendError> {
+        self.set_state(nodes, NodeState::Muted)
     }
 
-    pub fn bypass(&mut self, node: &str) -> Result<&mut Self, FrontendError> {
-        self.set_state(node, NodeState::Bypassed)
+    pub fn bypass(&mut self, nodes: &str) -> Result<&mut Self, FrontendError> {
+        self.set_state(nodes, NodeState::Bypassed)
     }
 
-    pub fn suspend(&mut self, node: &str) -> Result<&mut Self, FrontendError> {
-        self.set_state(node, NodeState::Suspended)
+    pub fn suspend(&mut self, nodes: &str) -> Result<&mut Self, FrontendError> {
+        self.set_state(nodes, NodeState::Suspended)
     }
 
-    /// Set one of `node`'s own params, e.g. an svf's `cutoff`.
+    /// Set a param on every node `nodes` selects, e.g. an svf's `cutoff`.
     pub fn set(
         &mut self,
-        node: &str,
+        nodes: &str,
         param: &'static str,
         val: f32,
     ) -> Result<&mut Self, FrontendError> {
         self.node_msg(
-            node,
+            nodes,
             NodeMessage::SetParam(ParamPayload {
                 param_name: param,
                 value: RtValue::F32(val),
@@ -76,9 +84,17 @@ impl<'a> BatchBuilder<'a> {
         )
     }
 
-    pub fn node_msg(&mut self, node: &str, msg: NodeMessage) -> Result<&mut Self, FrontendError> {
-        let key = self.frontend.checked_node_msg(node, &msg)?;
-        self.msgs.push(LegatoMsg::NodeMessage(key, msg));
+    /// Send `msg` to every node `nodes` selects, checking all of them first.
+    pub fn node_msg(&mut self, nodes: &str, msg: NodeMessage) -> Result<&mut Self, FrontendError> {
+        let selected = self.frontend.select(nodes)?;
+        for &(node, key) in &selected {
+            self.frontend.check_node_msg(node, key, &msg)?;
+        }
+        self.msgs.extend(
+            selected
+                .iter()
+                .map(|&(_, key)| LegatoMsg::NodeMessage(key, msg.clone())),
+        );
         Ok(self)
     }
 

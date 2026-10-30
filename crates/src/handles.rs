@@ -14,11 +14,13 @@
 
 use std::{
     any::{Any, type_name},
-    cmp::Ordering,
     collections::BTreeMap,
 };
 
-use crate::spec::NodeDefinition;
+use crate::{
+    select::{Selection, SelectionError, natural_path_cmp},
+    spec::NodeDefinition,
+};
 
 /// A node that exports a handle of a known type.
 ///
@@ -37,6 +39,11 @@ pub enum HandleError {
         path: String,
         available: Vec<String>,
     },
+    /// A single handle was asked for, but the selection matches several.
+    #[error("'{path}' matches {} handles: {}", matches.len(), matches.join(", "))]
+    Ambiguous { path: String, matches: Vec<String> },
+    #[error(transparent)]
+    InvalidSelection(#[from] SelectionError),
     /// A handle exists at `path`, but it is not the requested type.
     #[error("{}", type_mismatch(path, expected, found))]
     TypeMismatch {
@@ -124,21 +131,22 @@ impl HandleStore {
         paths
     }
 
+    /// Take the one handle `path` selects, e.g. `keys` or `voice(0).keys`.
     pub fn take<H: Any + Send>(&mut self, path: &str) -> Result<H, HandleError> {
-        self.check_type::<H>(path)?;
-        let stored = self.handles.remove(path).expect("checked above");
+        let path = self.matching_one(path)?;
+        self.check_type::<H>(&path)?;
+        let stored = self.handles.remove(&path).expect("checked above");
         Ok(*stored.value.downcast::<H>().expect("checked above"))
     }
 
     pub fn take_of<N: ExportsHandle>(&mut self, path: &str) -> Result<N::Handle, HandleError> {
-        self.check_kind(path, N::NAME)?;
-        self.take::<N::Handle>(path)
+        let path = self.matching_one(path)?;
+        self.check_kind(&path, N::NAME)?;
+        self.take::<N::Handle>(&path)
     }
 
-    /// Take every handle at or under `prefix`, ordered by instance index.
-    ///
-    /// Matching is by path segment, so `voice` matches `voice.0.keys` but not
-    /// `voice_b`. Either every match is taken or none are.
+    /// Take every handle `prefix` selects, ordered by instance index; see
+    /// [`crate::select`]. Either every match is taken or none are.
     pub fn take_all<H: Any + Send>(
         &mut self,
         prefix: &str,
@@ -198,46 +206,27 @@ impl HandleStore {
         }
     }
 
-    fn matching(&self, prefix: &str) -> Result<Vec<String>, HandleError> {
-        let paths: Vec<String> = self
-            .paths()
+    fn matching(&self, selection: &str) -> Result<Vec<String>, HandleError> {
+        let paths = Selection::parse(selection)?
+            .filter(self.handles.keys().map(String::as_str))
             .into_iter()
-            .filter(|p| path_has_prefix(p, prefix))
-            .collect();
+            .map(String::from)
+            .collect::<Vec<_>>();
         if paths.is_empty() {
-            return Err(self.not_found(prefix));
+            return Err(self.not_found(selection));
         }
         Ok(paths)
     }
-}
 
-/// Whether `path` is `prefix` or lies under it, compared segment by segment.
-fn path_has_prefix(path: &str, prefix: &str) -> bool {
-    match path.strip_prefix(prefix) {
-        Some(rest) => rest.is_empty() || rest.starts_with('.'),
-        None => false,
-    }
-}
-
-/// Order paths so instance indices compare numerically: `v.2` before `v.10`.
-fn natural_path_cmp(a: &str, b: &str) -> Ordering {
-    let mut a_segs = a.split('.');
-    let mut b_segs = b.split('.');
-    loop {
-        match (a_segs.next(), b_segs.next()) {
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
-            (Some(x), Some(y)) => {
-                let ord = match (x.parse::<u64>(), y.parse::<u64>()) {
-                    (Ok(x), Ok(y)) => x.cmp(&y),
-                    _ => x.cmp(y),
-                };
-                if ord != Ordering::Equal {
-                    return ord;
-                }
-            }
+    fn matching_one(&self, selection: &str) -> Result<String, HandleError> {
+        let mut paths = self.matching(selection)?;
+        if paths.len() > 1 {
+            return Err(HandleError::Ambiguous {
+                path: selection.to_string(),
+                matches: paths,
+            });
         }
+        Ok(paths.remove(0))
     }
 }
 
@@ -246,12 +235,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefix_matches_whole_segments_only() {
-        assert!(path_has_prefix("voice", "voice"));
-        assert!(path_has_prefix("voice.0.keys", "voice"));
-        assert!(path_has_prefix("voice.0.keys", "voice.0"));
-        assert!(!path_has_prefix("voice_b.0", "voice"));
-        assert!(!path_has_prefix("voice.10", "voice.1"));
+    fn take_needs_exactly_one_match() {
+        let mut store = HandleStore::default();
+        store.insert("v.0.keys", 0_u32);
+        store.insert("v.1.keys", 1_u32);
+
+        assert_eq!(
+            store.take::<u32>("v"),
+            Err(HandleError::Ambiguous {
+                path: "v".into(),
+                matches: vec!["v.0.keys".into(), "v.1.keys".into()],
+            })
+        );
+        assert_eq!(store.take::<u32>("v(1)"), Ok(1));
+        assert_eq!(store.take::<u32>("v.0.keys"), Ok(0));
     }
 
     #[test]

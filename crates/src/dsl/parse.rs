@@ -230,13 +230,15 @@ fn patch_parser<'a>() -> impl Parser<'a, &'a str, AstMacro, Err<Rich<'a, char>>>
         )
 }
 
-fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
-    let ident = text::ascii::ident().map(ToString::to_string);
+/// An instance selector after a name: `(3)`, `(0..2)` or `(*)`. Shared by
+/// connection endpoints and runtime selections (see [`crate::select`]).
+pub(crate) fn node_selector<'a>()
+-> impl Parser<'a, &'a str, NodeSelector, Err<Rich<'a, char>>> + Clone {
     let uint = text::digits(10)
         .to_slice()
         .map(|s: &str| s.parse::<u32>().unwrap());
 
-    let selector = choice((
+    choice((
         // Single node selection
         uint.delimited_by(just('('), just(')'))
             .map(|x| NodeSelector::Index(x as usize)),
@@ -250,8 +252,17 @@ fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char
             .delimited_by(just('('), just(')'))
             .map(|_| NodeSelector::All),
     ))
-    .or_not()
-    .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
+}
+
+fn endpoint_parser<'a>() -> impl Parser<'a, &'a str, Endpoint, Err<Rich<'a, char>>> {
+    let ident = text::ascii::ident().map(ToString::to_string);
+    let uint = text::digits(10)
+        .to_slice()
+        .map(|s: &str| s.parse::<u32>().unwrap());
+
+    let selector = node_selector()
+        .or_not()
+        .map(|p| p.unwrap_or(NodeSelector::Single)); // TODO: Evaluate if this feels right
 
     let port = choice((
         // node.mono
