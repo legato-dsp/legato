@@ -42,19 +42,33 @@ impl Node for Signal {
     }
 }
 
+use std::time::Duration;
+
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     node::DynNode,
+    node_state::FADE_MS,
     resources::params::ParamMeta,
     spec::NodeDefinition,
 };
 
+/// One-pole coefficient that covers 1 - 1/e of a step in `glide`, the same
+/// time constant at any sample rate; 1.0 (no glide) under one sample.
+pub fn glide_coefficient(glide: Duration, sample_rate: usize) -> f32 {
+    let samples = glide.as_secs_f64() * sample_rate as f64;
+    if samples < 1.0 {
+        1.0
+    } else {
+        (1.0 - (-1.0 / samples).exp()) as f32
+    }
+}
+
 impl NodeDefinition for Signal {
     const NAME: &'static str = "signal";
-    const DESCRIPTION: &'static str = "Smoothed control parameter exposed to the host application";
+    const DESCRIPTION: &'static str = "Control parameter exposed to the host application, gliding to each new value over `glide` ms (default 5, 0 for none)";
     const REQUIRED_PARAMS: &'static [&'static str] = &["name", "min", "max", "default"];
-    const OPTIONAL_PARAMS: &'static [&'static str] = &["smoothing"];
+    const OPTIONAL_PARAMS: &'static [&'static str] = &["glide"];
 
     fn create(
         rb: &mut ResourceBuilderView,
@@ -64,7 +78,10 @@ impl NodeDefinition for Signal {
         let min = p.require_f32("min")?;
         let max = p.require_f32("max")?;
         let default = p.require_f32("default")?;
-        let smoothing = p.get_f32("smoothing")?.unwrap_or(0.5).clamp(0.0, 1.0);
+        let glide = p
+            .get_duration_ms("glide")?
+            .unwrap_or(Duration::from_millis(FADE_MS as u64));
+        let smoothing = glide_coefficient(glide, rb.config.sample_rate);
         let meta = ParamMeta {
             name: name.clone(),
             min,
