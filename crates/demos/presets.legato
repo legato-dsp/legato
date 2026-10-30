@@ -1,0 +1,87 @@
+// title: Presets
+// desc: Two layers through a filter, echo and plate; examples/presets.rs switches them with batches
+
+// An FM voice: the modulator follows the note at a ratio, with one-sample feedback
+kernel fm(
+    ratio = 2.0,
+    index = 400.0,
+    feedback = 80.0
+) {
+    in freq
+
+    audio {
+        mult: mod_freq { val: $ratio },
+        mult: fb { val: $feedback },
+        sine: modulator { freq: 0.0 },
+        mult: depth { val: $index },
+        add: car_freq { val: 0.0 },
+        sine: carrier { freq: 0.0 },
+    }
+
+    freq >> mod_freq >> modulator
+    modulator >> fb >> modulator
+
+    freq >> car_freq
+    modulator >> depth >> car_freq
+    car_freq >> carrier
+
+    { carrier }
+}
+
+patches {
+    fm: bell { ratio: 3.5, index: 300.0, feedback: 30.0 },
+}
+
+control {
+    signal: cut { name: "cut", min: 80.0, max: 12000.0, default: 1800.0 }
+}
+
+modular {
+    random { rate: 160.0, prob: 0.7, range: [40.0, 76.0] },
+    quantize { notes: [0, 3, 5, 7, 10] },
+    trig_to_gate { gate_time: 110.0 },
+}
+
+audio {
+    saw: lead { chans: 1 },
+    adsr: lead_env { attack: 4.0, decay: 180.0, sustain: 0.2, release: 250.0, chans: 1 },
+    adsr: bell_env { attack: 2.0, decay: 600.0, sustain: 0.0, release: 900.0, chans: 1 },
+    track_mixer: layers { tracks: 2, chans_per_track: 1, gain: [0.2, 0.25] },
+
+    svf: tone { chans: 1, q: 0.8, type: "lowpass" },
+    mono_fan_out { chans: 2 },
+
+    // Echo send: muting `echo` silences the repeats and their feedback
+    delay_write: echo_in { delay_name: "echo", delay_length: 1000.0, chans: 2 },
+    delay_read: echo { delay_name: "echo", delay_length: 375.0, chans: 2 },
+    track_mixer: echo_fb { tracks: 1, chans_per_track: 2, gain: [0.45] },
+
+    track_mixer: bus { tracks: 2, chans_per_track: 2, gain: [0.8, 0.5] },
+    plate480: room { mix: 0.3 },
+}
+
+// A random walk snapped to a minor pentatonic plays both layers
+random.stepped >> quantize
+quantize.trig >> trig_to_gate
+trig_to_gate >> lead_env.gate
+trig_to_gate >> bell_env.gate
+quantize.freq >> lead.freq
+quantize.freq >> bell.freq
+
+lead >> lead_env[1]
+bell >> bell_env[1]
+lead_env >> layers[0]
+bell_env >> layers[1]
+
+layers >> tone
+cut >> tone.cutoff
+tone >> mono_fan_out
+
+mono_fan_out >> bus[0..2]
+mono_fan_out >> echo_in
+echo >> bus[2..4]
+echo >> echo_fb >> echo_in
+
+bus >> room
+
+{ room }

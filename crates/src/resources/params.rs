@@ -42,6 +42,14 @@ impl ParamStore {
             .map(|v| v.load(Ordering::Relaxed))
             .ok_or(ParamError::ParamNotFound)
     }
+
+    /// Write an already clamped value; an unknown key is ignored.
+    #[inline(always)]
+    pub fn set(&self, key: &ParamKey, val: f32) {
+        if let Some(v) = self.data.get(key.0) {
+            v.store(val, Ordering::Relaxed);
+        }
+    }
 }
 
 /// A struct of meta information for a param, useful for debugging or visualizing in the UI thread
@@ -92,6 +100,12 @@ impl ParamStoreFrontend {
             meta,
             param_lookup,
         }
+    }
+
+    /// `val` clamped to the param's range.
+    pub fn clamp(&self, key: ParamKey, val: f32) -> Result<f32, ParamError> {
+        let meta = self.meta.get(key.0).ok_or(ParamError::ParamMetaNotFound)?;
+        Ok(val.clamp(meta.min, meta.max))
     }
 
     /// Set a parameter's value. Note: This will be clamped by the meta info for the param.

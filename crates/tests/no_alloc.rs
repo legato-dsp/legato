@@ -104,12 +104,14 @@ fn swapped_buffers_are_freed_on_the_frontend() {
     frontend.drain_garbage();
 }
 
+/// `saw >> svf`, with a shared `cut` param on the cutoff.
+const SVF: &str = "control { signal: cut { name: \"cut\", min: 20.0, max: 20000.0, default: 1000.0 } }\n\
+                   audio { saw { chans: 1 }, svf { chans: 1 } }\n\
+                   saw >> svf\ncut >> svf.cutoff\n{ svf }";
+
 #[test]
 fn params_and_node_messages_do_not_allocate() {
-    let src = "control { signal: cut { name: \"cut\", min: 20.0, max: 20000.0, default: 1000.0 } }\n\
-               audio { saw { chans: 1 }, svf { chans: 1 } }\n\
-               saw >> svf\ncut >> svf.cutoff\n{ svf }";
-    let (mut app, mut frontend) = build(src);
+    let (mut app, mut frontend) = build(SVF);
 
     // Change a shared param and send a node message before every block.
     for i in 0..BLOCKS {
@@ -144,6 +146,41 @@ fn node_state_changes_do_not_allocate() {
             frontend.set_state("svf", svf_states[n % 4]).unwrap();
             frontend.set_state("saw", saw_states[n % 3]).unwrap();
         }
+        assert_eq!(render_allocs(&mut app), 0, "block {i}");
+    }
+}
+
+#[test]
+fn batches_are_freed_on_the_frontend() {
+    let (mut app, mut frontend) = build(SVF);
+    use NodeState::*;
+
+    // Build a fresh batch, send it, and drop our handle, so the queue holds the
+    // only reference; freeing it on the audio thread would count. 1100 sends
+    // cycle the 512-slot return ring twice.
+    for i in 0..1100 {
+        let mut batch = frontend.batch();
+        batch.set_state("svf", [Muted, Active][i % 2]).unwrap();
+        batch.set_param("cut", 100.0 + i as f32).unwrap();
+        let batch = batch.finish();
+        frontend.send(&batch).unwrap();
+        drop(batch);
+        assert_eq!(render_allocs(&mut app), 0, "batch {i}");
+    }
+    frontend.drain_garbage();
+}
+
+#[test]
+fn resending_a_preset_does_not_allocate() {
+    let (mut app, mut frontend) = build(SVF);
+    let mut preset = frontend.batch();
+    preset.bypass("svf").unwrap();
+    preset.set_param("cut", 400.0).unwrap();
+    let preset = preset.finish();
+
+    // Sending shares the preset, and the returns it frees are only refcounts.
+    for i in 0..600 {
+        assert_eq!(allocs_in(|| frontend.send(&preset).unwrap()), 0, "send {i}");
         assert_eq!(render_allocs(&mut app), 0, "block {i}");
     }
 }

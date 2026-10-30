@@ -3,7 +3,10 @@
 
 use std::{any::Any, collections::HashMap, fmt::Debug, path::Path};
 
+use rtrb::PushError;
+
 use crate::{
+    batch::{Batch, BatchBuilder},
     builder::ValidationError,
     config::Config,
     executor::OutputView,
@@ -20,6 +23,7 @@ use crate::{
     runtime::{NodeKey, Runtime, RuntimeFrontend},
 };
 
+pub mod batch;
 pub mod block_adapter;
 pub mod builder;
 pub mod config;
@@ -69,6 +73,8 @@ pub enum LegatoError {
 pub struct LegatoApp {
     runtime: Runtime,
     msg_consumer: rtrb::Consumer<LegatoMsg>,
+    /// Applied batches go back to the frontend to be freed.
+    batch_returns: rtrb::Producer<Batch>,
     audio_input_keys: HashMap<String, AudioInputKey>,
 }
 
@@ -76,11 +82,13 @@ impl LegatoApp {
     pub fn new(
         runtime: Runtime,
         receiver: rtrb::Consumer<LegatoMsg>,
+        batch_returns: rtrb::Producer<Batch>,
         audio_input_keys: HashMap<String, AudioInputKey>,
     ) -> Self {
         Self {
             runtime,
             msg_consumer: receiver,
+            batch_returns,
             audio_input_keys,
         }
     }
@@ -123,9 +131,23 @@ impl LegatoApp {
         // Drain messages for sample update
         self.runtime.drain_external_sample_msg();
 
-        // Handle messages from the LegatoFrontend
-        while let Ok(msg) = self.msg_consumer.pop() {
-            self.runtime.handle_msg(msg);
+        // Handle messages from the LegatoFrontend. A batch waits, with
+        // everything behind it, until there is room to hand it back.
+        while let Ok(msg) = self.msg_consumer.peek() {
+            if matches!(msg, LegatoMsg::Batch(_)) && self.batch_returns.is_full() {
+                break;
+            }
+            match self.msg_consumer.pop() {
+                Ok(LegatoMsg::Batch(batch)) => {
+                    self.runtime.apply_batch(&batch);
+                    if let Err(PushError::Full(batch)) = self.batch_returns.push(batch) {
+                        debug_assert!(false, "checked for a free return slot above");
+                        std::mem::forget(batch); // leak rather than free on the audio thread
+                    }
+                }
+                Ok(msg) => self.runtime.handle_msg(msg),
+                Err(_) => break,
+            }
         }
 
         self.runtime.next_block()
@@ -163,6 +185,8 @@ impl Debug for LegatoApp {
 pub enum FrontendError {
     #[error("no node named '{0}' in the graph")]
     NodeNotFound(String),
+    #[error("param '{0}': {1}")]
+    Param(String, ParamError),
     /// The message queue to the audio thread is full; the message was not sent.
     #[error("the message queue to the audio thread is full")]
     QueueFull,
@@ -185,6 +209,8 @@ pub struct LegatoFrontend {
     node_registry: HashMap<String, NodeKey>,
     /// Default (input, output) counts of nodes that can't be bypassed.
     unbypassable: HashMap<NodeKey, (usize, usize)>,
+    /// Batches the audio thread has applied, waiting to be freed here.
+    batch_returns: rtrb::Consumer<Batch>,
     handles: HandleStore,
 }
 
@@ -194,6 +220,7 @@ impl LegatoFrontend {
         producer: rtrb::Producer<LegatoMsg>,
         node_registry: HashMap<String, NodeKey>,
         unbypassable: HashMap<NodeKey, (usize, usize)>,
+            batch_returns: rtrb::Consumer<Batch>,
         handles: HandleStore,
     ) -> Self {
         Self {
@@ -201,8 +228,63 @@ impl LegatoFrontend {
             producer,
             node_registry,
             unbypassable,
+            batch_returns,
             handles,
         }
+    }
+
+    /// Start a [`Batch`]: messages that all land in the same block.
+    pub fn batch(&self) -> BatchBuilder<'_> {
+        BatchBuilder::new(self)
+    }
+
+    /// Send a batch. It is shared, not copied, so a preset can be sent again
+    /// without allocating.
+    pub fn send(&mut self, batch: &Batch) -> Result<(), FrontendError> {
+        self.drain_batches();
+        self.send_msg(LegatoMsg::Batch(batch.clone()))
+    }
+
+    /// Free batches the audio thread has handed back.
+    fn drain_batches(&mut self) {
+        while let Ok(batch) = self.batch_returns.pop() {
+            drop(batch);
+        }
+    }
+
+    pub(crate) fn node_key(&self, node_name: &str) -> Result<NodeKey, FrontendError> {
+        self.node_registry
+            .get(node_name)
+            .copied()
+            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))
+    }
+
+    /// The node's key, if it can take `state`.
+    pub(crate) fn checked_state(
+        &self,
+        node_name: &str,
+        state: NodeState,
+    ) -> Result<NodeKey, FrontendError> {
+        let key = self.node_key(node_name)?;
+        if state == NodeState::Bypassed
+            && let Some(&(inputs, outputs)) = self.unbypassable.get(&key)
+        {
+            return Err(FrontendError::CannotBypass {
+                node: node_name.to_string(),
+                inputs,
+                outputs,
+            });
+        }
+        Ok(key)
+    }
+
+    pub(crate) fn clamped_param(
+        &self,
+        name: &str,
+        val: f32,
+    ) -> Result<(ParamKey, f32), ParamError> {
+        let key = self.runtime_frontend.get_param_key(name)?;
+        Ok((key, self.runtime_frontend.clamp_param(key, val)?))
     }
 
     /// Take the handle a node exported at `path`, e.g. `keys` or `voice.0.keys`.
@@ -260,10 +342,11 @@ impl LegatoFrontend {
         self.runtime_frontend.send_buffer(buffer_name, buffer)
     }
 
-    /// Free buffers the audio thread has swapped out. Sending a buffer also
-    /// does this, so call it only to release memory sooner.
+    /// Free buffers and batches the audio thread has handed back. Sending a
+    /// buffer or batch also does this, so call it only to release memory sooner.
     pub fn drain_garbage(&mut self) {
         self.runtime_frontend.drain_garbage();
+        self.drain_batches();
     }
 
     pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
@@ -296,28 +379,13 @@ impl LegatoFrontend {
         node_name: &str,
         msg: NodeMessage,
     ) -> Result<(), FrontendError> {
-        let key = *self
-            .node_registry
-            .get(node_name)
-            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))?;
+        let key = self.node_key(node_name)?;
         self.send_msg(LegatoMsg::NodeMessage(key, msg))
     }
 
     /// Fade a node into `state`, starting on the next block.
     pub fn set_state(&mut self, node_name: &str, state: NodeState) -> Result<(), FrontendError> {
-        let key = *self
-            .node_registry
-            .get(node_name)
-            .ok_or_else(|| FrontendError::NodeNotFound(node_name.to_string()))?;
-        if state == NodeState::Bypassed
-            && let Some(&(inputs, outputs)) = self.unbypassable.get(&key)
-        {
-            return Err(FrontendError::CannotBypass {
-                node: node_name.to_string(),
-                inputs,
-                outputs,
-            });
-        }
+        let key = self.checked_state(node_name, state)?;
         self.send_msg(LegatoMsg::SetState(key, state))
     }
 

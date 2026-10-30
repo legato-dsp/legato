@@ -130,6 +130,12 @@ impl Resources {
         self.param_store.get(param_key)
     }
 
+    /// Write a param clamped on the control thread, e.g. from a batch.
+    #[inline(always)]
+    pub fn set_param(&self, param_key: &ParamKey, val: f32) {
+        self.param_store.set(param_key, val);
+    }
+
     /// The entire buffer LLL RRR for an audio input
     #[inline(always)]
     pub fn get_audio_input(&self, key: AudioInputKey) -> &[f32] {
@@ -381,6 +387,10 @@ impl ResourceFrontend {
 
     pub fn get_param_key(&self, name: &str) -> Result<ParamKey, ParamError> {
         self.param_front_end.get_key(name)
+    }
+
+    pub fn clamp_param(&self, key: ParamKey, val: f32) -> Result<f32, ParamError> {
+        self.param_front_end.clamp(key, val)
     }
 
     pub fn get_all(&self) -> Vec<f32> {

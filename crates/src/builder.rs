@@ -592,7 +592,11 @@ where
 
         let (producer, consumer) = rtrb::RingBuffer::new(512);
 
-        let app = LegatoApp::new(runtime, consumer, audio_input_keys);
+        // As many returns as the queue can hold batches, so a full return
+        // ring only delays a batch rather than losing it.
+        let (return_producer, return_consumer) = rtrb::RingBuffer::new(512);
+
+        let app = LegatoApp::new(runtime, consumer, return_producer, audio_input_keys);
 
         let rt_frontend = RuntimeFrontend::new(resources_frontend);
 
@@ -601,6 +605,7 @@ where
             producer,
             self.working_name_lookup,
             unbypassable,
+            return_consumer,
             handles,
         );
 

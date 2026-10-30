@@ -4,6 +4,7 @@
 //! The [`Runtime`] then has a [`RuntimeFrontend`] that can be used from a control
 //! thread to change params or pass messages to the [`Runtime`].
 
+use crate::batch::Batch;
 use crate::builder::ValidationError;
 use crate::config::Config;
 use crate::context::AudioContext;
@@ -121,6 +122,22 @@ impl Runtime {
             }
             LegatoMsg::SetState(key, state) => {
                 self.executor.set_state(key, state);
+            }
+            LegatoMsg::SetParam(key, val) => {
+                self.context.get_resources().set_param(&key, val);
+            }
+            // Dropped here if it was the last owner; `LegatoApp` returns
+            // batches instead of calling this.
+            LegatoMsg::Batch(batch) => self.apply_batch(&batch),
+        }
+    }
+
+    /// Apply every message in `batch`; nested batches are skipped (the
+    /// builder can't make them).
+    pub fn apply_batch(&mut self, batch: &Batch) {
+        for msg in batch.messages() {
+            if !matches!(msg, LegatoMsg::Batch(_)) {
+                self.handle_msg(msg.clone());
             }
         }
     }
@@ -241,5 +258,9 @@ impl RuntimeFrontend {
 
     pub fn get_param_key(&self, param_name: &str) -> Result<ParamKey, ParamError> {
         self.resource_frontend.get_param_key(param_name)
+    }
+
+    pub fn clamp_param(&self, key: ParamKey, val: f32) -> Result<f32, ParamError> {
+        self.resource_frontend.clamp_param(key, val)
     }
 }
