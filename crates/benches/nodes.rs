@@ -26,7 +26,6 @@ use legato::{
         svf::{FilterType, Svf},
     },
     persample::PerSampleNode,
-    ports::PortBuilder,
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {

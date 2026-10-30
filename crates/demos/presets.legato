@@ -1,7 +1,23 @@
 // title: Presets
-// desc: Two layers through a filter, echo and plate; examples/presets.rs switches them with batches
+// desc: Four FM voices through a filter, echo and plate; examples/presets.rs switches them with batches
 
-// An FM voice: the modulator follows the note at a ratio, with one-sample feedback
+// Legato nodes run in blocks at an interior rate. This gives stronger performance, ease of SIMD processing,
+// better memory locality, etc.
+//
+// These graphs are DAG, meaning there are no cycles permitted. To get around this, we have the `kernel` feature.
+//
+// `kernel`s are capable of feedback cycles as they are interpreted nodes that can process one sample at a time.
+// You can then spawn them like reusable patches, which is quite convenient.
+//
+// In addition to being interpreted from the DSL, they can also compiled/generated with a macro as well,
+// this is a performance improvement but it is unclear if I want to continue building on this functionality.
+//
+// I generally feel that codegen is hard to maintain, and this feature was made with heavy AI assistance.
+// But it provides a nice middleground for users that don't want to write DSP in Rust but still want to
+// have somewhat performant reverb/fm/other algorithms with feedback cycles.
+//
+// There is a performance hit with both approaches, here, so I suggest moving to a custom Rust node
+// if this becomes a bottleneck or starts to show up on a
 kernel fm(
     ratio = 2.0,
     index = 400.0,
@@ -28,25 +44,41 @@ kernel fm(
     { carrier }
 }
 
+// Each voice has its own random state so the melodies don't align.
+//
+// We then quantize the random state to a C-Min pentatonic scale
+// and update the frequency of the fm synth and trigger the envelope.
+patch voice() {
+    modular {
+        random { rate: 220.0, prob: 0.5, range: [40.0, 76.0] },
+        quantize { notes: [0, 3, 5, 7, 10] },
+        trig_to_gate { gate_time: 110.0 },
+    }
+
+    audio {
+        fm: op { ratio: 2.0, index: 300.0, feedback: 30.0 },
+        adsr: env { attack: 4.0, decay: 300.0, sustain: 0.1, release: 500.0, chans: 1 },
+    }
+
+    random.stepped >> quantize
+    quantize.trig >> trig_to_gate >> env.gate
+    quantize.freq >> op.freq
+    op >> env[1]
+
+    { env }
+}
+
+// Spawn the four voices, using the default parameters
 patches {
-    fm: bell { ratio: 3.5, index: 300.0, feedback: 30.0 },
+    voice * 4 {},
 }
 
 control {
     signal: cut { name: "cut", min: 80.0, max: 12000.0, default: 1800.0 }
 }
 
-modular {
-    random { rate: 160.0, prob: 0.7, range: [40.0, 76.0] },
-    quantize { notes: [0, 3, 5, 7, 10] },
-    trig_to_gate { gate_time: 110.0 },
-}
-
 audio {
-    saw: lead { chans: 1 },
-    adsr: lead_env { attack: 4.0, decay: 180.0, sustain: 0.2, release: 250.0, chans: 1 },
-    adsr: bell_env { attack: 2.0, decay: 600.0, sustain: 0.0, release: 900.0, chans: 1 },
-    track_mixer: layers { tracks: 2, chans_per_track: 1, gain: [0.2, 0.25] },
+    track_mixer: voices { tracks: 4, chans_per_track: 1, gain: [0.15, 0.15, 0.15, 0.15] },
 
     svf: tone { chans: 1, q: 0.8, type: "lowpass" },
     mono_fan_out { chans: 2 },
@@ -60,20 +92,8 @@ audio {
     plate480: room { mix: 0.3 },
 }
 
-// A random walk snapped to a minor pentatonic plays both layers
-random.stepped >> quantize
-quantize.trig >> trig_to_gate
-trig_to_gate >> lead_env.gate
-trig_to_gate >> bell_env.gate
-quantize.freq >> lead.freq
-quantize.freq >> bell.freq
-
-lead >> lead_env[1]
-bell >> bell_env[1]
-lead_env >> layers[0]
-bell_env >> layers[1]
-
-layers >> tone
+voice(*) >> voices[0..4]
+voices >> tone
 cut >> tone.cutoff
 tone >> mono_fan_out
 

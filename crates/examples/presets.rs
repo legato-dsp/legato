@@ -1,16 +1,7 @@
-//! A self-playing instrument whose presets are batches: each one switches
-//! layers and effects and sets their params in a single block.
-//!
-//! Keys: `1`-`4` presets, `l` / `b` toggle the lead and bell layers, `t` / `e`
-//! / `r` toggle the tone filter, echo and room, `q` quits.
-//!
-//! `cargo run --example presets -- --check` renders every preset offline and
-//! prints its level instead of opening an audio device.
-
 use cpal::Host;
 use legato::{
     FrontendError,
-    batch::Batch,
+    batch::{Batch, BatchBuilder},
     node_state::NodeState::{self, *},
     prelude::*,
 };
@@ -25,80 +16,111 @@ use ratatui::{
 
 const PATCH: &str = include_str!("../demos/presets.legato");
 
-/// The nodes a preset switches, with the state each toggles to when not Active.
-const SWITCHES: [(&str, char, NodeState); 5] = [
-    ("lead", 'l', Suspended),
-    ("bell", 'b', Suspended),
+/// `voice * 4` in the patch.
+const VOICES: usize = 4;
+
+/// The effects, with their toggle key and the state each takes when off.
+const EFFECTS: [(&str, char, NodeState); 3] = [
     ("tone", 't', Bypassed),
     ("echo", 'e', Muted),
     ("room", 'r', Bypassed),
 ];
 
+/// A preset consisting of how many voices we are using, FM params,
+/// effects values, envelope, etc. These can then be sent to the runtime
+/// to update the nodes we want to target.
 struct Preset {
     name: &'static str,
-    /// Whether each of [`SWITCHES`] is on.
-    on: [bool; 5],
+    /// How many of the 4 voices play; the rest are suspended.
+    voices: usize,
+    /// FM kernel params: ratio, index, feedback.
+    fm: [f32; 3],
+    /// Envelope: attack, decay, sustain, release.
+    env: [f32; 4],
     cut: f32,
     q: f32,
-    /// Lead envelope: attack, decay, sustain, release.
-    lead_env: [f32; 4],
+    /// Whether each of [`EFFECTS`] is on.
+    effects: [bool; 3],
     room_mix: f32,
 }
 
 const PRESETS: [Preset; 4] = [
     Preset {
-        name: "Pluck",
-        on: [true, false, true, true, false],
-        cut: 2400.0,
-        q: 0.9,
-        lead_env: [3.0, 160.0, 0.1, 200.0],
+        name: "Duo",
+        voices: 2,
+        fm: [2.0, 200.0, 20.0],
+        env: [3.0, 220.0, 0.1, 300.0],
+        cut: 3000.0,
+        q: 0.8,
+        effects: [true, true, false],
         room_mix: 0.3,
     },
     Preset {
         name: "Bells",
-        on: [false, true, false, true, true],
+        voices: 4,
+        fm: [3.5, 300.0, 30.0],
+        env: [2.0, 900.0, 0.0, 1200.0],
         cut: 1800.0,
         q: 0.7,
-        lead_env: [4.0, 180.0, 0.2, 250.0],
-        room_mix: 0.35,
+        effects: [false, true, true],
+        room_mix: 0.4,
     },
     Preset {
-        name: "Dark pad",
-        on: [true, true, true, false, true],
-        cut: 500.0,
-        q: 0.4,
-        lead_env: [350.0, 400.0, 0.7, 900.0],
-        room_mix: 0.6,
-    },
-    Preset {
-        name: "Dry",
-        on: [true, true, false, false, false],
-        cut: 1800.0,
-        q: 0.7,
-        lead_env: [4.0, 180.0, 0.2, 250.0],
+        name: "Growl",
+        voices: 2,
+        fm: [1.0, 900.0, 200.0],
+        env: [8.0, 180.0, 0.4, 200.0],
+        cut: 900.0,
+        q: 1.2,
+        effects: [true, false, false],
         room_mix: 0.3,
+    },
+    Preset {
+        name: "Shimmer",
+        voices: 4,
+        fm: [7.0, 150.0, 10.0],
+        env: [200.0, 600.0, 0.5, 1500.0],
+        cut: 6000.0,
+        q: 0.5,
+        effects: [true, true, true],
+        room_mix: 0.6,
     },
 ];
 
-fn state(i: usize, on: bool) -> NodeState {
-    if on { Active } else { SWITCHES[i].2 }
+fn effect_state(i: usize, on: bool) -> NodeState {
+    if on { Active } else { EFFECTS[i].2 }
+}
+
+/// Play the first `voices` voices and suspend the rest.
+fn voice_states(batch: &mut BatchBuilder, voices: usize) -> Result<(), FrontendError> {
+    batch.activate(&format!("voice(0..{voices})"))?;
+    // `voice(4..4)` selects nothing, which is an error, so skip it.
+    if voices < VOICES {
+        batch.suspend(&format!("voice({voices}..{VOICES})"))?;
+    }
+    Ok(())
 }
 
 impl Preset {
     /// Everything the preset changes, applied in one block.
     fn batch(&self, frontend: &LegatoFrontend) -> Result<Batch, FrontendError> {
         let mut batch = frontend.batch();
-        for (i, (node, ..)) in SWITCHES.iter().enumerate() {
-            batch.set_state(node, state(i, self.on[i]))?;
+        voice_states(&mut batch, self.voices)?;
+        // Suspended voices take the params too, so they match when they return.
+        for (param, val) in ["ratio", "index", "feedback"].into_iter().zip(self.fm) {
+            batch.set("voice(*).op", param, val)?;
+        }
+        for (param, val) in ["attack", "decay", "sustain", "release"]
+            .into_iter()
+            .zip(self.env)
+        {
+            batch.set("voice(*).env", param, val)?;
+        }
+        for (i, (node, ..)) in EFFECTS.iter().enumerate() {
+            batch.set_state(node, effect_state(i, self.effects[i]))?;
         }
         batch.set_param("cut", self.cut)?;
         batch.set("tone", "q", self.q)?;
-        for (param, val) in ["attack", "decay", "sustain", "release"]
-            .into_iter()
-            .zip(self.lead_env)
-        {
-            batch.set("lead_env", param, val)?;
-        }
         batch.set("room", "mix", self.room_mix)?;
         Ok(batch.finish())
     }
@@ -116,29 +138,6 @@ fn build(config: Config) -> (LegatoApp, LegatoFrontend, Vec<Batch>) {
     (app, frontend, batches)
 }
 
-/// Render a few seconds of each preset and print its peak and RMS.
-fn check(config: Config) {
-    let (mut app, mut frontend, batches) = build(config);
-    let blocks = 3 * config.sample_rate / config.block_size;
-    for (preset, batch) in PRESETS.iter().zip(&batches) {
-        frontend.send(batch).unwrap();
-        let (mut peak, mut sum, mut n) = (0.0f32, 0.0f64, 0usize);
-        for _ in 0..blocks {
-            let out = app.next_block();
-            for chan in &out.channels[..out.chans] {
-                for &y in *chan {
-                    assert!(y.is_finite(), "{} produced {y}", preset.name);
-                    peak = peak.max(y.abs());
-                    sum += (y * y) as f64;
-                    n += 1;
-                }
-            }
-        }
-        let rms = (sum / n as f64).sqrt();
-        println!("{:<10} peak {peak:.3}  rms {rms:.4}", preset.name);
-    }
-}
-
 #[cfg(all(target_os = "linux", feature = "jack"))]
 fn make_host() -> Host {
     cpal::host_from_id(cpal::HostId::Jack).expect("JACK host not available")
@@ -154,18 +153,27 @@ fn make_host() -> Host {
     cpal::default_host()
 }
 
+/// What the frontend last sent; the audio thread owns the real states.
 struct Ui {
     preset: usize,
-    /// What the frontend last sent for each of [`SWITCHES`]; the audio thread
-    /// owns the real states.
-    on: [bool; 5],
+    voices: usize,
+    effects: [bool; 3],
     status: String,
 }
 
+fn on_off(on: bool, off: NodeState) -> Span<'static> {
+    let (text, color) = if on {
+        ("Active".to_string(), Color::Green)
+    } else {
+        (format!("{off:?}"), Color::DarkGray)
+    };
+    Span::styled(text, Style::default().fg(color))
+}
+
 fn draw(frame: &mut Frame, ui: &Ui) {
-    let [presets, switches, help] = Layout::vertical([
+    let [presets, playing, help] = Layout::vertical([
         Constraint::Length(PRESETS.len() as u16 + 2),
-        Constraint::Length(SWITCHES.len() as u16 + 2),
+        Constraint::Length(EFFECTS.len() as u16 + 3),
         Constraint::Min(1),
     ])
     .areas(frame.area());
@@ -189,30 +197,21 @@ fn draw(frame: &mut Frame, ui: &Ui) {
         presets,
     );
 
-    let lines: Vec<Line> = SWITCHES
-        .iter()
-        .enumerate()
-        .map(|(i, (node, key, _))| {
-            let s = state(i, ui.on[i]);
-            let color = if s == Active {
-                Color::Green
-            } else {
-                Color::DarkGray
-            };
-            Line::from(vec![
-                Span::raw(format!(" {key}  {node:<6}")),
-                Span::styled(format!("{s:?}"), Style::default().fg(color)),
-            ])
-        })
-        .collect();
+    let mut lines = vec![Line::from(format!(" v  voices {}/{VOICES}", ui.voices))];
+    lines.extend(EFFECTS.iter().enumerate().map(|(i, (node, key, off))| {
+        Line::from(vec![
+            Span::raw(format!(" {key}  {node:<6}")),
+            on_off(ui.effects[i], *off),
+        ])
+    }));
     frame.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Nodes ")),
-        switches,
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Playing ")),
+        playing,
     );
 
     frame.render_widget(
         Paragraph::new(format!(
-            " 1-4 preset · l b t e r toggle · q quit   {}",
+            " 1-4 preset · v voices · t e r toggle · q quit   {}",
             ui.status
         ))
         .style(Style::default().fg(Color::DarkGray)),
@@ -227,25 +226,30 @@ fn main() -> std::io::Result<()> {
         channels: 2,
         rt_capacity: 0,
     };
-    if std::env::args().any(|a| a == "--check") {
-        check(config);
-        return Ok(());
-    }
 
     let (app, mut frontend, batches) = build(config);
+
+    // Make a default host based on your host OS and features
     let host = make_host();
-    let _audio = AudioInterface::builder(&host, config)
+
+    // Once we've built this we now have an audio thread.
+    //
+    // Applications without a UI thread can park here.
+    let _ = AudioInterface::builder(&host, config)
         .build(app)
         .expect("Failed to start audio");
 
     let mut ui = Ui {
         preset: 0,
-        on: PRESETS[0].on,
+        voices: PRESETS[0].voices,
+        effects: PRESETS[0].effects,
         status: String::new(),
     };
+
     frontend.send(&batches[0]).unwrap();
 
     let mut terminal = ratatui::init();
+
     loop {
         terminal.draw(|frame| draw(frame, &ui))?;
         let Event::Key(key) = event::read()? else {
@@ -257,20 +261,32 @@ fn main() -> std::io::Result<()> {
         let KeyCode::Char(c) = key.code else {
             continue;
         };
+        // Only record what was actually sent.
         let result = match c {
             'q' => break,
-            // Only record what was actually sent.
             '1'..='4' => {
                 let i = c as usize - '1' as usize;
                 frontend.send(&batches[i]).map(|()| {
                     ui.preset = i;
-                    ui.on = PRESETS[i].on;
+                    ui.voices = PRESETS[i].voices;
+                    ui.effects = PRESETS[i].effects;
                 })
             }
-            _ => match SWITCHES.iter().position(|s| s.1 == c) {
+            // Several nodes per voice, so this goes in a batch.
+            'v' => {
+                let voices = ui.voices % VOICES + 1;
+                let batch = {
+                    let mut batch = frontend.batch();
+                    voice_states(&mut batch, voices).map(|()| batch.finish())
+                };
+                batch
+                    .and_then(|batch| frontend.send(&batch))
+                    .map(|()| ui.voices = voices)
+            }
+            _ => match EFFECTS.iter().position(|e| e.1 == c) {
                 Some(i) => frontend
-                    .set_state(SWITCHES[i].0, state(i, !ui.on[i]))
-                    .map(|()| ui.on[i] = !ui.on[i]),
+                    .set_state(EFFECTS[i].0, effect_state(i, !ui.effects[i]))
+                    .map(|()| ui.effects[i] = !ui.effects[i]),
                 None => Ok(()),
             },
         };
