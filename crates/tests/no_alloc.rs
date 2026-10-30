@@ -5,6 +5,9 @@
 //! This binary installs [`AllocDisabler`] as its global allocator;
 //! `warn_debug` gives countable allocations instead of panicking.
 
+// assert_no_alloc compiles to nothing in release (default `disable_release`).
+#![cfg(debug_assertions)]
+
 use std::{fs, path::PathBuf};
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc, violation_count};
