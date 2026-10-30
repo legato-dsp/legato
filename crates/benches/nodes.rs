@@ -360,7 +360,7 @@ fn bench_kitchen_sink(c: &mut Criterion) {
 /// the fade path for the whole block: the worst case for state changes.
 fn bench_kitchen_sink_fading(c: &mut Criterion) {
     let (mut app, mut frontend) = kitchen_sink();
-    let names: Vec<String> = frontend.clone_registry().into_keys().collect();
+    let names: Vec<String> = frontend.node_registry().into_keys().collect();
     let mut muted = false;
 
     c.bench_function("Kitchen Sink (all nodes fading)", |b| {

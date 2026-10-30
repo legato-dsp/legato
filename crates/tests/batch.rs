@@ -30,7 +30,7 @@ fn build() -> (LegatoApp, LegatoFrontend) {
 }
 
 fn state(app: &LegatoApp, frontend: &LegatoFrontend, name: &str) -> NodeState {
-    app.node_state(frontend.clone_registry()[name]).unwrap()
+    app.node_state(frontend.node_registry()[name]).unwrap()
 }
 
 #[test]
@@ -168,4 +168,80 @@ proptest! {
             prop_assert_eq!(state(&batched, &batched_fe, node), state(&single, &single_fe, node));
         }
     }
+}
+
+#[test]
+fn build_batch_matches_the_builder() {
+    let (_app, frontend) = build();
+    let mut builder = frontend.batch();
+    builder.mute("saw").unwrap().bypass("svf").unwrap();
+    builder.set_param("cut", 500.0).unwrap();
+
+    let built = frontend
+        .build_batch(|b| {
+            b.mute("saw")?.bypass("svf")?;
+            b.set_param("cut", 500.0)?;
+            Ok::<_, FrontendError>(())
+        })
+        .unwrap();
+    assert_eq!(built, builder.finish());
+}
+
+#[test]
+fn a_failing_closure_sends_nothing() {
+    let (mut app, mut frontend) = build();
+    // The mute succeeds before the bypass fails; neither is sent.
+    let err = frontend.send_with(|b| {
+        b.mute("svf")?;
+        b.bypass("saw")?;
+        Ok(())
+    });
+    assert!(matches!(err, Err(FrontendError::CannotBypass { .. })));
+    app.next_block();
+    assert_eq!(state(&app, &frontend, "svf"), Active);
+
+    frontend
+        .send_with(|b| {
+            b.mute("svf")?;
+            Ok::<_, FrontendError>(())
+        })
+        .unwrap();
+    app.next_block();
+    assert_eq!(state(&app, &frontend, "svf"), Muted);
+}
+
+#[test]
+fn closures_can_use_the_callers_error_type() {
+    #[derive(Debug, PartialEq)]
+    enum AppError {
+        Frontend(FrontendError),
+        TooLoud,
+    }
+    impl From<FrontendError> for AppError {
+        fn from(e: FrontendError) -> Self {
+            Self::Frontend(e)
+        }
+    }
+
+    let (mut app, mut frontend) = build();
+    let loud = true;
+    let result = frontend.send_with(|b| {
+        b.mute("svf")?;
+        if loud {
+            return Err(AppError::TooLoud);
+        }
+        Ok(())
+    });
+    assert_eq!(result, Err(AppError::TooLoud));
+    assert_eq!(
+        frontend.send_with::<AppError>(|b| {
+            b.mute("nope")?;
+            Ok(())
+        }),
+        Err(AppError::Frontend(FrontendError::NodeNotFound(
+            "nope".into()
+        )))
+    );
+    app.next_block();
+    assert_eq!(state(&app, &frontend, "svf"), Active);
 }

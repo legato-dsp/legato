@@ -184,13 +184,15 @@ fn build() -> (LegatoApp, LegatoFrontend) {
 }
 
 /// Every node that isn't Active after sending `batch`, by name.
-fn changed(f: impl FnOnce(&LegatoFrontend) -> legato::batch::Batch) -> Vec<(String, NodeState)> {
+fn changed(
+    f: impl FnOnce(&LegatoFrontend) -> legato::batch::MessageBatch,
+) -> Vec<(String, NodeState)> {
     let (mut app, mut frontend) = build();
     let batch = f(&frontend);
     frontend.send(&batch).unwrap();
     app.next_block();
     let mut out: Vec<(String, NodeState)> = frontend
-        .clone_registry()
+        .node_registry()
         .into_iter()
         .map(|(name, key)| (name, app.node_state(key).unwrap()))
         .filter(|(_, s)| *s != Active)

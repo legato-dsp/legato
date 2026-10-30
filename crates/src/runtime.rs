@@ -4,7 +4,7 @@
 //! The [`Runtime`] then has a [`RuntimeFrontend`] that can be used from a control
 //! thread to change params or pass messages to the [`Runtime`].
 
-use crate::batch::Batch;
+use crate::batch::MessageBatch;
 use crate::builder::ValidationError;
 use crate::config::Config;
 use crate::context::AudioContext;
@@ -158,7 +158,7 @@ impl Runtime {
 
     /// Apply every message in `batch`; nested batches are skipped (the
     /// builder can't make them).
-    pub fn apply_batch(&mut self, batch: &Batch) {
+    pub fn apply_batch(&mut self, batch: &MessageBatch) {
         for msg in batch.messages() {
             if !matches!(msg, LegatoMsg::Batch(_)) {
                 self.handle_msg(msg.clone());

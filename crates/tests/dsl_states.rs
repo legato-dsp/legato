@@ -21,7 +21,7 @@ fn build(src: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
 /// The state of each named node.
 fn states(src: &str, names: &[&str]) -> Vec<(String, NodeState)> {
     let (app, frontend) = build(src).unwrap();
-    let registry = frontend.clone_registry();
+    let registry = frontend.node_registry();
     names
         .iter()
         .map(|&name| {
@@ -181,5 +181,20 @@ fn effects_that_mark_their_signal_inputs_can_start_bypassed() {
     assert_eq!(
         states(src, &["plate480"]),
         expect(&[("plate480", Bypassed)])
+    );
+}
+
+#[test]
+fn the_presets_demo_starts_with_its_declared_states() {
+    let src = include_str!("../demos/presets.legato");
+    assert_eq!(
+        states(src, &["echo", "room", "tone", "voice.0.op", "voice.3.env"]),
+        expect(&[
+            ("echo", Muted),
+            ("room", Bypassed),
+            ("tone", Active),
+            ("voice.0.op", Active),
+            ("voice.3.env", Active),
+        ])
     );
 }

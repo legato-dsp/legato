@@ -6,7 +6,7 @@ use std::{any::Any, collections::HashMap, fmt::Debug, path::Path};
 use rtrb::PushError;
 
 use crate::{
-    batch::{Batch, BatchBuilder},
+    batch::{BatchBuilder, MessageBatch},
     builder::ValidationError,
     config::Config,
     executor::OutputView,
@@ -76,7 +76,7 @@ pub struct LegatoApp {
     runtime: Runtime,
     msg_consumer: rtrb::Consumer<LegatoMsg>,
     /// Applied batches go back to the frontend to be freed.
-    batch_returns: rtrb::Producer<Batch>,
+    batch_returns: rtrb::Producer<MessageBatch>,
     audio_input_keys: HashMap<String, AudioInputKey>,
 }
 
@@ -84,7 +84,7 @@ impl LegatoApp {
     pub fn new(
         runtime: Runtime,
         receiver: rtrb::Consumer<LegatoMsg>,
-        batch_returns: rtrb::Producer<Batch>,
+        batch_returns: rtrb::Producer<MessageBatch>,
         audio_input_keys: HashMap<String, AudioInputKey>,
     ) -> Self {
         Self {
@@ -246,7 +246,7 @@ pub struct LegatoFrontend {
     unbypassable: HashMap<NodeKey, (usize, usize)>,
     node_params: HashMap<NodeKey, NodeParams>,
     /// Batches the audio thread has applied, waiting to be freed here.
-    batch_returns: rtrb::Consumer<Batch>,
+    batch_returns: rtrb::Consumer<MessageBatch>,
     handles: HandleStore,
 }
 
@@ -257,7 +257,7 @@ impl LegatoFrontend {
         node_registry: HashMap<String, NodeKey>,
         unbypassable: HashMap<NodeKey, (usize, usize)>,
         node_params: HashMap<NodeKey, NodeParams>,
-        batch_returns: rtrb::Consumer<Batch>,
+        batch_returns: rtrb::Consumer<MessageBatch>,
         handles: HandleStore,
     ) -> Self {
         Self {
@@ -276,9 +276,36 @@ impl LegatoFrontend {
         BatchBuilder::new(self)
     }
 
+    /// Build a [`Batch`] in `f`. Any error aborts it, so a failed build never
+    /// yields a partial batch.
+    pub fn build_batch<E>(
+        &self,
+        f: impl FnOnce(&mut BatchBuilder<'_>) -> Result<(), E>,
+    ) -> Result<MessageBatch, E>
+    where
+        E: From<FrontendError>,
+    {
+        let mut builder = self.batch();
+        f(&mut builder)?;
+        Ok(builder.finish())
+    }
+
+    /// Build a batch in `f` and send it, for one-off changes. Nothing is sent
+    /// if `f` fails. Build presets once with [`Self::build_batch`] instead.
+    pub fn send_with<E>(
+        &mut self,
+        f: impl FnOnce(&mut BatchBuilder<'_>) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        E: From<FrontendError>,
+    {
+        let batch = self.build_batch(f)?;
+        Ok(self.send(&batch)?)
+    }
+
     /// Send a batch. It is shared, not copied, so a preset can be sent again
     /// without allocating.
-    pub fn send(&mut self, batch: &Batch) -> Result<(), FrontendError> {
+    pub fn send(&mut self, batch: &MessageBatch) -> Result<(), FrontendError> {
         self.drain_batches();
         self.send_msg(LegatoMsg::Batch(batch.clone()))
     }
@@ -437,7 +464,7 @@ impl LegatoFrontend {
         self.drain_batches();
     }
 
-    pub fn clone_registry(&self) -> HashMap<String, NodeKey> {
+    pub fn node_registry(&self) -> HashMap<String, NodeKey> {
         self.node_registry.clone()
     }
 

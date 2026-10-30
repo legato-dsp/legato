@@ -1,4 +1,12 @@
-//! Batches: several messages that land in the same block.
+//! [`MessageBatch] is used to provide a group of updates into
+//! one message sent from the [`LegatoFrontend`] to the realtime
+//! audio thread.
+//!
+//! This provides a more atomic way of updating a number of effects,
+//! and can be used to compose presets, instruments, etc.
+//!
+//! We can do this by allocating the Arc<[T]> on the frontend,
+//! and ensuring that this *only* drops on the frontend as well.
 
 use std::sync::Arc;
 
@@ -12,11 +20,11 @@ use crate::{
 /// a preset built once can be sent again and again without allocating.
 ///
 /// The audio thread hands every batch back to the frontend, so it is never
-/// the last owner and never frees one.
+/// the last owner and never frees on the realtime thread.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Batch(Arc<[LegatoMsg]>);
+pub struct MessageBatch(Arc<[LegatoMsg]>);
 
-impl Batch {
+impl MessageBatch {
     pub fn messages(&self) -> &[LegatoMsg] {
         &self.0
     }
@@ -109,7 +117,7 @@ impl<'a> BatchBuilder<'a> {
         Ok(self)
     }
 
-    pub fn finish(self) -> Batch {
-        Batch(self.msgs.into())
+    pub fn finish(self) -> MessageBatch {
+        MessageBatch(self.msgs.into())
     }
 }

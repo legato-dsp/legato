@@ -83,13 +83,14 @@ audio {
     svf: tone { chans: 1, q: 0.8, type: "lowpass" },
     mono_fan_out { chans: 2 },
 
-    // Echo send: muting `echo` silences the repeats and their feedback
+    // Echo send: muting `echo` silences the repeats and their feedback.
+    // It starts muted and the room starts bypassed; a preset or a toggle turns them on.
     delay_write: echo_in { delay_name: "echo", delay_length: 1000.0, chans: 2 },
-    delay_read: echo { delay_name: "echo", delay_length: 375.0, chans: 2 },
+    muted delay_read: echo { delay_name: "echo", delay_length: 375.0, chans: 2 },
     track_mixer: echo_fb { tracks: 1, chans_per_track: 2, gain: [0.45] },
 
     track_mixer: bus { tracks: 2, chans_per_track: 2, gain: [0.8, 0.5] },
-    plate480: room { mix: 0.3 },
+    bypassed plate480: room { mix: 0.3 },
 }
 
 voice(*) >> voices[0..4]
