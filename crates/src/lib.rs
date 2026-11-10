@@ -43,6 +43,7 @@ pub mod kernel_emit;
 pub mod kernel_plan;
 pub mod math;
 pub mod midi;
+pub mod midi_bus;
 pub mod msg;
 pub mod node;
 pub mod node_state;

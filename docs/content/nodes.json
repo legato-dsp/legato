@@ -336,7 +336,7 @@
   {
     "name": "signal",
     "namespace": "control",
-    "description": "Smoothed control parameter exposed to the host application",
+    "description": "Control parameter exposed to the host application, gliding to each new value over `glide` ms (default 5, 0 for none)",
     "required_params": [
       "default",
       "max",
@@ -344,7 +344,32 @@
       "name"
     ],
     "optional_params": [
-      "smoothing"
+      "glide"
+    ]
+  },
+  {
+    "name": "arp",
+    "namespace": "midi",
+    "description": "Arpeggiates held MIDI notes, one per step of a phasor. `gate` is a fraction of the step; `gate_ms` overrides it",
+    "required_params": [
+      "steps"
+    ],
+    "optional_params": [
+      "gate",
+      "gate_ms",
+      "mode",
+      "octaves",
+      "seed"
+    ]
+  },
+  {
+    "name": "chance",
+    "namespace": "midi",
+    "description": "Passes each MIDI note with probability `p`; other messages always pass",
+    "required_params": [],
+    "optional_params": [
+      "p",
+      "seed"
     ]
   },
   {

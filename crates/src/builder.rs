@@ -20,6 +20,7 @@ use crate::{
     node::LegatoNode,
     node_state::NodeState,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
+    ports::Signal,
     registry::{NodeRegistry, default_namespaces},
     resources::{
         AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
@@ -383,10 +384,49 @@ where
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) -> Result<(), ValidationError> {
-        let source_indicies =
-            self.port_indices(&connection.source, &connection.source_kind, PortDir::Out)?;
-        let sink_indicies =
-            self.port_indices(&connection.sink, &connection.sink_kind, PortDir::In)?;
+        let bare_out = self.default_out_signal(&connection.source);
+        let (source_signal, source_indicies) = self.port_indices(
+            &connection.source,
+            &connection.source_kind,
+            PortDir::Out,
+            bare_out,
+        )?;
+        let (sink_signal, sink_indicies) = self.port_indices(
+            &connection.sink,
+            &connection.sink_kind,
+            PortDir::In,
+            source_signal,
+        )?;
+
+        if source_signal != sink_signal {
+            let (src, _) = self.describe(&connection.source);
+            let (sink, _) = self.describe(&connection.sink);
+            return Err(ValidationError::InvalidConnection(format!(
+                "cannot connect a {source_signal:?} output of '{src}' to a {sink_signal:?} input of '{sink}'"
+            )));
+        }
+
+        if source_signal == Signal::Midi {
+            let Some(pairs) = midi_pairs(&source_indicies, &sink_indicies) else {
+                let (src, _) = self.describe(&connection.source);
+                let (sink, _) = self.describe(&connection.sink);
+                return Err(ValidationError::SelectionArity(format!(
+                    "cannot connect {} MIDI output(s) of '{src}' to {} MIDI input(s) of \
+                     '{sink}': counts must match, or one side must be a single port",
+                    source_indicies.len(),
+                    sink_indicies.len()
+                )));
+            };
+            for (source, sink) in pairs {
+                add_signal_edge(
+                    &mut self.runtime,
+                    Signal::Midi,
+                    (connection.source, source),
+                    (connection.sink, sink),
+                )?;
+            }
+            return Ok(());
+        }
 
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
@@ -455,16 +495,20 @@ where
     ///
     /// Range checking here keeps a bad index (e.g. `mixer[2..4]` on a node with
     /// only 2 outputs) from slipping through to the audio thread.
+    ///
+    /// Indices and ranges address stream ports. Names search both lists, and a
+    /// bare port resolves within `bare`.
     fn port_indices(
         &self,
         key: &NodeKey,
         port: &Port,
         dir: PortDir,
-    ) -> Result<Vec<usize>, ValidationError> {
+        bare: Signal,
+    ) -> Result<(Signal, Vec<usize>), ValidationError> {
         let ports = self.runtime.get_node_ports(key);
-        let side = match dir {
-            PortDir::In => &ports.ports_in,
-            PortDir::Out => &ports.ports_out,
+        let list = |signal| match dir {
+            PortDir::In => ports.inputs(signal),
+            PortDir::Out => ports.outputs(signal),
         };
         let dir_name = match dir {
             PortDir::In => "input",
@@ -475,16 +519,30 @@ where
             ValidationError::InvalidConnection(format!("'{alias}' ({kind}): {msg}"))
         };
 
+        let signal = match port {
+            Port::None => bare,
+            Port::Named(name) => [Signal::Stream, Signal::Midi]
+                .into_iter()
+                .find(|&s| list(s).iter().any(|p| p.name == name))
+                .unwrap_or(Signal::Stream),
+            _ => Signal::Stream,
+        };
+        let side = list(signal);
+
         let indices: Vec<usize> = match port {
             Port::None => match dir {
-                PortDir::In => ports.default_in(),
-                PortDir::Out => ports.default_out(),
+                PortDir::In => ports.default_in_of(signal),
+                PortDir::Out => ports.default_out_of(signal),
             },
             Port::Index(i) => vec![*i],
             Port::Named(name) => match side.iter().find(|p| p.name == name) {
                 Some(p) => vec![p.index],
                 None => {
-                    let known: Vec<&str> = side.iter().map(|p| p.name).collect();
+                    let known: Vec<&str> = list(Signal::Stream)
+                        .iter()
+                        .chain(list(Signal::Midi))
+                        .map(|p| p.name)
+                        .collect();
                     return Err(invalid(format!(
                         "no {dir_name} port named '{name}' (expected one of: {})",
                         known.join(", ")
@@ -511,12 +569,20 @@ where
             )));
         }
 
-        Ok(indices)
+        if indices.is_empty() && signal == Signal::Midi {
+            return Err(invalid(format!("has no MIDI {dir_name} ports")));
+        }
+
+        Ok((signal, indices))
     }
 
     /// The bare-`>>` target input indices on `sink`.
     fn default_in(&self, sink: &NodeKey) -> Vec<usize> {
         self.runtime.get_node_ports(sink).default_in()
+    }
+
+    fn default_out_signal(&self, source: &NodeKey) -> Signal {
+        self.runtime.get_node_ports(source).default_out_signal()
     }
 }
 
@@ -710,9 +776,11 @@ impl LegatoBuilder<DslBuilding> {
             }
             let source = ir_to_runtime[&edge.source];
             let sink = ir_to_runtime[&edge.sink];
-            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
+            let bare_out = self.default_out_signal(&source);
+            let (signal, out_indices) =
+                self.port_indices(&source, &edge.source_port, PortDir::Out, bare_out)?;
             let matched = self.default_in(&sink);
-            if out_indices.len() < matched.len() {
+            if signal == Signal::Stream && out_indices.len() < matched.len() {
                 *narrow_bare_count.entry(sink).or_default() += 1;
             }
         }
@@ -724,10 +792,13 @@ impl LegatoBuilder<DslBuilding> {
             let source = ir_to_runtime[&edge.source];
             let sink = ir_to_runtime[&edge.sink];
 
-            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
+            let bare_out = self.default_out_signal(&source);
+            let (signal, out_indices) =
+                self.port_indices(&source, &edge.source_port, PortDir::Out, bare_out)?;
             let matched = self.default_in(&sink);
 
-            let in_fan_group = matches!(edge.sink_port, Port::None)
+            let in_fan_group = signal == Signal::Stream
+                && matches!(edge.sink_port, Port::None)
                 && out_indices.len() < matched.len()
                 && narrow_bare_count.get(&sink).copied().unwrap_or(0) > 1;
 
@@ -1022,6 +1093,20 @@ fn add_edge(
     (source, source_index): (NodeKey, usize),
     (sink, sink_index): (NodeKey, usize),
 ) -> Result<(), ValidationError> {
+    add_signal_edge(
+        runtime,
+        Signal::Stream,
+        (source, source_index),
+        (sink, sink_index),
+    )
+}
+
+fn add_signal_edge(
+    runtime: &mut Runtime,
+    signal: Signal,
+    (source, source_index): (NodeKey, usize),
+    (sink, sink_index): (NodeKey, usize),
+) -> Result<(), ValidationError> {
     runtime
         .add_edge(Connection {
             source: ConnectionEntry {
@@ -1032,6 +1117,7 @@ fn add_edge(
                 node_key: sink,
                 port_index: sink_index,
             },
+            signal,
         })
         .map(|_| ())
         .map_err(|e| {
@@ -1105,6 +1191,17 @@ fn n_to_one(
     }
 
     add_edge(runtime, (mixer, 0), (props.sink, sink_index))
+}
+
+/// MIDI needs no mixer nodes: the executor merges every edge into an input,
+/// and fans an output out by copying it into each input.
+fn midi_pairs(sources: &[usize], sinks: &[usize]) -> Option<Vec<(usize, usize)>> {
+    match (sources.len(), sinks.len()) {
+        (1, _) => Some(sinks.iter().map(|&k| (sources[0], k)).collect()),
+        (_, 1) => Some(sources.iter().map(|&s| (s, sinks[0])).collect()),
+        (n, m) if n == m => Some(sources.iter().copied().zip(sinks.iter().copied()).collect()),
+        _ => None,
+    }
 }
 
 fn n_to_n(

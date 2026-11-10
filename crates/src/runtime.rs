@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::context::AudioContext;
 use crate::executor::{Executor, OutputView};
 use crate::graph::{Connection, GraphError};
+use crate::midi::MidiEvent;
 use crate::msg::LegatoMsg;
 use crate::node::LegatoNode;
 use crate::node_state::{NodeState, fade_samples};
@@ -83,6 +84,14 @@ impl Runtime {
 
         let fade_len = fade_samples(self.context.get_config().sample_rate);
         self.executor.prepare(block_size, fade_len);
+        self.context
+            .midi_bus_mut()
+            .prepare(self.executor.midi_output_ports());
+    }
+
+    /// What `key` wrote to its MIDI output `port` in the last block.
+    pub fn midi_output(&self, key: NodeKey, port: usize) -> Option<&[MidiEvent]> {
+        self.executor.midi_output(&self.context, key, port)
     }
 
     /// What each node accepts in a `SetParam`, read once for the frontend.
@@ -98,7 +107,7 @@ impl Runtime {
                     .incoming_connections(key)
                     .into_iter()
                     .flatten()
-                    .map(|c| ports.ports_in[c.sink.port_index].name.to_string())
+                    .map(|c| ports.inputs(c.signal)[c.sink.port_index].name.to_string())
                     .collect();
                 let accepted = node
                     .get_node()
@@ -117,9 +126,13 @@ impl Runtime {
             .filter(|&(key, _)| !self.executor.can_bypass(key))
             .map(|(key, node)| {
                 let ports = node.get_node().ports();
+                let signal = ports.default_out_signal();
                 (
                     key,
-                    (ports.marked_default_in().len(), ports.default_out().len()),
+                    (
+                        ports.marked_default_in_of(signal).len(),
+                        ports.default_out_of(signal).len(),
+                    ),
                 )
             })
             .collect()

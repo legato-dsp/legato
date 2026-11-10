@@ -6,6 +6,7 @@ use slotmap::new_key_type;
 use crate::{
     config::Config,
     midi::{MidiError, MidiEvent, MidiMessage, MidiRuntimeFrontend, MidiStore, frame_since},
+    midi_bus::{MidiBus, NodeMidi},
     resources::{
         Resources,
         params::{ParamError, ParamKey},
@@ -27,6 +28,7 @@ pub struct AudioContext {
     // Filled by the host while the next block accumulates, see [`AudioContext::write_midi`]
     midi_pending: MidiStore,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
+    midi_bus: MidiBus,
     resources: Resources,
     block_start: Instant,
 }
@@ -39,6 +41,7 @@ impl AudioContext {
             midi_pending: MidiStore::new(MIDI_STORE_CAPACITY),
             resources,
             midi_runtime_frontend: None,
+            midi_bus: MidiBus::default(),
             block_start: Instant::now(),
         }
     }
@@ -131,6 +134,24 @@ impl AudioContext {
     #[inline(always)]
     pub fn get_midi_store(&self) -> &MidiStore {
         &self.midi_store
+    }
+
+    /// The MIDI ports of the node currently being processed. Empty outside of `process`.
+    #[inline(always)]
+    pub fn node_midi(&mut self) -> NodeMidi<'_> {
+        self.midi_bus.node_midi()
+    }
+
+    pub(crate) fn midi_bus(&self) -> &MidiBus {
+        &self.midi_bus
+    }
+
+    pub(crate) fn midi_bus_mut(&mut self) -> &mut MidiBus {
+        &mut self.midi_bus
+    }
+
+    pub(crate) fn gather_host_midi(&mut self, input: usize) {
+        self.midi_bus.gather_host(input, &self.midi_store);
     }
 
     #[inline(always)]

@@ -96,13 +96,29 @@ fn build_interface<'a>(
     config: Config,
     source: &str,
 ) -> Result<AudioInterface<'a>, String> {
-    let (app, _frontend) = LegatoBuilder::<Unconfigured>::new(config)
-        .register_node("audio", Modtap4::spec()) // custom codegen node
-        .build_dsl(source)
-        .map_err(|e| format!("{e:?}"))?;
+    let mut builder =
+        LegatoBuilder::<Unconfigured>::new(config).register_node("audio", Modtap4::spec()); // custom codegen node
+    if let Some(midi) = midi_input() {
+        builder = builder.set_midi_runtime(midi);
+    }
+    let (app, _frontend) = builder.build_dsl(source).map_err(|e| format!("{e:?}"))?;
     AudioInterface::builder(host, config)
         .build(app)
         .map_err(|e| e.to_string())
+}
+
+/// The first MIDI port, or a virtual `legato-gallery` port other apps can
+/// send to. Demos without MIDI nodes ignore it.
+fn midi_input() -> Option<legato::midi::MidiRuntimeFrontend> {
+    let open = |port: MidiPortKind| {
+        start_midi_thread(256, "legato-gallery", port.clone(), port, "legato-gallery").ok()
+    };
+    open(MidiPortKind::Default).or_else(|| {
+        #[cfg(unix)]
+        return open(MidiPortKind::Virtual);
+        #[cfg(not(unix))]
+        None
+    })
 }
 
 /// Which panel is currently in use

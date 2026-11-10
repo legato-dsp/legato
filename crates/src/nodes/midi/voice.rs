@@ -1,6 +1,7 @@
 use crate::{
     context::AudioContext,
     midi::MidiMessageKind,
+    midi_bus::NodeMidi,
     node::{Inputs, Node},
     ports::{PortBuilder, Ports},
 };
@@ -19,6 +20,8 @@ impl Voice {
         Self {
             midi_channel,
             ports: PortBuilder::default()
+                .midi_in_named(&["midi"])
+                .host_fallback()
                 .control_out_named(&["gate", "freq", "velocity"])
                 .build(),
             cur_freq: 0.0,
@@ -34,7 +37,13 @@ impl Node for Voice {
 
         let mut last_sample = 0;
 
-        for event in ctx.get_midi_store().get_channel(self.midi_channel) {
+        let NodeMidi { inputs, .. } = ctx.node_midi();
+        let channel = inputs
+            .port(0)
+            .iter()
+            .filter(|e| e.msg.channel_idx as usize == self.midi_channel);
+
+        for event in channel {
             let end_sample = (event.frame as usize).min(block_size);
 
             // Update state from past to now
@@ -230,6 +239,8 @@ impl PolyVoice {
             last_index_buffers: vec![0_usize; voices].into(),
             midi_channel,
             ports: PortBuilder::default()
+                .midi_in_named(&["midi"])
+                .host_fallback()
                 .control_out(voices * PER_VOICE_CHANS)
                 .build(),
         }
@@ -245,7 +256,13 @@ impl Node for PolyVoice {
             *idx = 0;
         }
 
-        for event in ctx.get_midi_store().get_channel(self.midi_channel) {
+        let NodeMidi { inputs, .. } = ctx.node_midi();
+        let channel = inputs
+            .port(0)
+            .iter()
+            .filter(|e| e.msg.channel_idx as usize == self.midi_channel);
+
+        for event in channel {
             // Here, we use the voice allocator to figure out which voice we are going to write to.
             // You can think of voices in the same way that tracks are used in the mixer.
             // If we have 3 midi channels here, and 3 voice, we end up with 9 total channels.

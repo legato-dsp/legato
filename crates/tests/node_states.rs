@@ -16,6 +16,7 @@ use legato::{
     harness::build_placeholder_context,
     node::{Inputs, LegatoNode, Node},
     node_state::{NodeState, fade_samples},
+    ports::Signal,
     ports::{PortBuilder, Ports},
     runtime::NodeKey,
 };
@@ -100,6 +101,7 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
     executor
         .graph
         .add_edge(Connection {
+            signal: Signal::Stream,
             source: entry(src),
             sink: entry(double),
         })
@@ -298,6 +300,7 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
         executor
             .graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: src,
                     port_index: i,

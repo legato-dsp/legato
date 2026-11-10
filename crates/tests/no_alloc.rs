@@ -15,6 +15,7 @@ use legato::{
     LegatoApp, LegatoFrontend,
     builder::{LegatoBuilder, Unconfigured},
     config::Config,
+    midi::{MidiMessage, MidiMessageKind},
     msg::{NodeMessage, ParamPayload, RtValue},
     node_state::NodeState,
     resources::buffer::ExternalBuffer,
@@ -88,6 +89,109 @@ fn demos_render_without_allocating() {
         checked += 1;
     }
     assert!(checked > 0, "no demos found in {dir:?}");
+}
+
+/// Forwards the host's MIDI to its output.
+struct Echo {
+    ports: legato::ports::Ports,
+}
+
+impl legato::node::Node for Echo {
+    fn process(
+        &mut self,
+        ctx: &mut legato::context::AudioContext,
+        _: &legato::node::Inputs,
+        _: &mut [&mut [f32]],
+    ) {
+        let legato::midi_bus::NodeMidi {
+            inputs,
+            mut outputs,
+        } = ctx.node_midi();
+        let out = outputs.port(0);
+        for &event in inputs.port(0) {
+            out.push(event);
+        }
+    }
+    fn ports(&self) -> &legato::ports::Ports {
+        &self.ports
+    }
+}
+
+#[test]
+fn midi_between_nodes_does_not_allocate() {
+    let echo = legato::spec::NodeSpec::from_fn("echo", &[], &[], |_, _| {
+        Ok(Box::new(Echo {
+            ports: legato::ports::PortBuilder::default()
+                .midi_in_named(&["in"])
+                .default_in()
+                .host_fallback()
+                .midi_out_named(&["out"])
+                .build(),
+        }))
+    });
+    let config = Config {
+        sample_rate: 44_100,
+        block_size: 256,
+        channels: 2,
+        rt_capacity: 0,
+    };
+    let (mut app, mut frontend) = LegatoBuilder::<Unconfigured>::new(config)
+        .register_node("midi", echo)
+        .build_dsl(
+            "midi { echo: a, echo: b, voice { chan: 0 } }\na >> voice\nb >> voice\n{ voice }",
+        )
+        .expect("graph should build");
+
+    for block in 0..BLOCKS {
+        let data = match block % 2 {
+            0 => MidiMessageKind::NoteOn {
+                note: 60,
+                velocity: 90,
+            },
+            _ => MidiMessageKind::NoteOff {
+                note: 60,
+                velocity: 0,
+            },
+        };
+        app.write_midi(
+            block * 7 % 256,
+            MidiMessage {
+                data,
+                channel_idx: 0,
+            },
+        )
+        .unwrap();
+        if block % 8 == 3 {
+            let state = match block % 16 {
+                3 => NodeState::Bypassed,
+                _ => NodeState::Active,
+            };
+            frontend.set_state("a", state).unwrap();
+        }
+        assert_eq!(render_allocs(&mut app), 0, "block {block}");
+    }
+}
+
+#[test]
+fn the_arp_demo_does_not_allocate_while_playing() {
+    let (mut app, _frontend) = build(include_str!("../demos/arp.legato"));
+    for (block, note) in [60, 64, 67].into_iter().enumerate() {
+        let data = MidiMessageKind::NoteOn {
+            note,
+            velocity: 100,
+        };
+        app.write_midi(
+            block,
+            MidiMessage {
+                data,
+                channel_idx: 0,
+            },
+        )
+        .unwrap();
+    }
+    for block in 0..BLOCKS * 8 {
+        assert_eq!(render_allocs(&mut app), 0, "block {block}");
+    }
 }
 
 const SAMPLER: &str = "audio { sampler { sampler_name: \"s\" } }\n{ sampler }";

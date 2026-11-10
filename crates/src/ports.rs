@@ -17,14 +17,45 @@
 #[derive(Clone, Debug)]
 pub struct PortMeta {
     pub name: &'static str,
+    /// Position within this port's list, see [`Signal`].
     pub index: usize,
     /// Whether a bare `>>` auto-maps onto this port.
     pub default: bool,
-    /// What the node receives when nothing is connected to this input.
-    pub unpatched: Unpatched,
+    pub kind: PortKind,
 }
 
-/// How the executor presents an input that has no incoming connection.
+/// What a port carries, and what an input receives when nothing is connected to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PortKind {
+    Stream(Unpatched),
+    Midi(MidiUnpatched),
+}
+
+impl PortKind {
+    pub fn signal(&self) -> Signal {
+        match self {
+            PortKind::Stream(_) => Signal::Stream,
+            PortKind::Midi(_) => Signal::Midi,
+        }
+    }
+}
+
+impl Default for PortKind {
+    fn default() -> Self {
+        PortKind::Stream(Unpatched::Absent)
+    }
+}
+
+/// Which of a node's port lists an index refers to. Each list is indexed from zero.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Signal {
+    /// Audio and control rate `f32` blocks.
+    #[default]
+    Stream,
+    Midi,
+}
+
+/// How the executor presents a stream input that has no incoming connection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Unpatched {
     /// The node sees `None`, typically falling back to an internal parameter.
@@ -36,13 +67,59 @@ pub enum Unpatched {
     Required,
 }
 
-#[derive(Clone, Debug)]
+/// How the executor presents a MIDI input that has no incoming connection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MidiUnpatched {
+    #[default]
+    Empty,
+    /// Building the graph fails.
+    Required,
+    /// The node sees the host's MIDI for this block.
+    Host,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Ports {
     pub ports_in: Vec<PortMeta>,
     pub ports_out: Vec<PortMeta>,
+    pub midi_in: Vec<PortMeta>,
+    pub midi_out: Vec<PortMeta>,
 }
 
 impl Ports {
+    pub fn inputs(&self, signal: Signal) -> &[PortMeta] {
+        match signal {
+            Signal::Stream => &self.ports_in,
+            Signal::Midi => &self.midi_in,
+        }
+    }
+
+    pub fn outputs(&self, signal: Signal) -> &[PortMeta] {
+        match signal {
+            Signal::Stream => &self.ports_out,
+            Signal::Midi => &self.midi_out,
+        }
+    }
+
+    /// What a bare `>>` reads from: MIDI if a MIDI output is marked default
+    /// or the node only has MIDI outputs, otherwise stream.
+    pub fn default_out_signal(&self) -> Signal {
+        let midi_marked = self.midi_out.iter().any(|p| p.default);
+        if midi_marked || (self.ports_out.is_empty() && !self.midi_out.is_empty()) {
+            Signal::Midi
+        } else {
+            Signal::Stream
+        }
+    }
+
+    pub fn default_in_of(&self, signal: Signal) -> Vec<usize> {
+        default_indices(self.inputs(signal))
+    }
+
+    pub fn default_out_of(&self, signal: Signal) -> Vec<usize> {
+        default_indices(self.outputs(signal))
+    }
+
     pub fn find_port_in(&self, name: &String) -> Option<PortMeta> {
         if let Some(port) = self.ports_in.iter().find(|x| x.name == name) {
             return Some(port.clone());
@@ -64,7 +141,11 @@ impl Ports {
     /// Input indices explicitly marked with [`PortBuilder::default_in`]: the
     /// node's declared signal path, with no fallback. Bypass uses these.
     pub fn marked_default_in(&self) -> Vec<usize> {
-        self.ports_in
+        self.marked_default_in_of(Signal::Stream)
+    }
+
+    pub fn marked_default_in_of(&self, signal: Signal) -> Vec<usize> {
+        self.inputs(signal)
             .iter()
             .filter(|p| p.default)
             .map(|p| p.index)
@@ -92,9 +173,13 @@ pub(crate) fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
 
 impl From<PortBuilder> for Ports {
     fn from(builder: PortBuilder) -> Self {
+        assert_unique_across_kinds(&builder.port_audio_in, &builder.midi_in, "input");
+        assert_unique_across_kinds(&builder.port_audio_out, &builder.midi_out, "output");
         Ports {
             ports_in: builder.port_audio_in,
             ports_out: builder.port_audio_out,
+            midi_in: builder.midi_in,
+            midi_out: builder.midi_out,
         }
     }
 }
@@ -103,33 +188,36 @@ pub trait Ported {
     fn get_ports(&self) -> &Ports;
 }
 
+/// (signal, start, end) of a batch of ports added in one builder call.
+type Batch = (Signal, usize, usize);
+
 #[derive(Default)]
 pub struct PortBuilder {
     port_audio_in: Vec<PortMeta>,
     port_audio_out: Vec<PortMeta>,
-    last_in: Option<(usize, usize)>,
-    last_out: Option<(usize, usize)>,
+    midi_in: Vec<PortMeta>,
+    midi_out: Vec<PortMeta>,
+    last_in: Option<Batch>,
+    last_out: Option<Batch>,
+}
+
+fn push_port(list: &mut Vec<PortMeta>, name: &'static str, kind: PortKind) {
+    let index = list.len();
+    list.push(PortMeta {
+        name,
+        index,
+        default: false,
+        kind,
+    });
 }
 
 impl PortBuilder {
     fn push_in(&mut self, name: &'static str) {
-        let index = self.port_audio_in.len();
-        self.port_audio_in.push(PortMeta {
-            name,
-            index,
-            default: false,
-            unpatched: Unpatched::Absent,
-        });
+        push_port(&mut self.port_audio_in, name, PortKind::default());
     }
 
     fn push_out(&mut self, name: &'static str) {
-        let index = self.port_audio_out.len();
-        self.port_audio_out.push(PortMeta {
-            name,
-            index,
-            default: false,
-            unpatched: Unpatched::Absent,
-        });
+        push_port(&mut self.port_audio_out, name, PortKind::default());
     }
 
     pub fn audio_in(mut self, count: usize) -> Self {
@@ -137,7 +225,7 @@ impl PortBuilder {
         for i in 0..count {
             self.push_in(default_audio_in_name(i, count));
         }
-        self.last_in = Some((start, self.port_audio_in.len()));
+        self.last_in = Some((Signal::Stream, start, self.port_audio_in.len()));
         self
     }
 
@@ -146,7 +234,7 @@ impl PortBuilder {
         for i in 0..count {
             self.push_out(default_audio_out_name(i, count));
         }
-        self.last_out = Some((start, self.port_audio_out.len()));
+        self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
         self
     }
 
@@ -155,7 +243,7 @@ impl PortBuilder {
         for name in names {
             self.push_in(name);
         }
-        self.last_in = Some((start, self.port_audio_in.len()));
+        self.last_in = Some((Signal::Stream, start, self.port_audio_in.len()));
         self
     }
 
@@ -164,7 +252,7 @@ impl PortBuilder {
         for name in names {
             self.push_out(name);
         }
-        self.last_out = Some((start, self.port_audio_out.len()));
+        self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
         self
     }
 
@@ -173,7 +261,7 @@ impl PortBuilder {
         for i in 0..count {
             self.push_in(default_audio_in_name(i, count));
         }
-        self.last_in = Some((start, self.port_audio_in.len()));
+        self.last_in = Some((Signal::Stream, start, self.port_audio_in.len()));
         self
     }
 
@@ -182,7 +270,7 @@ impl PortBuilder {
         for i in 0..count {
             self.push_out(default_audio_out_name(i, count));
         }
-        self.last_out = Some((start, self.port_audio_out.len()));
+        self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
         self
     }
 
@@ -191,7 +279,7 @@ impl PortBuilder {
         for name in names {
             self.push_in(name);
         }
-        self.last_in = Some((start, self.port_audio_in.len()));
+        self.last_in = Some((Signal::Stream, start, self.port_audio_in.len()));
         self
     }
 
@@ -200,56 +288,127 @@ impl PortBuilder {
         for name in names {
             self.push_out(name);
         }
-        self.last_out = Some((start, self.port_audio_out.len()));
+        self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
+        self
+    }
+
+    pub fn midi_in_named(mut self, names: &[&'static str]) -> Self {
+        let start = self.midi_in.len();
+        for &name in names {
+            push_port(
+                &mut self.midi_in,
+                name,
+                PortKind::Midi(MidiUnpatched::Empty),
+            );
+        }
+        self.last_in = Some((Signal::Midi, start, self.midi_in.len()));
+        self
+    }
+
+    pub fn midi_out_named(mut self, names: &[&'static str]) -> Self {
+        let start = self.midi_out.len();
+        for &name in names {
+            push_port(
+                &mut self.midi_out,
+                name,
+                PortKind::Midi(MidiUnpatched::Empty),
+            );
+        }
+        self.last_out = Some((Signal::Midi, start, self.midi_out.len()));
         self
     }
 
     /// Mark the most recently added input batch as the bare-`>>` target.
     pub fn default_in(mut self) -> Self {
-        let (start, end) = self
+        let batch = self
             .last_in
             .expect("default_in() requires a preceding input batch");
-
-        for p in &mut self.port_audio_in[start..end] {
+        for p in self.in_batch(batch) {
             p.default = true;
         }
-
         self
     }
 
     /// Mark the most recently added output batch as the bare-`>>` source.
     pub fn default_out(mut self) -> Self {
-        let (start, end) = self
+        let (signal, start, end) = self
             .last_out
             .expect("default_out() requires a preceding output batch");
-        for p in &mut self.port_audio_out[start..end] {
+        let list = match signal {
+            Signal::Stream => &mut self.port_audio_out,
+            Signal::Midi => &mut self.midi_out,
+        };
+        for p in &mut list[start..end] {
             p.default = true;
         }
         self
     }
 
-    /// The most recently added input batch reads as silence when unpatched.
+    /// The most recently added stream input batch reads as silence when unpatched.
     pub fn silent_in(self) -> Self {
-        self.set_unpatched(Unpatched::Silent)
+        self.set_last_in(
+            "silent_in()",
+            Signal::Stream,
+            PortKind::Stream(Unpatched::Silent),
+        )
     }
 
     /// The most recently added input batch must be connected for the graph to build.
     pub fn required_in(self) -> Self {
-        self.set_unpatched(Unpatched::Required)
+        let kind = match self.last_in {
+            Some((Signal::Midi, ..)) => PortKind::Midi(MidiUnpatched::Required),
+            _ => PortKind::Stream(Unpatched::Required),
+        };
+        self.set_last_in("required_in()", kind.signal(), kind)
     }
 
-    fn set_unpatched(mut self, unpatched: Unpatched) -> Self {
-        let (start, end) = self
+    /// The most recently added MIDI input batch reads the host's MIDI when unpatched.
+    pub fn host_fallback(self) -> Self {
+        self.set_last_in(
+            "host_fallback()",
+            Signal::Midi,
+            PortKind::Midi(MidiUnpatched::Host),
+        )
+    }
+
+    fn set_last_in(mut self, method: &str, expected: Signal, kind: PortKind) -> Self {
+        let batch = self
             .last_in
-            .expect("silent_in()/required_in() require a preceding input batch");
-        for p in &mut self.port_audio_in[start..end] {
-            p.unpatched = unpatched;
+            .unwrap_or_else(|| panic!("{method} requires a preceding input batch"));
+        assert!(
+            batch.0 == expected,
+            "{method} applies to {expected:?} inputs, but the last input batch is {:?}",
+            batch.0
+        );
+        for p in self.in_batch(batch) {
+            p.kind = kind;
         }
         self
     }
 
+    fn in_batch(&mut self, (signal, start, end): Batch) -> &mut [PortMeta] {
+        match signal {
+            Signal::Stream => &mut self.port_audio_in[start..end],
+            Signal::Midi => &mut self.midi_in[start..end],
+        }
+    }
+
     pub fn build(self) -> Ports {
         self.into()
+    }
+}
+
+/// Panics if a MIDI port shares a name with a stream port on the same side,
+/// so a named connection always resolves to one port.
+fn assert_unique_across_kinds(stream: &[PortMeta], midi: &[PortMeta], side: &str) {
+    if let Some(p) = midi
+        .iter()
+        .find(|m| stream.iter().any(|s| s.name == m.name))
+    {
+        panic!(
+            "MIDI {side} '{}' shares its name with a stream {side}; names must be unique per side",
+            p.name
+        );
     }
 }
 
@@ -434,6 +593,79 @@ mod tests {
             let want = if marked.is_empty() { (0..next).collect() } else { marked };
             prop_assert_eq!(ports.default_in(), want);
         }
+    }
+
+    #[test]
+    fn midi_ports_are_indexed_apart_from_stream_ports() {
+        let ports = PortBuilder::default()
+            .midi_in_named(&["notes"])
+            .control_in_named(&["clock"])
+            .midi_in_named(&["extra"])
+            .midi_out_named(&["out"])
+            .build();
+
+        assert_eq!(names(&ports.ports_in), vec!["clock"]);
+        assert_eq!(names(&ports.midi_in), vec!["notes", "extra"]);
+        assert_eq!(indices(&ports.midi_in), vec![0, 1]);
+        assert_eq!(indices(&ports.ports_in), vec![0]);
+    }
+
+    #[test]
+    fn unpatched_behaviour_applies_to_the_last_batch_of_its_kind() {
+        let ports = PortBuilder::default()
+            .midi_in_named(&["host"])
+            .host_fallback()
+            .midi_in_named(&["needed"])
+            .required_in()
+            .audio_in(1)
+            .silent_in()
+            .build();
+
+        assert_eq!(ports.midi_in[0].kind, PortKind::Midi(MidiUnpatched::Host));
+        assert_eq!(
+            ports.midi_in[1].kind,
+            PortKind::Midi(MidiUnpatched::Required)
+        );
+        assert_eq!(ports.ports_in[0].kind, PortKind::Stream(Unpatched::Silent));
+    }
+
+    #[test]
+    #[should_panic(expected = "host_fallback() applies to Midi inputs")]
+    fn host_fallback_on_a_stream_batch_panics() {
+        PortBuilder::default().audio_in(1).host_fallback();
+    }
+
+    #[test]
+    #[should_panic(expected = "silent_in() applies to Stream inputs")]
+    fn silent_in_on_a_midi_batch_panics() {
+        PortBuilder::default().midi_in_named(&["notes"]).silent_in();
+    }
+
+    #[test]
+    #[should_panic(expected = "shares its name with a stream input")]
+    fn a_midi_name_cannot_repeat_a_stream_name() {
+        PortBuilder::default()
+            .audio_in(1)
+            .midi_in_named(&["in"])
+            .build();
+    }
+
+    #[test]
+    fn bare_output_is_midi_when_marked_or_the_only_kind() {
+        let midi_only = PortBuilder::default().midi_out_named(&["out"]).build();
+        let both = PortBuilder::default()
+            .audio_out(1)
+            .midi_out_named(&["notes"])
+            .build();
+        let marked = PortBuilder::default()
+            .audio_out(1)
+            .midi_out_named(&["notes"])
+            .default_out()
+            .build();
+
+        assert_eq!(midi_only.default_out_signal(), Signal::Midi);
+        assert_eq!(both.default_out_signal(), Signal::Stream);
+        assert_eq!(marked.default_out_signal(), Signal::Midi);
     }
 
     #[test]

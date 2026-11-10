@@ -304,18 +304,6 @@ impl MidiWriterFrontend {
 
 const MIDI_CHANS: usize = 16;
 
-#[derive(Clone)]
-/// The MidiStore stores one block of Midi events in a flat layout, each channel in frame order.
-///
-/// So, channel 0 is 0..per_chan_cap, 1 is per_chan_cap..2*per_chan_cap, etc.
-pub struct MidiStore {
-    channel_events: Vec<MidiEvent>,
-    channel_events_count: [usize; MIDI_CHANS],
-    general_events: Vec<MidiEvent>,
-    general_events_count: usize,
-    capacity: usize,
-}
-
 const DUMMY_EVENT: MidiEvent = MidiEvent {
     frame: 0,
     msg: MidiMessage {
@@ -324,85 +312,167 @@ const DUMMY_EVENT: MidiEvent = MidiEvent {
     },
 };
 
-/// Insert keeping `events` sorted by frame, after any events on the same frame.
-#[inline(always)]
-fn insert_by_frame(events: &mut [MidiEvent], count: usize, event: MidiEvent) {
-    let at = events[..count].partition_point(|e| e.frame <= event.frame);
-    events.copy_within(at..count, at + 1);
-    events[at] = event;
+/// One block of events in frame order, with a capacity fixed at construction.
+///
+/// Events on the same frame keep the order they were pushed in.
+#[derive(Clone)]
+pub struct MidiBuffer {
+    events: Box<[MidiEvent]>,
+    len: usize,
+    dropped: u32,
+}
+
+impl MidiBuffer {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            events: vec![DUMMY_EVENT; capacity].into(),
+            len: 0,
+            dropped: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn try_push(&mut self, event: MidiEvent) -> Result<(), MidiError> {
+        if self.len == self.events.len() {
+            return Err(MidiError::RingbufferFull);
+        }
+        let at = self.events[..self.len].partition_point(|e| e.frame <= event.frame);
+        self.events.copy_within(at..self.len, at + 1);
+        self.events[at] = event;
+        self.len += 1;
+        Ok(())
+    }
+
+    /// Like [`MidiBuffer::try_push`], but a full buffer drops the event and counts it.
+    #[inline(always)]
+    pub fn push(&mut self, event: MidiEvent) {
+        if self.try_push(event).is_err() {
+            self.dropped = self.dropped.saturating_add(1);
+        }
+    }
+
+    /// Like [`MidiBuffer::push`], but lands before any events already on the same frame.
+    pub fn push_first(&mut self, event: MidiEvent) {
+        if self.len == self.events.len() {
+            self.dropped = self.dropped.saturating_add(1);
+            return;
+        }
+        let at = self.events[..self.len].partition_point(|e| e.frame < event.frame);
+        self.events.copy_within(at..self.len, at + 1);
+        self.events[at] = event;
+        self.len += 1;
+    }
+
+    pub fn note_on(&mut self, frame: u32, channel_idx: u8, note: u8, velocity: u8) {
+        self.push(MidiEvent {
+            frame,
+            msg: MidiMessage {
+                channel_idx,
+                data: MidiMessageKind::NoteOn { note, velocity },
+            },
+        });
+    }
+
+    pub fn note_off(&mut self, frame: u32, channel_idx: u8, note: u8) {
+        self.push(MidiEvent {
+            frame,
+            msg: MidiMessage {
+                channel_idx,
+                data: MidiMessageKind::NoteOff { note, velocity: 0 },
+            },
+        });
+    }
+
+    #[inline(always)]
+    pub fn events(&self) -> &[MidiEvent] {
+        &self.events[..self.len]
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Empties the buffer; the drop count is kept until [`MidiBuffer::take_dropped`].
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    pub fn dropped(&self) -> u32 {
+        self.dropped
+    }
+
+    pub fn take_dropped(&mut self) -> u32 {
+        std::mem::take(&mut self.dropped)
+    }
+}
+
+/// The host's MIDI for one block, split into a buffer per channel plus one for system messages.
+#[derive(Clone)]
+pub struct MidiStore {
+    channels: Box<[MidiBuffer]>,
+    general: MidiBuffer,
 }
 
 impl MidiStore {
     pub fn new(capacity: usize) -> Self {
         Self {
-            channel_events: vec![DUMMY_EVENT; capacity * MIDI_CHANS],
-            channel_events_count: [0; MIDI_CHANS],
-            general_events: vec![DUMMY_EVENT; capacity],
-            general_events_count: 0,
-            capacity,
+            channels: vec![MidiBuffer::with_capacity(capacity); MIDI_CHANS].into(),
+            general: MidiBuffer::with_capacity(capacity),
         }
     }
-    /// Clear the events. We still have the same underlying allocation.
+
     pub fn clear(&mut self) {
-        self.channel_events_count = [0; MIDI_CHANS];
-        self.general_events_count = 0;
+        self.channels.iter_mut().for_each(MidiBuffer::clear);
+        self.general.clear();
     }
 
     #[inline(always)]
     pub fn insert(&mut self, event: MidiEvent) -> Result<(), MidiError> {
         let chan = event.msg.channel_idx as usize;
         match event.msg.data {
-            // Channel messages
             MidiMessageKind::NoteOn { .. }
             | MidiMessageKind::NoteOff { .. }
             | MidiMessageKind::Control { .. }
             | MidiMessageKind::PolyphonicAftertouch { .. }
             | MidiMessageKind::ChannelAftertouch { .. }
-            | MidiMessageKind::PitchWheel { .. } => {
-                if chan >= MIDI_CHANS {
-                    return Err(MidiError::InvalidPort);
-                }
-
-                let count = self.channel_events_count[chan];
-                if count >= self.capacity {
-                    return Err(MidiError::RingbufferFull);
-                }
-
-                let start = chan * self.capacity;
-                let events = &mut self.channel_events[start..start + self.capacity];
-                insert_by_frame(events, count, event);
-                self.channel_events_count[chan] += 1;
-
-                Ok(())
-            }
+            | MidiMessageKind::PitchWheel { .. } => self
+                .channels
+                .get_mut(chan)
+                .ok_or(MidiError::InvalidPort)?
+                .try_push(event),
             MidiMessageKind::Start
             | MidiMessageKind::Continue
             | MidiMessageKind::Clock
             | MidiMessageKind::Stop
-            | MidiMessageKind::SongPositionPointer { .. } => {
-                let count = self.general_events_count;
-                if count >= self.capacity {
-                    return Err(MidiError::RingbufferFull);
-                }
-
-                insert_by_frame(&mut self.general_events, count, event);
-                self.general_events_count += 1;
-
-                Ok(())
-            }
+            | MidiMessageKind::SongPositionPointer { .. } => self.general.try_push(event),
             MidiMessageKind::Dummy => Err(MidiError::NotImplemented),
         }
     }
+
     pub fn get_channel(&self, chan: usize) -> &[MidiEvent] {
-        debug_assert!(chan < MIDI_CHANS);
-
-        let start = self.capacity * chan;
-        let count = self.channel_events_count[chan];
-
-        &self.channel_events[start..start + count]
+        self.channels[chan].events()
     }
+
     pub fn get_general(&self) -> &[MidiEvent] {
-        &self.general_events[..self.general_events_count]
+        self.general.events()
+    }
+
+    /// Every channel and system event, merged in frame order into `dst`.
+    pub fn merge_into(&self, dst: &mut MidiBuffer) {
+        for buffer in self.channels.iter().chain(std::iter::once(&self.general)) {
+            for &event in buffer.events() {
+                dst.push(event);
+            }
+        }
     }
 }
 
@@ -649,7 +719,10 @@ pub fn parse_midi(message: &[u8]) -> Result<MidiMessage, MidiError> {
             let note = message[1];
             let velocity = message[2];
 
-            let data = MidiMessageKind::NoteOn { note, velocity };
+            let data = match velocity {
+                0 => MidiMessageKind::NoteOff { note, velocity },
+                _ => MidiMessageKind::NoteOn { note, velocity },
+            };
 
             Ok(MidiMessage {
                 channel_idx: message_channel_index,
@@ -980,6 +1053,114 @@ mod tests {
         assert_eq!(frame_since(anchor, anchor + ms(1), 48_000, 64), 48);
         assert_eq!(frame_since(anchor, anchor + ms(10), 48_000, 64), 63);
         assert_eq!(frame_since(anchor + ms(1), anchor, 48_000, 64), 0);
+    }
+
+    #[test]
+    fn note_on_with_zero_velocity_parses_as_note_off() {
+        let msg = parse_midi(&[0x93, 60, 0]).unwrap();
+        assert_eq!(
+            msg.data,
+            MidiMessageKind::NoteOff {
+                note: 60,
+                velocity: 0
+            }
+        );
+        assert_eq!(msg.channel_idx, 3);
+    }
+
+    #[test]
+    fn buffer_keeps_frame_order_and_same_frame_push_order() {
+        let mut buffer = MidiBuffer::with_capacity(8);
+        for (frame, note) in [(5, 0), (2, 1), (5, 2), (0, 3)] {
+            buffer.note_on(frame, 0, note, 1);
+        }
+        let order: Vec<_> = buffer
+            .events()
+            .iter()
+            .map(|e| match e.msg.data {
+                MidiMessageKind::NoteOn { note, .. } => (e.frame, note),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(order, [(0, 3), (2, 1), (5, 0), (5, 2)]);
+    }
+
+    #[test]
+    fn push_first_lands_before_events_on_the_same_frame() {
+        let mut buffer = MidiBuffer::with_capacity(4);
+        buffer.note_on(0, 0, 1, 1);
+        buffer.note_on(2, 0, 2, 1);
+        buffer.push_first(event(
+            0,
+            0,
+            MidiMessageKind::NoteOff {
+                note: 9,
+                velocity: 0,
+            },
+        ));
+
+        let frames: Vec<_> = buffer
+            .events()
+            .iter()
+            .map(|e| (e.frame, e.msg.data))
+            .collect();
+        assert_eq!(
+            frames[0],
+            (
+                0,
+                MidiMessageKind::NoteOff {
+                    note: 9,
+                    velocity: 0
+                }
+            )
+        );
+        assert_eq!(frames.len(), 3);
+    }
+
+    #[test]
+    fn full_buffer_drops_and_counts_until_taken() {
+        let mut buffer = MidiBuffer::with_capacity(2);
+        for note in 0..4 {
+            buffer.note_on(0, 0, note, 1);
+        }
+        assert_eq!(buffer.len(), 2);
+        assert_eq!(buffer.take_dropped(), 2);
+        assert_eq!(buffer.dropped(), 0);
+
+        buffer.clear();
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.capacity(), 2);
+    }
+
+    #[test]
+    fn store_merges_channels_and_system_messages_in_frame_order() {
+        let mut store = MidiStore::new(4);
+        store.insert(event(4, 2, MidiMessageKind::Clock)).unwrap();
+        store
+            .insert(event(
+                9,
+                0,
+                MidiMessageKind::NoteOn {
+                    note: 1,
+                    velocity: 1,
+                },
+            ))
+            .unwrap();
+        store
+            .insert(event(
+                1,
+                5,
+                MidiMessageKind::NoteOn {
+                    note: 2,
+                    velocity: 1,
+                },
+            ))
+            .unwrap();
+
+        let mut merged = MidiBuffer::with_capacity(8);
+        store.merge_into(&mut merged);
+        let frames: Vec<u32> = merged.events().iter().map(|e| e.frame).collect();
+        assert_eq!(frames, [1, 4, 9]);
     }
 
     #[test]

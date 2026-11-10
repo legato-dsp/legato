@@ -7,6 +7,7 @@ use legato::{
     graph::{Connection, ConnectionEntry},
     harness::build_placeholder_context,
     node::{Inputs, LegatoNode, Node},
+    ports::Signal,
     ports::{PortBuilder, Ports},
     runtime::NodeKey,
 };
@@ -171,6 +172,7 @@ fn build(spec: &GraphSpec) -> (Executor, Vec<NodeKey>) {
         executor
             .graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: keys[e.src],
                     port_index: e.src_port,
@@ -277,6 +279,7 @@ proptest! {
 
         for src in [src_a, src_b] {
             executor.graph.add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry { node_key: src, port_index: 0 },
                 sink: ConnectionEntry { node_key: sink, port_index: 0 },
             }).unwrap();

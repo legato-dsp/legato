@@ -44,7 +44,7 @@ use crate::{
         ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
-    ports::{PortMeta, Ports, Unpatched, default_indices},
+    ports::{PortKind, PortMeta, Ports, default_indices},
 };
 use std::collections::HashMap;
 
@@ -216,7 +216,7 @@ impl KernelPlan {
                     name: Box::leak(name.clone().into_boxed_str()),
                     index,
                     default: true,
-                    unpatched: Unpatched::Absent,
+                    kind: PortKind::default(),
                 })
                 .collect()
         };
@@ -224,6 +224,7 @@ impl KernelPlan {
         Ports {
             ports_in: meta(&self.input_names),
             ports_out: meta(&self.output_names),
+            ..Default::default()
         }
     }
 
