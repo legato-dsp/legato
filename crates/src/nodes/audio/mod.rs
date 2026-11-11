@@ -4,6 +4,7 @@ pub mod delay;
 pub mod external;
 pub mod fir;
 pub mod grain;
+pub mod grain_delay;
 pub mod hadamard;
 pub mod householder;
 pub mod mixer;

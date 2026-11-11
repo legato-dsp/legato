@@ -30,8 +30,10 @@ fn main() {
 
         audio {
             svf { chans: 1, cutoff: 5400.0, q: 0.4, type: "lowpass" },
+            grain_delay { chans: 2, grain_size: 200, delay_length: 1000, shape: 0.1, feedback: 0.6 },
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
+            track_mixer: wet_dry { chans_per_track: 2, tracks: 2 }
         }
 
         midi {
@@ -44,9 +46,12 @@ fn main() {
 
         osc_mixer >> svf
 
-        svf >> mono_fan_out
+        svf >> mono_fan_out >> grain_delay
 
-        { mono_fan_out }
+        grain_delay >> wet_dry[0..2]
+        mono_fan_out >> wet_dry[2..4]
+
+        { wet_dry }
     "#,
     );
 

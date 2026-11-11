@@ -18,6 +18,7 @@ use crate::{
             delay::{DelayRead, DelayWrite},
             external::ExternalInput,
             grain::Granular,
+            grain_delay::GrainDelay,
             hadamard::HadamardMixer,
             householder::HouseholderMixer,
             mixer::{MonoFanOut, TrackMixer},
@@ -137,6 +138,7 @@ pub fn audio_registry_factory() -> NodeRegistry {
     registry.register_node::<DivDef>();
     registry.register_node::<GainDef>();
     registry.register_node::<Granular>();
+    registry.register_node::<GrainDelay>();
     registry.register_node::<Adsr>();
     registry.register_node::<Svf>();
     registry.register_node::<Pan>();

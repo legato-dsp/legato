@@ -20,16 +20,16 @@ const NUM_GRAINS: usize = 2;
 /// A graunlar synthesizer, not very feature complete,
 /// roughly based on a certain popular grain device
 #[derive(Debug, Clone, Copy, Default)]
-struct Grain {
+pub(crate) struct Grain {
     /// Used to manually kill grains on retrig
-    active: bool,
+    pub(crate) active: bool,
     /// Read position *relative to the active region*, interpolated
-    sample_pos: f32,
-    sample_inc: f32,
-    win_phase: f32,
-    win_phase_inc: f32,
+    pub(crate) sample_pos: f32,
+    pub(crate) sample_inc: f32,
+    pub(crate) win_phase: f32,
+    pub(crate) win_phase_inc: f32,
     /// Tukey tapering constant, 0.001 (rectangular) to 0.5 (Hann)
-    shape: f32,
+    pub(crate) shape: f32,
 }
 
 impl Grain {
@@ -66,6 +66,9 @@ impl Grain {
         if self.win_phase >= 1.0 {
             self.active = false;
         }
+
+        // This is explicit, we loop around the start. Maybe we explore different
+        // algorithms like ping-pong, etc. in the future.
         self.sample_pos = (self.sample_pos + self.sample_inc) % len as f32;
 
         sample
@@ -79,7 +82,7 @@ impl Grain {
     ///
     /// https://en.wikipedia.org/wiki/Window_function#Tukey_window
     #[inline(always)]
-    fn get_window(&self) -> f32 {
+    pub(crate) fn get_window(&self) -> f32 {
         let t = self.win_phase;
         let a = self.shape;
 
@@ -93,27 +96,27 @@ impl Grain {
     }
 
     #[inline(always)]
-    fn ready(&self) -> bool {
+    pub(crate) fn ready(&self) -> bool {
         !self.active
     }
 
     #[inline(always)]
-    fn active(&self) -> bool {
+    pub(crate) fn active(&self) -> bool {
         self.active
     }
 
     #[inline(always)]
-    fn stop(&mut self) {
+    pub(crate) fn stop(&mut self) {
         self.active = false;
     }
 
     #[inline(always)]
-    fn window_phase(&self) -> f32 {
+    pub(crate) fn window_phase(&self) -> f32 {
         self.win_phase
     }
 
     #[inline(always)]
-    fn get_shape(&self) -> f32 {
+    pub(crate) fn get_shape(&self) -> f32 {
         self.shape
     }
 
@@ -121,7 +124,7 @@ impl Grain {
     /// effective length scales inversely with pitch, so each grain always
     /// covers the same span of source material.
     #[inline(always)]
-    fn spawn(&mut self, sample_pos: f32, grain_len_samples: f32, freq: f32, shape: f32) {
+    pub(crate) fn spawn(&mut self, sample_pos: f32, grain_len_samples: f32, freq: f32, shape: f32) {
         self.win_phase = 0.0;
         self.sample_inc = freq.max(1e-3) / MIDDLE_C;
         self.win_phase_inc = self.sample_inc / grain_len_samples;
@@ -144,7 +147,10 @@ pub struct Granular {
     grain_size: Duration,
     /// from 0.001 to 0.5, controls how rectangular (0) -> Hann shaped (0.5) the grains are
     shape: f32,
-    /// Spawn position relative to the active region
+    /// Interpolated sample spawn position relative to the active region.
+    ///
+    /// This is not a phase value for say the entire buffer, it's a fractional
+    /// index between samples. So `f32` is fine here.
     sample_pos: f32,
     sample_start: Option<usize>,
     sample_end: Option<usize>,
@@ -212,6 +218,7 @@ impl Node for Granular {
         if start == end {
             return;
         }
+
         let region_len = (end - start) as f32;
 
         let grain_len_samples = self.grain_size.as_secs_f32() * sr as f32;
