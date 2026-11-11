@@ -30,7 +30,7 @@ fn main() {
 
         audio {
             svf { chans: 1, cutoff: 5400.0, q: 0.4, type: "lowpass" },
-            grain_delay { chans: 2, grain_size: 200, delay_length: 1000, shape: 0.1, feedback: 0.6 },
+            grain_delay { chans: 2, grain_size: 400, scan: 2.0, delay_length: 1000, shape: 0.1, feedback: 0.5 },
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
             track_mixer: wet_dry { chans_per_track: 2, tracks: 2 }
