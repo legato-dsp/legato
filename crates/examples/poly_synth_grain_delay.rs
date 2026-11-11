@@ -24,12 +24,40 @@ fn main() {
             { adsr }
         }
 
+        patch smear(){
+            in audio
+
+            audio {
+                grain_delay {
+                    chans: 2,
+                    diffusion: 1.0,
+                    grain_size: 400,
+                    spray: 6.0,
+                    damping: 0.8,
+                    scan: 1.0,
+                    delay_length: 1000,
+                    shape: 0.5,
+                    feedback: 0.8
+                },
+                plate480 { mix: 0.8, decay: 0.8 },
+                track_mixer: wet_dry { chans_per_track: 2, tracks: 2 },
+            }
+
+            audio >> grain_delay >> plate480
+
+            audio >> wet_dry[0..2]
+            plate480 >> wet_dry[2..4]
+
+            { wet_dry }
+        }
+
         patches {
             voice * 5 { },
+            smear { }
         }
 
         audio {
-            svf { chans: 1, cutoff: 5400.0, q: 0.4, type: "lowpass" },
+            svf { chans: 1, cutoff: 3700.0, q: 0.4, type: "lowpass" },
             track_mixer: osc_mixer { tracks: 5, chans_per_track: 1, gain: [0.1, 0.1, 0.1, 0.1, 0.1] },
             mono_fan_out { chans: 2 },
         }
@@ -44,9 +72,9 @@ fn main() {
 
         osc_mixer >> svf
 
-        svf >> mono_fan_out
+        svf >> mono_fan_out >> smear
 
-        { mono_fan_out }
+        { smear }
     "#,
     );
 

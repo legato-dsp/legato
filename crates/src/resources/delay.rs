@@ -186,6 +186,11 @@ impl<'a> DelayLineViewMut<'a> {
     pub fn read_linear(&self, offset: f32) -> f32 {
         self.delay.get_delay_linear(self.data, offset)
     }
+
+    #[inline(always)]
+    pub fn read_cubic(&self, offset: f32) -> f32 {
+        self.delay.get_delay_cubic(self.data, offset)
+    }
 }
 
 #[cfg(test)]

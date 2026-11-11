@@ -16,7 +16,7 @@ use crate::{
 const REF_SR: f32 = 29761.0;
 
 #[inline(always)]
-fn allpass(ring: &mut RingBuffer, x: f32, g: f32, delay: f32) -> f32 {
+pub(crate) fn allpass(ring: &mut RingBuffer, x: f32, g: f32, delay: f32) -> f32 {
     let d = ring.get_delay_cubic(delay);
     let w = x + g * d;
     ring.push(w);

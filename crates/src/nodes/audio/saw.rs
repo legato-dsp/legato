@@ -219,7 +219,7 @@ fn poly_blep(t: f32, dt: f32) -> f32 {
     let u0 = t / dt;
     let u1 = (t - 1.0) / dt;
 
-    let rising = if u0 >= 0.0 && u0 < 1.0 {
+    let rising = if (0.0..1.0).contains(&u0) {
         u0 + u0 - u0 * u0 - 1.0
     } else {
         0.0

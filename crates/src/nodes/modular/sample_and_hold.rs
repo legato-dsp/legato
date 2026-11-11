@@ -139,7 +139,7 @@ impl PerSampleNode for SampleAndHold {
 
 impl Node for SampleAndHold {
     fn process(&mut self, _ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
-        if let Some(_) = inputs[1] {
+        if inputs[1].is_some() {
             self.process_with_modulation(inputs, outputs);
         } else {
             self.process_no_modulation(inputs, outputs);

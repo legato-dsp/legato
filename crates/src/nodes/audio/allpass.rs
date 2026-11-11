@@ -58,7 +58,7 @@ impl PerSampleNode for Allpass {
             .clamp(1.0, max_capacity);
 
         let feedback = in_frame[self.chans + 1]
-            .map_or(self.feedback, |v| v)
+            .unwrap_or(self.feedback)
             .clamp(-0.98, 0.98);
 
         for (c, chan_state) in self.delay_lines.iter_mut().enumerate() {
