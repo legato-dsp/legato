@@ -7,13 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam::channel::{Receiver, RecvTimeoutError, Sender, bounded};
 #[cfg(unix)]
 use midir::os::unix::{VirtualInput, VirtualOutput};
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use rtrb::RingBuffer;
 
-pub type MidiProducer = Sender<(MidiMessage, Instant)>;
-pub type MidiReceiver = Receiver<(MidiMessage, Instant)>;
+pub type MidiProducer = rtrb::Producer<(MidiMessage, Instant)>;
+pub type MidiReceiver = rtrb::Consumer<(MidiMessage, Instant)>;
 
 /// A number of errors that can occur when parsing midi messages
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -110,7 +110,7 @@ impl MidiListener {
     /// Send a midi message to the midi store
     pub fn send_to_store(&mut self, msg: MidiMessage, instant: Instant) -> Result<(), MidiError> {
         self.producer
-            .try_send((msg, instant))
+            .push((msg, instant))
             .map_err(|_| MidiError::RingbufferFull)
     }
 }
@@ -141,10 +141,24 @@ impl PartialOrd for Scheduled {
     }
 }
 
+/// How close to a message's due time the writer stops sleeping and spins.
+const SPIN_WINDOW: Duration = Duration::from_micros(500);
+
+/// The longest the writer sleeps while a message is queued. Longer sleeps
+/// overshoot by more, past [`SPIN_WINDOW`].
+const MAX_SLEEP: Duration = Duration::from_millis(1);
+
+/// How often an idle writer checks for new messages: the most a newly
+/// pushed message can wait before the writer sees it.
+const IDLE_POLL: Duration = Duration::from_millis(2);
+
 /// A MidiWriter actor. It drains a queue, and sorts
 /// this into a binary heap, then writes messages in order
 /// of time stamp increasing. It briefly spinlocks if there are
 /// small pauses between messages that are ready to be written.
+///
+/// The audio thread never wakes it, so pushing stays wait-free. It polls
+/// instead, every [`IDLE_POLL`] when idle.
 pub struct MidiWriter {
     receiver: MidiReceiver,
     /// Not technically a priority queue, but we are storing messages so that the oldest pop first
@@ -175,75 +189,33 @@ impl MidiWriter {
             .map_err(|x| MidiError::SendError(x.to_string()))
     }
 
+    /// Runs until every producer is gone and nothing is left to send.
     pub fn run(mut self, connection: &mut MidiOutputConnection) {
-        /* The general idea here is as follows:
-         *
-         * We first filter and add all messages to a BinaryHeap, stored with increasing instants.
-         * This data structure lets us make a queue where messages are monotonically increasing, and
-         * our data structure handles the sorting for us.
-         *
-         * Then, we have two behaviors depending on if we have some messages in the queue:
-         *
-         * With incoming messages, we send them, and wait for the next. If the time before the next
-         * message is small, we briefly spinlock to avoid jitter here. If we left it up to the OS
-         * scheduler, we would lose the fine grained accuracy here.
-         *
-         * The other branch, is a thread where we have no messages in our queue. Here, we just
-         * block on the select! macro.
-         */
         loop {
-            while let Some(top) = self.queue.peek() {
-                let dt_next_message = top.0.instant.saturating_duration_since(Instant::now());
-                // If the next message is at or before our time to run, send to the Midi driver
-                if dt_next_message <= Duration::ZERO {
+            while let Ok((msg, instant)) = self.receiver.pop() {
+                self.queue.push(Reverse(Scheduled {
+                    instant,
+                    seq: self.seq,
+                    msg,
+                }));
+                self.seq = self.seq.wrapping_add(1);
+            }
+
+            let now = Instant::now();
+            match self.queue.peek().map(|top| top.0.instant) {
+                Some(due) if due <= now => {
                     let s = self.queue.pop().unwrap().0;
                     if let Err(err) = self.send_to_midi_output(s.msg, connection) {
                         eprintln!("Error thrown when sending midi out {:?}", err);
                     }
                 }
-                // Here, we spin for very small next incoming messages
-                else if dt_next_message < Duration::from_micros(500) {
-                    std::hint::spin_loop();
-                }
-                // Message not ready, move to recv, but only until our next message
-                else {
-                    break;
-                }
-            }
-
-            match self.queue.peek() {
-                Some(next) => {
-                    let deadline = next.0.instant;
-                    // Now, we let ourselves block for new messages up to the time of the next message
-                    match self.receiver.recv_deadline(deadline) {
-                        Ok((msg, instant)) => {
-                            self.queue.push(Reverse(Scheduled {
-                                instant,
-                                seq: self.seq,
-                                msg,
-                            }));
-                            self.seq = self.seq.wrapping_add(1);
-                        }
-                        Err(inner) => {
-                            match inner {
-                                RecvTimeoutError::Disconnected => break, // exit thread
-                                RecvTimeoutError::Timeout => (), // deadline reached, restart the loop and send ready messages if we have them
-                            }
-                        }
-                    }
-                }
-                None => {
-                    match self.receiver.recv() {
-                        Ok((msg, instant)) => {
-                            self.queue.push(Reverse(Scheduled {
-                                instant,
-                                seq: self.seq,
-                                msg,
-                            }));
-                            self.seq = self.seq.wrapping_add(1);
-                        }
-                        Err(_) => break, // exit thread
-                    }
+                Some(due) if due - now <= SPIN_WINDOW => std::hint::spin_loop(),
+                None if self.receiver.is_abandoned() && self.receiver.is_empty() => break,
+                due => {
+                    let wake = due.map_or(now + IDLE_POLL, |due| {
+                        (due - SPIN_WINDOW).min(now + MAX_SLEEP)
+                    });
+                    std::thread::sleep(wake - now);
                 }
             }
         }
@@ -295,10 +267,14 @@ impl MidiWriterFrontend {
     }
     /// Send a message from the store to the midi runtime to be executed on the system
     #[inline(always)]
-    pub fn send_to_system_midi(&self, msg: MidiMessage, instant: Instant) -> Result<(), MidiError> {
+    pub fn send_to_system_midi(
+        &mut self,
+        msg: MidiMessage,
+        instant: Instant,
+    ) -> Result<(), MidiError> {
         self.producer
-            .try_send((msg, instant))
-            .map_err(|x| MidiError::SendError(x.to_string()))
+            .push((msg, instant))
+            .map_err(|_| MidiError::RingbufferFull)
     }
 }
 
@@ -503,8 +479,8 @@ impl MidiRuntimeFrontend {
             .send_to_system_midi(msg, Instant::now())
     }
     #[inline(always)]
-    pub fn recv(&self) -> Option<(MidiMessage, Instant)> {
-        self.reader_consumer.try_recv().ok()
+    pub fn recv(&mut self) -> Option<(MidiMessage, Instant)> {
+        self.reader_consumer.pop().ok()
     }
 }
 
@@ -524,8 +500,8 @@ pub fn start_midi_thread(
     input.ignore(Ignore::SysexAndActiveSense);
 
     // These are the channels that signal from reader -> store and store -> writer
-    let (midi_reader_prod, midi_reader_consumer) = bounded::<(MidiMessage, Instant)>(capacity);
-    let (midi_writer_prod, midi_writer_consumer) = bounded::<(MidiMessage, Instant)>(capacity);
+    let (midi_reader_prod, midi_reader_consumer) = RingBuffer::new(capacity);
+    let (midi_writer_prod, midi_writer_consumer) = RingBuffer::new(capacity);
 
     let mut midi_listener = MidiListener::new(midi_reader_prod);
 

@@ -29,6 +29,7 @@ pub struct AudioContext {
     midi_pending: MidiStore,
     midi_runtime_frontend: Option<MidiRuntimeFrontend>,
     midi_bus: MidiBus,
+    midi_dropped: u32,
     resources: Resources,
     block_start: Instant,
 }
@@ -42,6 +43,7 @@ impl AudioContext {
             resources,
             midi_runtime_frontend: None,
             midi_bus: MidiBus::default(),
+            midi_dropped: 0,
             block_start: Instant::now(),
         }
     }
@@ -56,7 +58,7 @@ impl AudioContext {
         std::mem::swap(&mut self.midi_store, &mut self.midi_pending);
         self.midi_pending.clear();
 
-        let Some(runtime) = &self.midi_runtime_frontend else {
+        let Some(runtime) = &mut self.midi_runtime_frontend else {
             return;
         };
 
@@ -68,10 +70,15 @@ impl AudioContext {
 
         while let Some((msg, at)) = runtime.recv() {
             let frame = frame_since(self.block_start, at, sample_rate, block_size);
-            if let Err(e) = self.midi_store.insert(MidiEvent { frame, msg }) {
-                eprintln!("{:?}", e);
+            if self.midi_store.insert(MidiEvent { frame, msg }).is_err() {
+                self.midi_dropped = self.midi_dropped.saturating_add(1);
             }
         }
+    }
+
+    /// Live MIDI events dropped because the block's store was full, since the last call.
+    pub fn take_midi_dropped(&mut self) -> u32 {
+        std::mem::take(&mut self.midi_dropped)
     }
 
     /// Queue an event for frame `frame` of the next block.
