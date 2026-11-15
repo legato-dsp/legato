@@ -161,6 +161,36 @@ impl MacroExpansionPass {
                         },
                     )?;
 
+                if let (Port::None, Port::None) = (&edge.source_port, &edge.sink_port)
+                    && remapped_virtual.len() > 1
+                {
+                    let inputs: Vec<String> = remapped_virtual.keys().cloned().collect();
+                    let (instance, instances) = if sources.len() == 1 {
+                        (pos, picked.len())
+                    } else {
+                        (0, 1)
+                    };
+                    for (name, targets) in &remapped_virtual {
+                        for (target_id, target_selector, target_port) in targets {
+                            graph.connect_multi(
+                                edge.source,
+                                resolved_source_selector.clone(),
+                                Port::Matching {
+                                    name: name.clone(),
+                                    inputs: inputs.clone(),
+                                    patch: node.node_type.clone(),
+                                    instance,
+                                    instances,
+                                },
+                                *target_id,
+                                target_selector.clone(),
+                                target_port.clone(),
+                            );
+                        }
+                    }
+                    continue;
+                }
+
                 let targets: Vec<(NodeId, NodeSelector, Port)> = match &edge.sink_port {
                     Port::Named(name) => remapped_virtual.get(name).cloned().unwrap_or_else(|| {
                         vec![(new_sink, NodeSelector::Single, edge.sink_port.clone())]
@@ -175,7 +205,10 @@ impl MacroExpansionPass {
                         .get_index(0)
                         .map(|(_, v)| v.clone())
                         .unwrap_or_else(|| vec![(new_sink, NodeSelector::Single, Port::None)]),
-                    Port::Slice(..) | Port::Stride { .. } | Port::Member { .. } => {
+                    Port::Slice(..)
+                    | Port::Stride { .. }
+                    | Port::Member { .. }
+                    | Port::Matching { .. } => {
                         return Err(ValidationError::Expansion(format!(
                             "slice and stride ports are not supported on the virtual ports of \
                              patch '{}'",

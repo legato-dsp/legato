@@ -300,7 +300,7 @@ fn resolve_port(
             .map_err(|msg| {
                 ValidationError::InvalidParameter(format!("kernel: '{node_alias}': {msg}"))
             }),
-        Port::Slice(..) | Port::Stride { .. } => Err(unsupported(format!(
+        Port::Slice(..) | Port::Stride { .. } | Port::Matching { .. } => Err(unsupported(format!(
             "port slices/strides on '{node_alias}'"
         ))),
     }

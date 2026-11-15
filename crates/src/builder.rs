@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     context::AudioContext,
     dsl::{
-        ir::{DSLParams, NodeId, Port},
+        ir::{DSLParams, IRGraph, NodeId, Port},
         parse::legato_parser,
         pipeline::Pipeline,
     },
@@ -554,6 +554,11 @@ where
                 instance,
                 instances,
             } => vec![member_index(side, name, *instance, *instances).map_err(invalid)?],
+            Port::Matching { name, .. } => {
+                return Err(invalid(format!(
+                    "internal: bare `>>` candidate '{name}' reached the connect step unresolved"
+                )));
+            }
             Port::Slice(start, end) | Port::Stride { start, end, .. } if end <= start => {
                 return Err(invalid(format!(
                     "port range {start}..{end} is empty: the end must be greater than the start"
@@ -728,6 +733,78 @@ impl LegatoBuilder<DslBuilding> {
         Ok(())
     }
 
+    /// The IR's edges on runtime keys, with bare-`>>` patch candidates
+    /// ([`Port::Matching`]) settled: all of a patch's inputs matched by name
+    /// connect by name, none matched falls back to the first input, and a
+    /// partial match is an error.
+    fn resolve_matching(
+        &self,
+        ir: &IRGraph,
+        keys: &HashMap<NodeId, NodeKey>,
+    ) -> Result<Vec<KeyedEdge>, ValidationError> {
+        let has_output = |key: &NodeKey, name: &str| {
+            let ports = self.runtime.get_node_ports(key);
+            [Signal::Stream, Signal::Midi]
+                .into_iter()
+                .any(|s| ports.outputs(s).iter().any(|p| p.name == name))
+        };
+
+        let mut edges = Vec::new();
+        for edge in ir.edges() {
+            let source = keys[&edge.source];
+            let source_port = match &edge.source_port {
+                Port::Matching {
+                    name,
+                    inputs,
+                    patch,
+                    instance,
+                    instances,
+                } => {
+                    let (matched, missing): (Vec<&String>, Vec<&String>) =
+                        inputs.iter().partition(|n| has_output(&source, n));
+                    if matched.is_empty() {
+                        if *name != inputs[0] {
+                            continue;
+                        }
+                        Port::None
+                    } else if !missing.is_empty() {
+                        let (alias, kind) = self.describe(&source);
+                        let list = |names: Vec<&String>| {
+                            names
+                                .iter()
+                                .map(|n| format!("`{n}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        return Err(ValidationError::InvalidConnection(format!(
+                            "bare `>>` from '{alias}' ({kind}) into patch '{patch}' matches {} \
+                             but not {}: connect the ports by name, or remove the unmatched \
+                             `in` ports from the patch",
+                            list(matched),
+                            list(missing),
+                        )));
+                    } else if *instances > 1 {
+                        Port::Member {
+                            name: name.clone(),
+                            instance: *instance,
+                            instances: *instances,
+                        }
+                    } else {
+                        Port::Named(name.clone())
+                    }
+                }
+                other => other.clone(),
+            };
+            edges.push(KeyedEdge {
+                source,
+                source_port,
+                sink: keys[&edge.sink],
+                sink_port: edge.sink_port.clone(),
+            });
+        }
+        Ok(edges)
+    }
+
     fn _build_dsl(mut self, content: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
         let ast = legato_parser(content)?;
         let ir = Pipeline::default().run_from_ast(ast)?;
@@ -774,13 +851,14 @@ impl LegatoBuilder<DslBuilding> {
 
         // Count narrow bare sources per sink: several small feeds into one sink's
         // default bus zip across it rather than each broadcasting over the whole bus.
+        let edges = self.resolve_matching(&ir, &ir_to_runtime)?;
+
         let mut narrow_bare_count: HashMap<NodeKey, usize> = HashMap::new();
-        for edge in ir.edges() {
+        for edge in &edges {
             if !matches!(edge.sink_port, Port::None) {
                 continue;
             }
-            let source = ir_to_runtime[&edge.source];
-            let sink = ir_to_runtime[&edge.sink];
+            let (source, sink) = (edge.source, edge.sink);
             let bare_out = self.default_out_signal(&source);
             let (signal, out_indices) =
                 self.port_indices(&source, &edge.source_port, PortDir::Out, bare_out)?;
@@ -793,9 +871,8 @@ impl LegatoBuilder<DslBuilding> {
         // Where the next group member lands on each sink's default bus.
         let mut zip_cursor: HashMap<NodeKey, usize> = HashMap::new();
 
-        for edge in ir.edges() {
-            let source = ir_to_runtime[&edge.source];
-            let sink = ir_to_runtime[&edge.sink];
+        for edge in &edges {
+            let (source, sink) = (edge.source, edge.sink);
 
             let bare_out = self.default_out_signal(&source);
             let (signal, out_indices) =
@@ -852,6 +929,14 @@ impl LegatoBuilder<DslBuilding> {
 
         self.try_build()
     }
+}
+
+/// An IR edge on runtime node keys, ready to connect.
+struct KeyedEdge {
+    source: NodeKey,
+    source_port: Port,
+    sink: NodeKey,
+    sink_port: Port,
 }
 
 #[derive(Debug)]

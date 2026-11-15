@@ -46,6 +46,17 @@ pub enum Port {
         instance: usize,
         instances: usize,
     },
+    /// One input of a bare `>>` into an instance of the patch type `patch`,
+    /// which has several `inputs`. The builder connects every input the source
+    /// has an output named for, rejects a partial match, and with no match at
+    /// all falls back to the source's default outputs into the first input.
+    Matching {
+        name: String,
+        inputs: Vec<String>,
+        patch: String,
+        instance: usize,
+        instances: usize,
+    },
     None,
 }
 

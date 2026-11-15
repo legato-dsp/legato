@@ -1799,4 +1799,167 @@ mod build_dsl_port_groups {
             .expect("a 3-port group fanned across 5 instances should not build");
         assert!(format!("{err:?}").contains("counts must match"), "{err:?}");
     }
+
+    fn build_err(graph: &str) -> String {
+        let err = LegatoBuilder::<Unconfigured>::new(config())
+            .build_dsl(graph)
+            .err()
+            .expect("graph should not build");
+        format!("{err:?}")
+    }
+
+    const TRIG_SYNTH: &str = r#"
+        patch synth {
+            in freq gate trig
+
+            audio {
+                saw { chans: 1 },
+                adsr { attack: 5.0, decay: 5.0, sustain: 0.5, release: 5.0, chans: 1 },
+            }
+
+            freq >> saw
+            gate >> adsr.gate
+            trig >> adsr.trig
+            saw >> adsr[1]
+
+            { adsr }
+        }
+    "#;
+
+    #[test]
+    fn bare_edge_into_patch_connects_every_input_by_name() {
+        let graph = format!(
+            r#"{TRIG_SYNTH}
+            patches {{ synth * 3 {{ }} }}
+            midi {{ poly_voice {{ chan: 0, voices: 3 }} }}
+            audio {{ track_mixer {{ tracks: 3, chans_per_track: 1 }} }}
+
+            poly_voice >> synth(*)
+            synth(*) >> track_mixer[0..3]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        for i in 0..3 {
+            let per_voice = 4 * i;
+            let gate_and_trig = vec![per_voice, per_voice + 3];
+            assert_eq!(
+                fed_by(&app, &frontend, "poly_voice", &format!("synth.{i}.adsr")),
+                gate_and_trig
+            );
+            assert_eq!(
+                fed_by(&app, &frontend, "poly_voice", &format!("synth.{i}.saw")),
+                vec![per_voice + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn bare_edge_into_patch_ignores_outputs_the_patch_does_not_declare() {
+        let graph = format!(
+            r#"{SYNTH}
+            patches {{ synth * 2 {{ }} }}
+            midi {{ poly_voice {{ chan: 0, voices: 2 }} }}
+            audio {{ track_mixer {{ tracks: 2, chans_per_track: 1 }} }}
+
+            poly_voice >> synth(*)
+            synth(*) >> track_mixer[0..2]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        assert_eq!(
+            fed_by(&app, &frontend, "poly_voice", "synth.1.adsr"),
+            vec![4]
+        );
+        assert_eq!(
+            fed_by(&app, &frontend, "poly_voice", "synth.1.saw"),
+            vec![5]
+        );
+    }
+
+    #[test]
+    fn bare_edge_into_a_single_patch_matches_by_name() {
+        let graph = format!(
+            r#"{TRIG_SYNTH}
+            patches {{ synth {{ }} }}
+            midi {{ voice {{ chan: 0 }} }}
+
+            voice >> synth
+
+            {{ synth }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        assert_eq!(fed_by(&app, &frontend, "voice", "synth.adsr"), vec![0, 3]);
+        assert_eq!(fed_by(&app, &frontend, "voice", "synth.saw"), vec![1]);
+    }
+
+    #[test]
+    fn bare_edge_with_a_partial_name_match_fails() {
+        let graph = r#"
+            patch filtered {
+                in freq gate cutoff
+
+                audio {
+                    saw { chans: 1 },
+                    adsr { attack: 5.0, decay: 5.0, sustain: 0.5, release: 5.0, chans: 1 },
+                    svf { chans: 1 },
+                }
+
+                freq >> saw
+                gate >> adsr.gate
+                cutoff >> svf.cutoff
+                saw >> adsr[1]
+                adsr >> svf
+
+                { svf }
+            }
+
+            patches { filtered * 2 { } }
+            midi { poly_voice { chan: 0, voices: 2 } }
+            audio { track_mixer { tracks: 2, chans_per_track: 1 } }
+
+            poly_voice >> filtered(*)
+            filtered(*) >> track_mixer[0..2]
+
+            { track_mixer }
+        "#;
+        let err = build_err(graph);
+        assert!(err.contains("into patch 'filtered'"), "{err}");
+        assert!(
+            err.contains("matches `freq`, `gate` but not `cutoff`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn bare_edge_with_no_names_in_common_feeds_the_first_input() {
+        let graph = format!(
+            r#"{SYNTH}
+            patches {{ synth * 2 {{ }} }}
+            audio {{
+                sine {{ freq: 2.0 }},
+                sine: gate_src {{ freq: 1.0 }},
+                track_mixer {{ tracks: 2, chans_per_track: 1 }},
+            }}
+
+            sine >> synth(*)
+            gate_src >> synth(*).gate
+            synth(*) >> track_mixer[0..2]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        for i in 0..2 {
+            assert_eq!(
+                fed_by(&app, &frontend, "sine", &format!("synth.{i}.saw")),
+                vec![0]
+            );
+            assert!(fed_by(&app, &frontend, "sine", &format!("synth.{i}.adsr")).is_empty());
+        }
+    }
 }
