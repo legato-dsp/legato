@@ -40,7 +40,7 @@ pub enum Port {
     },
     /// A named port fanned across `instances` sink instances. If the node has
     /// one port by that name every instance gets it; if it has `instances` of
-    /// them, instance `i` gets the `i`-th.
+    /// them, instance `i` gets the `i`-th, zero-indexed.
     Member {
         name: String,
         instance: usize,
@@ -540,9 +540,9 @@ impl IRGraph {
         self.edges.iter().filter(|e| e.sink == snk).collect()
     }
 
-    /// Returns node IDs in sournce -> sink order.  
+    /// Returns node IDs in sournce -> sink order.
     ///
-    /// Independent nodes are yielded in insertion order.  
+    /// Independent nodes are yielded in insertion order.
     ///
     /// This will panic on a cycle.
     pub fn topological_sort(&self) -> Vec<NodeId> {

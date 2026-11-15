@@ -1,5 +1,12 @@
 use legato::prelude::*;
 
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 /// A five voice sawtooth example
 fn main() {
     let graph = String::from(
@@ -78,10 +85,10 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        block_size: 4096,
-        channels: 2,
-        rt_capacity: 0,
+        sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
+        block_size: env_or("LEGATO_BLOCK_SIZE", 256),
+        channels: env_or("LEGATO_CHANNELS", 2),
+        rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
     let midi_rt_fe = start_midi_thread(
