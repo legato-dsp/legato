@@ -158,7 +158,12 @@ mod tests {
         PerSample::new(Lp {
             a,
             state: 0.0,
-            ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
+            ports: PortBuilder::default()
+                .audio_in(1)
+                .default_in()
+                .audio_out(1)
+                .default_out()
+                .build(),
         })
     }
 

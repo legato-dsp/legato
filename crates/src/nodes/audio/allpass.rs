@@ -40,6 +40,7 @@ impl Allpass {
                 .default_in()
                 .audio_in_named(&["delay_length", "feedback"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

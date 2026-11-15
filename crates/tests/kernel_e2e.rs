@@ -695,7 +695,7 @@ fn poly_voice_bare_zip_adds_no_auto_fan_out() {
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             saw >> adsr
 

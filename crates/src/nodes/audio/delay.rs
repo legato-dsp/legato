@@ -20,7 +20,9 @@ impl DelayWrite {
             delay_line_keys,
             ports: PortBuilder::default()
                 .audio_in(chans)
-                .audio_out(chans) // Just for graph semantics
+                .default_in()
+                .audio_out(chans)
+                .default_out() // Just for graph semantics
                 .build(),
         }
     }
@@ -72,7 +74,10 @@ impl DelayRead {
             delay_line_keys,
             len,
             quality,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .default_out()
+                .build(),
         }
     }
 

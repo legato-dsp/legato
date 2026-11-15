@@ -431,6 +431,7 @@ where
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
         let bare_sink = matches!(connection.sink_kind, Port::None);
+        let bare_source = matches!(connection.source_kind, Port::None);
 
         match (source_arity, sink_arity) {
             (1, 1) => one_to_one(
@@ -445,11 +446,13 @@ where
                 source_indicies[0],
                 sink_indicies.as_slice(),
             ),
-            (n, 1) if n > 1 && bare_sink => {
+            (n, 1) if n > 1 && (bare_sink || bare_source) => {
+                let (src, src_kind) = self.describe(&connection.source);
                 let (alias, node_kind) = self.describe(&connection.sink);
                 Err(ValidationError::SelectionArity(format!(
-                    "bare `>>` into '{alias}' ({node_kind}) would reduce {n} channels to 1: \
-                     name a target port or route through a mixer (e.g. track_mixer)"
+                    "bare `>>` from '{src}' ({src_kind}) into '{alias}' ({node_kind}) would \
+                     reduce {n} channels to 1: name the ports or route through a mixer \
+                     (e.g. track_mixer)"
                 )))
             }
             (n, 1) if n > 1 => n_to_one(
@@ -579,8 +582,25 @@ where
             )));
         }
 
-        if indices.is_empty() && signal == Signal::Midi {
+        if indices.is_empty() && signal == Signal::Midi && side.is_empty() {
             return Err(invalid(format!("has no MIDI {dir_name} ports")));
+        }
+
+        if indices.is_empty() && matches!(port, Port::None) {
+            let names: Vec<&str> = list(Signal::Stream)
+                .iter()
+                .chain(list(Signal::Midi))
+                .map(|p| p.name)
+                .collect();
+            return Err(invalid(if names.is_empty() {
+                format!("has no {dir_name} ports")
+            } else {
+                format!(
+                    "has no default {dir_name}, so a bare `>>` is ambiguous: name a port \
+                     (one of: {})",
+                    names.join(", ")
+                )
+            }));
         }
 
         Ok((signal, indices))

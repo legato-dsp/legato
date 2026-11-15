@@ -24,7 +24,10 @@ impl Sweep {
             range: new_range,
             duration,
             elapsed: 0,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .default_out()
+                .build(),
         }
     }
 }

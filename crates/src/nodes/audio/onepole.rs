@@ -33,6 +33,7 @@ impl OnePole {
                 .default_in()
                 .audio_in_named(&["cutoff"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

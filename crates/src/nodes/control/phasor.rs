@@ -20,7 +20,7 @@ impl Phasor {
             phase: 0.0,
             freq,
             hz_per_bpm: 1.0 / 60.0,
-            ports: PortBuilder::default().control_out(1).build(),
+            ports: PortBuilder::default().control_out(1).default_out().build(),
         }
     }
 

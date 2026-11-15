@@ -15,7 +15,10 @@ impl ExternalInput {
     pub fn new(chans: usize, key: AudioInputKey) -> Self {
         Self {
             key,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .default_out()
+                .build(),
         }
     }
 }

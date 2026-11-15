@@ -1294,7 +1294,9 @@ impl Plate {
             p_wet: 1f32,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["in_l", "in_r"])
+                .default_in()
                 .audio_out(2)
+                .default_out()
                 .build(),
         })
     }

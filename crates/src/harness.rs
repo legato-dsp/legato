@@ -229,7 +229,10 @@ impl Script {
             events,
             next: 0,
             block_start: 0,
-            ports: PortBuilder::default().midi_out_named(&["out"]).build(),
+            ports: PortBuilder::default()
+                .midi_out_named(&["out"])
+                .default_out()
+                .build(),
         }
     }
 }
@@ -267,7 +270,7 @@ impl StreamSource {
         Self {
             signal,
             frame: 0,
-            ports: PortBuilder::default().control_out(1).build(),
+            ports: PortBuilder::default().control_out(1).default_out().build(),
         }
     }
 }

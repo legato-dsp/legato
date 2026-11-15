@@ -93,6 +93,7 @@ impl Sine {
             ports: PortBuilder::default()
                 .audio_in_named(&["freq"])
                 .audio_out(1)
+                .default_out()
                 .build(),
         }
     }

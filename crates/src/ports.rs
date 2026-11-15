@@ -1,8 +1,10 @@
 //! Ports define the inputs and outputs for a [`Node`].
 //!
-//! Default ports can be automapped to. This is generally used
-//! if your node has an audio input that you want to be
-//! "higher priority" than a control input.
+//! A bare `>>` maps onto default ports, and only ports marked with
+//! [`PortBuilder::default_in`] / [`PortBuilder::default_out`] are defaults.
+//! Leave them unmarked when there is no obvious choice (a voice's
+//! gate/freq/vel/trig bundle, an oscillator's `freq`), so the user has to
+//! name the port.
 //!
 //! For example, here we probably want our audio output from `stereo_node`
 //! to flow into the `stereo_filter` inputs, if say `stereo_filter` had a
@@ -133,13 +135,13 @@ impl Ports {
         None
     }
 
-    /// Input indices a bare `>>` targets: the ports marked default, or every input if none are.
+    /// Input indices a bare `>>` targets: the ports marked default.
     pub fn default_in(&self) -> Vec<usize> {
         default_indices(&self.ports_in)
     }
 
-    /// Input indices explicitly marked with [`PortBuilder::default_in`]: the
-    /// node's declared signal path, with no fallback. Bypass uses these.
+    /// Input indices marked with [`PortBuilder::default_in`]: the node's
+    /// declared signal path. Bypass uses these.
     pub fn marked_default_in(&self) -> Vec<usize> {
         self.marked_default_in_of(Signal::Stream)
     }
@@ -152,7 +154,7 @@ impl Ports {
             .collect()
     }
 
-    /// Output indices a bare `>>` reads from: the ports marked default, or every output if none are.
+    /// Output indices a bare `>>` reads from: the ports marked default.
     pub fn default_out(&self) -> Vec<usize> {
         default_indices(&self.ports_out)
     }
@@ -182,17 +184,14 @@ pub(crate) fn member_index(
     }
 }
 
+/// The ports a bare `>>` maps onto: only those marked default. A node whose
+/// ports have no obvious default marks none, so a bare `>>` must name one.
 pub(crate) fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
-    let marked: Vec<usize> = ports
+    ports
         .iter()
         .filter(|p| p.default)
         .map(|p| p.index)
-        .collect();
-    if marked.is_empty() {
-        ports.iter().map(|p| p.index).collect()
-    } else {
-        marked
-    }
+        .collect()
 }
 
 impl From<PortBuilder> for Ports {
@@ -604,14 +603,15 @@ mod tests {
     }
 
     #[test]
-    fn test_default_in_falls_back_to_all_when_unmarked() {
-        let ports = PortBuilder::default().audio_in(2).build();
-        assert_eq!(ports.default_in(), vec![0, 1]);
+    fn unmarked_ports_are_not_defaults() {
+        let ports = PortBuilder::default().audio_in(2).audio_out(2).build();
+        assert!(ports.default_in().is_empty());
+        assert!(ports.default_out().is_empty());
     }
 
     proptest! {
         // `default_in` returns exactly the indices of the batches marked with
-        // `default_in()`, or every input when no batch is marked.
+        // `default_in()`.
         #[test]
         fn prop_default_in_tracks_marked_batches(
             batches in prop::collection::vec((1usize..=4, any::<bool>()), 1..6)
@@ -628,8 +628,7 @@ mod tests {
                 next += size;
             }
             let ports = builder.build();
-            let want = if marked.is_empty() { (0..next).collect() } else { marked };
-            prop_assert_eq!(ports.default_in(), want);
+            prop_assert_eq!(ports.default_in(), marked);
         }
     }
 

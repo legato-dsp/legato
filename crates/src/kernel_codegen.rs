@@ -105,7 +105,9 @@ impl Fm3 {
             z_fb: 0.0,
             ports: PortBuilder::default()
                 .audio_in_named(&["fm_in"])
+                .default_in()
                 .audio_out(1)
+                .default_out()
                 .build(),
         }
     }

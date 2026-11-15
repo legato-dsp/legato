@@ -30,6 +30,7 @@ impl Lfo {
             ports: PortBuilder::default()
                 .control_in_named(&["freq"])
                 .control_out(1)
+                .default_out()
                 .build(),
         })
     }

@@ -35,7 +35,7 @@ impl Knob {
         Self {
             rx,
             value: 0.0,
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().audio_out(1).default_out().build(),
         }
     }
 }

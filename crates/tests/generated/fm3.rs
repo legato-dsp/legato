@@ -196,7 +196,9 @@ impl Fm3 {
             z_fb_0: 0.0,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["fm_in"])
+                .default_in()
                 .audio_out(1)
+                .default_out()
                 .build(),
         })
     }

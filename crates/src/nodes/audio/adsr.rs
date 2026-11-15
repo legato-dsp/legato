@@ -54,6 +54,7 @@ impl Adsr {
                 .silent_in()
                 .control_in_named(&["trig"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }
@@ -221,7 +222,11 @@ mod test {
         });
         let ones = vec![1.0f32; gates.len()];
         let mut out = vec![0.0f32; gates.len()];
-        node.process(&mut ctx, &[Some(gates), Some(&ones), trigs], &mut [&mut out]);
+        node.process(
+            &mut ctx,
+            &[Some(gates), Some(&ones), trigs],
+            &mut [&mut out],
+        );
         out
     }
 

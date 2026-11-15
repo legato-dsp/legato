@@ -188,6 +188,7 @@ impl Granular {
                 .required_in()
                 .audio_in_named(&["size"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

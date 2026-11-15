@@ -126,6 +126,7 @@ fn midi_between_nodes_does_not_allocate() {
                 .default_in()
                 .host_fallback()
                 .midi_out_named(&["out"])
+                .default_out()
                 .build(),
         }))
     });

@@ -101,6 +101,7 @@ impl Plate480 {
                 .audio_in(2)
                 .default_in()
                 .audio_out(2)
+                .default_out()
                 .build(),
             decay: decay.clamp(0.0, 0.9),
             damping: damping.clamp(0.0, 0.999),

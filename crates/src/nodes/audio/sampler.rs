@@ -74,6 +74,7 @@ impl Sampler {
             ports: PortBuilder::default()
                 .control_in_named(&["trig", "speed", "pitch", "start", "end"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

@@ -509,7 +509,9 @@ impl Modtap4 {
             p_rate: 0.05f32,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["in"])
+                .default_in()
                 .audio_out(2)
+                .default_out()
                 .build(),
         })
     }

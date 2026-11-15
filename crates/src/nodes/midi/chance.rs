@@ -32,6 +32,7 @@ impl Chance {
                 .host_fallback()
                 .control_in_named(&["p"])
                 .midi_out_named(&["out"])
+                .default_out()
                 .build(),
         }
     }

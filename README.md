@@ -98,7 +98,7 @@ patch voice(
         adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
     }
 
-    freq >> saw
+    freq >> saw.freq
     gate >> adsr.gate
     saw >> adsr[1]
 

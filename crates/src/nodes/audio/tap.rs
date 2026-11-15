@@ -47,6 +47,7 @@ impl DelayTap {
                 .silent_in()
                 .audio_in_named(&["delay_length"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

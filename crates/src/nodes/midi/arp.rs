@@ -94,8 +94,10 @@ impl Arp {
                 .default_in()
                 .host_fallback()
                 .control_in_named(&["phasor"])
+                .default_in()
                 .required_in()
                 .midi_out_named(&["out"])
+                .default_out()
                 .build(),
         }
     }

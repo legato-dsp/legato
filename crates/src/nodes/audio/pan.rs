@@ -25,6 +25,7 @@ impl Pan {
                 .silent_in()
                 .audio_in_named(&["pan"])
                 .audio_out(2)
+                .default_out()
                 .build(),
         }
     }

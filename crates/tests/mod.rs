@@ -1258,7 +1258,7 @@ mod build_dsl {
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             saw >> adsr[1]
 
@@ -1502,7 +1502,7 @@ mod build_dsl_automap {
                     adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
                 }
 
-                freq >> saw
+                freq >> saw.freq
                 gate >> adsr.gate
                 saw >> adsr
 
@@ -1701,7 +1701,7 @@ mod build_dsl_port_groups {
                 adsr { attack: 5.0, decay: 5.0, sustain: 0.5, release: 5.0, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             saw >> adsr[1]
 
@@ -1817,7 +1817,7 @@ mod build_dsl_port_groups {
                 adsr { attack: 5.0, decay: 5.0, sustain: 0.5, release: 5.0, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             trig >> adsr.trig
             saw >> adsr[1]
@@ -1937,7 +1937,7 @@ mod build_dsl_port_groups {
                     svf { chans: 1 },
                 }
 
-                freq >> saw
+                freq >> saw.freq
                 gate >> adsr.gate
                 cutoff >> svf.cutoff
                 saw >> adsr[1]

@@ -21,6 +21,7 @@ impl Voice {
             midi_channel,
             ports: PortBuilder::default()
                 .midi_in_named(&["midi"])
+                .default_in()
                 .host_fallback()
                 .control_out_named(&["gate", "freq", "vel", "trig"])
                 .build(),
@@ -245,6 +246,7 @@ impl PolyVoice {
             midi_channel,
             ports: PortBuilder::default()
                 .midi_in_named(&["midi"])
+                .default_in()
                 .host_fallback()
                 .control_out_group(&["gate", "freq", "vel", "trig"], voices)
                 .build(),

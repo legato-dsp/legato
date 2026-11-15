@@ -544,13 +544,13 @@ fn emit_new(
     } else {
         let _ = writeln!(
             out,
-            "                .audio_in_named(&[{}])",
+            "                .audio_in_named(&[{}])\n                .default_in()",
             in_names.join(", ")
         );
     }
     let _ = writeln!(
         out,
-        "                .audio_out({})\n                .build(),",
+        "                .audio_out({})\n                .default_out()\n                .build(),",
         plan.output_slots.len()
     );
     let _ = writeln!(out, "        }})");

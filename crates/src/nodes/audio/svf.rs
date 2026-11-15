@@ -75,6 +75,7 @@ impl Svf {
                 .silent_in()
                 .control_in_named(&["cutoff", "q"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         };
 

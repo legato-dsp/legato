@@ -138,7 +138,10 @@ fn rig() -> Rig {
                 .map(|(f, n)| (f as u32, n as u8))
                 .collect(),
             fired: false,
-            ports: PortBuilder::default().midi_out_named(&["out"]).build(),
+            ports: PortBuilder::default()
+                .midi_out_named(&["out"])
+                .default_out()
+                .build(),
         }))
     });
     let transpose = NodeSpec::from_fn("transpose", &[], &[], |_, _| {
@@ -147,6 +150,7 @@ fn rig() -> Rig {
                 .midi_in_named(&["in"])
                 .default_in()
                 .midi_out_named(&["out"])
+                .default_out()
                 .build(),
         }))
     });
@@ -161,7 +165,7 @@ fn rig() -> Rig {
         Ok(Box::new(Probe {
             log,
             block: 0,
-            ports: ports.audio_out(1).build(),
+            ports: ports.default_in().audio_out(1).default_out().build(),
         }))
     });
     let required = NodeSpec::from_fn("required", &[], &[], |_, _| {
@@ -171,12 +175,18 @@ fn rig() -> Rig {
                 .required_in()
                 .midi_out_named(&["notes"])
                 .audio_out(1)
+                .default_out()
                 .build(),
         }))
     });
     let audio_in = NodeSpec::from_fn("audio_in", &[], &[], |_, _| {
         Ok(Box::new(Transpose {
-            ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
+            ports: PortBuilder::default()
+                .audio_in(1)
+                .default_in()
+                .audio_out(1)
+                .default_out()
+                .build(),
         }))
     });
 

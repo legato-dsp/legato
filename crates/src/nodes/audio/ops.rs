@@ -41,6 +41,7 @@ impl ApplyOp {
                 .silent_in()
                 .audio_in_named(&["val"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

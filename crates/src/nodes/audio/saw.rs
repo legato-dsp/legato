@@ -40,6 +40,7 @@ impl Saw {
             ports: PortBuilder::default()
                 .control_in_named(&["freq"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

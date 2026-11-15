@@ -27,6 +27,7 @@ impl FirFilter {
                 .audio_in(chans)
                 .default_in()
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }

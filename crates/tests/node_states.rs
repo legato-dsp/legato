@@ -80,7 +80,7 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
         Box::new(Const {
             val,
             calls: calls.clone(),
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().audio_out(1).default_out().build(),
         }),
     ));
     let double = executor.graph.add_node(LegatoNode::new(
@@ -91,6 +91,7 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
                 .audio_in(1)
                 .default_in()
                 .audio_out(1)
+                .default_out()
                 .build(),
         }),
     ));
@@ -211,7 +212,7 @@ fn every_channel_gets_the_same_fade() {
         Box::new(Const {
             val: 1.0,
             calls: Arc::default(),
-            ports: PortBuilder::default().audio_out(2).build(),
+            ports: PortBuilder::default().audio_out(2).default_out().build(),
         }),
     ));
     executor.set_sink(src).unwrap();
@@ -272,7 +273,10 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
     let ports = |marked: bool| {
         let b = PortBuilder::default().audio_in(2);
         let b = if marked { b.default_in() } else { b };
-        b.control_in_named(&["drive", "tone"]).audio_out(2).build()
+        b.control_in_named(&["drive", "tone"])
+            .audio_out(2)
+            .default_out()
+            .build()
     };
 
     // Without `default_in()` no input is marked, so there is no signal path.
@@ -289,7 +293,9 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
     let src = executor.graph.add_node(LegatoNode::new(
         "src".into(),
         "src".into(),
-        Box::new(Sources(PortBuilder::default().audio_out(4).build())),
+        Box::new(Sources(
+            PortBuilder::default().audio_out(4).default_out().build(),
+        )),
     ));
     let dist = executor.graph.add_node(LegatoNode::new(
         "dist".into(),
