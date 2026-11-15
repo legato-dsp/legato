@@ -2,7 +2,7 @@ use crate::builder::ValidationError;
 use crate::dsl::{
     ir::*,
     pipeline::GraphPass,
-    resolve::{Plan, broadcast, port_for_instance, source_ports},
+    resolve::{Plan, broadcast, source_port_for_instance, source_ports},
 };
 use std::collections::HashMap;
 
@@ -144,12 +144,15 @@ impl SpawnKNodesPass {
         // e.g. every voice would receive all five voices' frequencies summed.
         if srcs.len() == 1
             && snks.len() > 1
-            && matches!(edge.source_port, Port::Stride { .. } | Port::Slice(..))
+            && matches!(
+                edge.source_port,
+                Port::Stride { .. } | Port::Slice(..) | Port::Named(_)
+            )
         {
             for (i, &snk) in snks.iter().enumerate() {
                 graph.connect(
                     srcs[0],
-                    port_for_instance(&edge.source_port, i),
+                    source_port_for_instance(&edge.source_port, i, snks.len()),
                     snk,
                     edge.sink_port.clone(),
                 );

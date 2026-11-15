@@ -158,6 +158,30 @@ impl Ports {
     }
 }
 
+/// The port `instance` of `instances` reads from a group named `name`: the
+/// only port of that name, or the `instance`-th when there is one per instance.
+pub(crate) fn member_index(
+    ports: &[PortMeta],
+    name: &str,
+    instance: usize,
+    instances: usize,
+) -> Result<usize, String> {
+    let group: Vec<usize> = ports
+        .iter()
+        .filter(|p| p.name == name)
+        .map(|p| p.index)
+        .collect();
+    match group.len() {
+        0 => Err(format!("no port named '{name}'")),
+        1 => Ok(group[0]),
+        n if n == instances => Ok(group[instance]),
+        n => Err(format!(
+            "'{name}' names {n} ports but is fanned across {instances} instances; \
+             the counts must match"
+        )),
+    }
+}
+
 pub(crate) fn default_indices(ports: &[PortMeta]) -> Vec<usize> {
     let marked: Vec<usize> = ports
         .iter()
@@ -287,6 +311,20 @@ impl PortBuilder {
         let start = self.port_audio_out.len();
         for name in names {
             self.push_out(name);
+        }
+        self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
+        self
+    }
+
+    /// `count` repeats of `names`, laid out instance-major. A name then refers
+    /// to a group of `count` ports that `node.name >> inst(*).port` splits one
+    /// per instance.
+    pub fn control_out_group(mut self, names: &[&'static str], count: usize) -> Self {
+        let start = self.port_audio_out.len();
+        for _ in 0..count {
+            for name in names {
+                self.push_out(name);
+            }
         }
         self.last_out = Some((Signal::Stream, start, self.port_audio_out.len()));
         self

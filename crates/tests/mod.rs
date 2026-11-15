@@ -1650,3 +1650,153 @@ mod build_dsl_automap {
         assert_eq!(ch1, vec![1, 3, 5]);
     }
 }
+
+#[cfg(test)]
+mod build_dsl_port_groups {
+    use legato::{
+        LegatoApp, LegatoFrontend,
+        builder::{LegatoBuilder, Unconfigured},
+        config::Config,
+    };
+
+    fn config() -> Config {
+        Config {
+            sample_rate: 48_000,
+            block_size: 256,
+            channels: 2,
+            rt_capacity: 0,
+        }
+    }
+
+    fn build(graph: &str) -> (LegatoApp, LegatoFrontend) {
+        LegatoBuilder::<Unconfigured>::new(config())
+            .build_dsl(graph)
+            .expect("graph should build")
+    }
+
+    /// The `from` output ports feeding `to`, sorted.
+    fn fed_by(app: &LegatoApp, frontend: &LegatoFrontend, from: &str, to: &str) -> Vec<usize> {
+        let registry = frontend.node_registry();
+        let from = *registry
+            .get(from)
+            .unwrap_or_else(|| panic!("{from} in registry"));
+        let to = *registry
+            .get(to)
+            .unwrap_or_else(|| panic!("{to} in registry"));
+        let mut ports: Vec<usize> = app
+            .incoming_connections(to)
+            .filter(|c| c.source.node_key == from)
+            .map(|c| c.source.port_index)
+            .collect();
+        ports.sort_unstable();
+        ports
+    }
+
+    const SYNTH: &str = r#"
+        patch synth {
+            in freq gate
+
+            audio {
+                saw { chans: 1 },
+                adsr { attack: 5.0, decay: 5.0, sustain: 0.5, release: 5.0, chans: 1 },
+            }
+
+            freq >> saw
+            gate >> adsr.gate
+            saw >> adsr[1]
+
+            { adsr }
+        }
+    "#;
+
+    #[test]
+    fn named_group_splits_one_port_per_patch_instance() {
+        let graph = format!(
+            r#"{SYNTH}
+            patches {{ synth * 4 {{ }} }}
+            midi {{ poly_voice {{ chan: 0, voices: 4 }} }}
+            audio {{ track_mixer {{ tracks: 4, chans_per_track: 1 }} }}
+
+            poly_voice.gate >> synth(*).gate
+            poly_voice.freq >> synth(*).freq
+            synth(*) >> track_mixer[0..4]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        for i in 0..4 {
+            let per_voice = 3 * i;
+            assert_eq!(
+                fed_by(&app, &frontend, "poly_voice", &format!("synth.{i}.adsr")),
+                vec![per_voice]
+            );
+            assert_eq!(
+                fed_by(&app, &frontend, "poly_voice", &format!("synth.{i}.saw")),
+                vec![per_voice + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn single_named_port_still_broadcasts_to_every_instance() {
+        let graph = format!(
+            r#"{SYNTH}
+            patches {{ synth * 3 {{ }} }}
+            midi {{ voice {{ chan: 0 }} }}
+            audio {{ track_mixer {{ tracks: 3, chans_per_track: 1 }} }}
+
+            voice.gate >> synth(*).gate
+            voice.freq >> synth(*).freq
+            synth(*) >> track_mixer[0..3]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        for i in 0..3 {
+            assert_eq!(
+                fed_by(&app, &frontend, "voice", &format!("synth.{i}.adsr")),
+                vec![0]
+            );
+            assert_eq!(
+                fed_by(&app, &frontend, "voice", &format!("synth.{i}.saw")),
+                vec![1]
+            );
+        }
+    }
+
+    #[test]
+    fn named_group_splits_across_spawned_leaf_instances() {
+        let graph = r#"
+            audio { onepole: v * 2 { cutoff: 500.0 } }
+            midi { poly_voice { chan: 0, voices: 2 } }
+            poly_voice.freq >> v(*)[0]
+            { v }
+        "#;
+        let (app, frontend) = build(graph);
+        assert_eq!(fed_by(&app, &frontend, "poly_voice", "v.0"), vec![1]);
+        assert_eq!(fed_by(&app, &frontend, "poly_voice", "v.1"), vec![4]);
+    }
+
+    #[test]
+    fn group_size_must_match_instance_count() {
+        let graph = format!(
+            r#"{SYNTH}
+            patches {{ synth * 5 {{ }} }}
+            midi {{ poly_voice {{ chan: 0, voices: 3 }} }}
+            audio {{ track_mixer {{ tracks: 5, chans_per_track: 1 }} }}
+
+            poly_voice.gate >> synth(*).gate
+            synth(*) >> track_mixer[0..5]
+
+            {{ track_mixer }}
+        "#
+        );
+        let err = LegatoBuilder::<Unconfigured>::new(config())
+            .build_dsl(&graph)
+            .err()
+            .expect("a 3-port group fanned across 5 instances should not build");
+        assert!(format!("{err:?}").contains("counts must match"), "{err:?}");
+    }
+}

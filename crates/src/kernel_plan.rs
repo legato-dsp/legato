@@ -44,7 +44,7 @@ use crate::{
         ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
-    ports::{PortKind, PortMeta, Ports, default_indices},
+    ports::{PortKind, PortMeta, Ports, default_indices, member_index},
 };
 use std::collections::HashMap;
 
@@ -290,6 +290,15 @@ fn resolve_port(
                 ValidationError::InvalidParameter(format!(
                     "kernel: no port named '{name}' on '{node_alias}'"
                 ))
+            }),
+        Port::Member {
+            name,
+            instance,
+            instances,
+        } => member_index(ports, name, *instance, *instances)
+            .map(|i| vec![i])
+            .map_err(|msg| {
+                ValidationError::InvalidParameter(format!("kernel: '{node_alias}': {msg}"))
             }),
         Port::Slice(..) | Port::Stride { .. } => Err(unsupported(format!(
             "port slices/strides on '{node_alias}'"

@@ -38,6 +38,14 @@ pub enum Port {
         end: usize,
         stride: usize,
     },
+    /// A named port fanned across `instances` sink instances. If the node has
+    /// one port by that name every instance gets it; if it has `instances` of
+    /// them, instance `i` gets the `i`-th.
+    Member {
+        name: String,
+        instance: usize,
+        instances: usize,
+    },
     None,
 }
 

@@ -20,7 +20,7 @@ use crate::{
     node::LegatoNode,
     node_state::NodeState,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
-    ports::Signal,
+    ports::{Signal, member_index},
     registry::{NodeRegistry, default_namespaces},
     resources::{
         AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
@@ -521,7 +521,7 @@ where
 
         let signal = match port {
             Port::None => bare,
-            Port::Named(name) => [Signal::Stream, Signal::Midi]
+            Port::Named(name) | Port::Member { name, .. } => [Signal::Stream, Signal::Midi]
                 .into_iter()
                 .find(|&s| list(s).iter().any(|p| p.name == name))
                 .unwrap_or(Signal::Stream),
@@ -549,6 +549,11 @@ where
                     )));
                 }
             },
+            Port::Member {
+                name,
+                instance,
+                instances,
+            } => vec![member_index(side, name, *instance, *instances).map_err(invalid)?],
             Port::Slice(start, end) | Port::Stride { start, end, .. } if end <= start => {
                 return Err(invalid(format!(
                     "port range {start}..{end} is empty: the end must be greater than the start"

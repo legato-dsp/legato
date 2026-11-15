@@ -639,7 +639,7 @@ fn render_selector(sel: &NodeSelector) -> String {
 fn render_port(port: &Port) -> String {
     match port {
         Port::None => String::new(),
-        Port::Named(n) => format!(".{n}"),
+        Port::Named(n) | Port::Member { name: n, .. } => format!(".{n}"),
         Port::Index(i) => format!("[{i}]"),
         Port::Slice(a, b) => format!("[{a}..{b}]"),
         Port::Stride { start, end, stride } => format!("[{start}:{end}:{stride}]"),
