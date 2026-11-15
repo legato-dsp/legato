@@ -61,8 +61,8 @@ fn main() {
             plate: verb { predelay: 32.0, decay: 0.4, damping: 0.3, wet: 0.8, dry: 0.2 }
         }
 
-        poly_voice[0:10:3] >> voice(*).gate
-        poly_voice[1:10:3] >> voice(*).freq
+        poly_voice.gate >> voice(*).gate
+        poly_voice.freq >> voice(*).freq
 
         voice(*)[0] >> track_mixer[0:6:2]
         voice(*)[1] >> track_mixer[1:6:2]
