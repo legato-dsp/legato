@@ -1285,8 +1285,8 @@ mod build_dsl {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
+        poly_voice.gate >> voice(*).gate
+        poly_voice.freq >> voice(*).freq
         voice(*) >> osc_mixer[0..5]
 
         osc_mixer >> svf[0] >> pan[0]
@@ -1524,8 +1524,8 @@ mod build_dsl_automap {
                 poly_voice { chan: 0, voices: 5 }
             }
 
-            poly_voice[0:15:3] >> voice(*).gate
-            poly_voice[1:15:3] >> voice(*).freq
+            poly_voice.gate >> voice(*).gate
+            poly_voice.freq >> voice(*).freq
 
             voice(*) >> track_mixer
 
@@ -1563,7 +1563,7 @@ mod build_dsl_automap {
 
     // 3-voice granular synth: each voice's stereo grain is split across a
     // per-voice track in track_mixer via strided sink slices, summed into a plate
-    // reverb. Exercises strided source fan (`poly_voice[..] >> voice(*).gate`) and
+    // reverb. Exercises named port group fan (`poly_voice.gate >> voice(*).gate`) and
     // strided sink placement (`voice(*)[c] >> track_mixer[c:6:2]`).
     #[test]
     fn test_granular_poly_reverb_graph_builds() {
@@ -1603,8 +1603,8 @@ mod build_dsl_automap {
                 poly_voice { chan: 0, voices: 3 }
             }
 
-            poly_voice[0:10:3] >> voice(*).gate
-            poly_voice[1:10:3] >> voice(*).freq
+            poly_voice.gate >> voice(*).gate
+            poly_voice.freq >> voice(*).freq
 
             voice(*)[0] >> track_mixer[0:6:2]
             voice(*)[1] >> track_mixer[1:6:2]
@@ -1726,7 +1726,7 @@ mod build_dsl_port_groups {
         );
         let (app, frontend) = build(&graph);
         for i in 0..4 {
-            let per_voice = 3 * i;
+            let per_voice = 4 * i;
             assert_eq!(
                 fed_by(&app, &frontend, "poly_voice", &format!("synth.{i}.adsr")),
                 vec![per_voice]
@@ -1776,7 +1776,7 @@ mod build_dsl_port_groups {
         "#;
         let (app, frontend) = build(graph);
         assert_eq!(fed_by(&app, &frontend, "poly_voice", "v.0"), vec![1]);
-        assert_eq!(fed_by(&app, &frontend, "poly_voice", "v.1"), vec![4]);
+        assert_eq!(fed_by(&app, &frontend, "poly_voice", "v.1"), vec![5]);
     }
 
     #[test]

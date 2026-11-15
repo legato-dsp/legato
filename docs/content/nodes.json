@@ -103,6 +103,26 @@
     ]
   },
   {
+    "name": "grain_delay",
+    "namespace": "audio",
+    "description": "A basic grain delay, with no parameters yet",
+    "required_params": [
+      "delay_length"
+    ],
+    "optional_params": [
+      "chans",
+      "damping",
+      "diffusion",
+      "feedback",
+      "grain_size",
+      "jitter",
+      "overlap",
+      "scan",
+      "shape",
+      "spray"
+    ]
+  },
+  {
     "name": "hadamard",
     "namespace": "audio",
     "description": "Walsh-Hadamard transform mixer for feedback delay networks",
@@ -385,7 +405,7 @@
   {
     "name": "poly_voice",
     "namespace": "midi",
-    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, frequency, and velocity",
+    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; wire them with `poly_voice.gate >> voice(*).gate`",
     "required_params": [
       "chan",
       "voices"
@@ -395,7 +415,7 @@
   {
     "name": "voice",
     "namespace": "midi",
-    "description": "Decodes MIDI note events on a channel to gate, frequency, and velocity signals",
+    "description": "Decodes MIDI note events on a channel to gate, frequency, velocity, and a one-sample trig on each note-on",
     "required_params": [
       "chan"
     ],

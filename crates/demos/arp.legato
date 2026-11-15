@@ -7,7 +7,7 @@ patch voice(
     sustain = 0.2,
     release = 120.0
 ) {
-    in freq gate
+    in freq gate trig
 
     audio {
         saw { chans: 1 },
@@ -16,6 +16,7 @@ patch voice(
 
     freq >> saw
     gate >> adsr.gate
+    trig >> adsr.trig
     saw >> adsr[1]
 
     { adsr }
@@ -46,6 +47,7 @@ arp >> chance >> poly_voice
 
 poly_voice.gate >> voice(*).gate
 poly_voice.freq >> voice(*).freq
+poly_voice.trig >> voice(*).trig
 voice(*) >> mixer[0..4]
 
 mixer >> svf >> mono_fan_out

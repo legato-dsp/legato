@@ -13,7 +13,7 @@ use crate::{
     node::{DynNode, Inputs, LegatoNode, Node},
     ports::{PortBuilder, Ports, Signal},
     resources::{Resources, arena::RuntimeArena, params::ParamStore},
-    runtime::Runtime,
+    runtime::{NodeKey, Runtime},
 };
 
 /// We need a placeholder context for testing, this just mockes a few
@@ -131,6 +131,39 @@ impl MidiHarness {
     }
 
     pub fn run(self, node: Box<dyn DynNode>, frames: usize) -> Vec<TimedMidi> {
+        let has_midi_out = !node.ports().midi_out.is_empty();
+        let mut out = Vec::new();
+        self.drive(node, frames, |runtime, key, start| {
+            runtime.next_block();
+            if !has_midi_out {
+                return;
+            }
+            for event in runtime.midi_output(key, 0).unwrap_or_default() {
+                out.push((start + event.frame as u64, event.msg));
+            }
+        });
+        out
+    }
+
+    /// Like [`MidiHarness::run`], but collects every stream output instead.
+    pub fn run_streams(self, node: Box<dyn DynNode>, frames: usize) -> Vec<Vec<f32>> {
+        let mut out = vec![Vec::new(); node.ports().ports_out.len()];
+        self.drive(node, frames, |runtime, _, _| {
+            let view = runtime.next_block();
+            for (chan, samples) in out.iter_mut().zip(&view.channels[..view.chans]) {
+                chan.extend_from_slice(samples);
+            }
+        });
+        out.iter_mut().for_each(|chan| chan.truncate(frames));
+        out
+    }
+
+    fn drive(
+        self,
+        node: Box<dyn DynNode>,
+        frames: usize,
+        mut each_block: impl FnMut(&mut Runtime, NodeKey, u64),
+    ) {
         let config = Config {
             sample_rate: self.sample_rate,
             block_size: self.block_size,
@@ -139,7 +172,6 @@ impl MidiHarness {
         };
         let mut runtime = build_placeholder_runtime(config);
 
-        let has_midi_out = !node.ports().midi_out.is_empty();
         let key = runtime.add_node(LegatoNode::new("under test".into(), "test".into(), node));
         let connect = |runtime: &mut Runtime, source, port_index, signal| {
             runtime
@@ -177,19 +209,9 @@ impl MidiHarness {
         runtime.set_sink_key(key).unwrap();
         runtime.prepare();
 
-        let mut out = Vec::new();
-        let blocks = frames.div_ceil(self.block_size);
-        for block in 0..blocks {
-            runtime.next_block();
-            if !has_midi_out {
-                continue;
-            }
-            let start = (block * self.block_size) as u64;
-            for event in runtime.midi_output(key, 0).unwrap_or_default() {
-                out.push((start + event.frame as u64, event.msg));
-            }
+        for block in 0..frames.div_ceil(self.block_size) {
+            each_block(&mut runtime, key, (block * self.block_size) as u64);
         }
-        out
     }
 }
 
