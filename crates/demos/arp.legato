@@ -43,11 +43,7 @@ audio {
 }
 
 clock >> arp.phasor
-arp >> chance >> poly_voice
-
-poly_voice.gate >> voice(*).gate
-poly_voice.freq >> voice(*).freq
-poly_voice.trig >> voice(*).trig
+arp >> chance >> poly_voice >> voice(*)
 voice(*) >> mixer[0..4]
 
 mixer >> svf >> mono_fan_out

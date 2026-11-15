@@ -1856,6 +1856,34 @@ mod build_dsl_port_groups {
     }
 
     #[test]
+    fn chained_bare_edge_into_patch_matches_by_name() {
+        let graph = format!(
+            r#"{TRIG_SYNTH}
+            patches {{ synth * 2 {{ }} }}
+            midi {{
+                chance {{ p: 1.0 }},
+                poly_voice {{ chan: 0, voices: 2 }},
+            }}
+            audio {{ track_mixer {{ tracks: 2, chans_per_track: 1 }} }}
+
+            chance >> poly_voice >> synth(*)
+            synth(*) >> track_mixer[0..2]
+
+            {{ track_mixer }}
+        "#
+        );
+        let (app, frontend) = build(&graph);
+        assert_eq!(
+            fed_by(&app, &frontend, "poly_voice", "synth.1.adsr"),
+            vec![4, 7]
+        );
+        assert_eq!(
+            fed_by(&app, &frontend, "poly_voice", "synth.1.saw"),
+            vec![5]
+        );
+    }
+
+    #[test]
     fn bare_edge_into_patch_ignores_outputs_the_patch_does_not_declare() {
         let graph = format!(
             r#"{SYNTH}

@@ -405,7 +405,7 @@
   {
     "name": "poly_voice",
     "namespace": "midi",
-    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; wire them with `poly_voice.gate >> voice(*).gate`",
+    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; `poly_voice >> voice(*)` wires them to a patch's matching `in` ports",
     "required_params": [
       "chan",
       "voices"

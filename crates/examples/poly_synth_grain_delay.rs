@@ -66,8 +66,7 @@ fn main() {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        poly_voice.gate >> voice(*).gate
-        poly_voice.freq >> voice(*).freq
+        poly_voice >> voice(*)
         voice(*) >> osc_mixer[0..5]
 
         osc_mixer >> svf

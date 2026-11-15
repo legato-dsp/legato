@@ -366,7 +366,7 @@ impl NodeDefinition for Voice {
 
 impl NodeDefinition for PolyVoice {
     const NAME: &'static str = "poly_voice";
-    const DESCRIPTION: &'static str = "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; wire them with `poly_voice.gate >> voice(*).gate`";
+    const DESCRIPTION: &'static str = "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; `poly_voice >> voice(*)` wires them to a patch's matching `in` ports";
     const REQUIRED_PARAMS: &'static [&'static str] = &["voices", "chan"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[];
 
