@@ -30,6 +30,7 @@ impl Lfo {
             ports: PortBuilder::default()
                 .control_in_named(&["freq"])
                 .control_out(1)
+                .default_out()
                 .build(),
         })
     }
@@ -42,6 +43,10 @@ impl Node for Lfo {
 
     fn handle_msg(&mut self, msg: NodeMessage) {
         Node::handle_msg(&mut self.inner, msg);
+    }
+
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        Node::reset(&mut self.inner, ctx);
     }
 
     fn runtime_params(&self) -> Option<Vec<&str>> {

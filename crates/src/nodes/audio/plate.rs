@@ -101,6 +101,7 @@ impl Plate480 {
                 .audio_in(2)
                 .default_in()
                 .audio_out(2)
+                .default_out()
                 .build(),
             decay: decay.clamp(0.0, 0.9),
             damping: damping.clamp(0.0, 0.999),
@@ -175,6 +176,32 @@ impl Plate480 {
 }
 
 impl PerSampleNode for Plate480 {
+    fn reset(&mut self) {
+        for ring in [
+            &mut self.predelay,
+            &mut self.map_l,
+            &mut self.map_r,
+            &mut self.ap_l2,
+            &mut self.ap_r2,
+        ]
+        .into_iter()
+        .chain(&mut self.diff)
+        .chain([
+            &mut self.del_a,
+            &mut self.del_b,
+            &mut self.del_c,
+            &mut self.del_d,
+        ]) {
+            ring.clear();
+        }
+        self.lfo_phase = 0.0;
+        self.bw_state = 0.0;
+        self.damp_l = 0.0;
+        self.damp_r = 0.0;
+        self.tank_l = 0.0;
+        self.tank_r = 0.0;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

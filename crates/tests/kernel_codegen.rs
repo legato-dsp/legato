@@ -372,6 +372,34 @@ fn generated_plate_matches_interpreter() {
     assert!(energy > 1e-4, "generated plate produced no wet signal");
 }
 
+/// An impulse response long enough for the tank to recirculate.
+fn impulse_response(kernel: &mut impl PerSampleNode) -> Vec<[f32; 2]> {
+    (0..4096)
+        .map(|n| {
+            let x = Some(if n == 0 { 1.0 } else { 0.0 });
+            let mut y = [0.0; 2];
+            kernel.tick(&[x, x], &mut y);
+            y
+        })
+        .collect()
+}
+
+#[test]
+fn reset_plate_replays_a_fresh_impulse_response() {
+    let mut interp = plate_interpreter(48_000);
+    let mut generated = with_resources(48_000, |rb| {
+        generated_plate::Plate::new(rb).expect("generated plate should build")
+    });
+    let fresh = impulse_response(&mut interp);
+
+    impulse_response(&mut generated);
+    interp.reset();
+    generated.reset();
+
+    assert_eq!(impulse_response(&mut interp), fresh);
+    assert_eq!(impulse_response(&mut generated), fresh);
+}
+
 fn set_param(name: &'static str, value: f32) -> NodeMessage {
     NodeMessage::SetParam(ParamPayload {
         param_name: name,

@@ -544,13 +544,13 @@ fn emit_new(
     } else {
         let _ = writeln!(
             out,
-            "                .audio_in_named(&[{}])",
+            "                .audio_in_named(&[{}])\n                .default_in()",
             in_names.join(", ")
         );
     }
     let _ = writeln!(
         out,
-        "                .audio_out({})\n                .build(),",
+        "                .audio_out({})\n                .default_out()\n                .build(),",
         plan.output_slots.len()
     );
     let _ = writeln!(out, "        }})");
@@ -699,6 +699,19 @@ fn emit_tick(
         }
     }
 
+    let _ = writeln!(out, "    }}");
+
+    let _ = writeln!(out, "\n    fn reset(&mut self) {{");
+    for node in &plan.nodes {
+        let _ = writeln!(
+            out,
+            "        {krate}::persample::PerSampleNode::reset(&mut self.n_{});",
+            sanitize(&node.alias)
+        );
+    }
+    for slot in delayed_slots {
+        let _ = writeln!(out, "        self.z_{} = 0.0;", slot_names[slot]);
+    }
     let _ = writeln!(out, "    }}");
 
     // Routing by declared name is what makes a generated kernel reachable from

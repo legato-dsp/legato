@@ -24,6 +24,19 @@ pub fn port_for_instance(port: &Port, i: usize) -> Port {
     }
 }
 
+/// A single source's port as seen by sink instance `i` of `n`. Names become
+/// [`Port::Member`] so the builder can split a port group one per instance.
+pub fn source_port_for_instance(port: &Port, i: usize, n: usize) -> Port {
+    match port {
+        Port::Named(name) if n > 1 => Port::Member {
+            name: name.clone(),
+            instance: i,
+            instances: n,
+        },
+        other => port_for_instance(other, i),
+    }
+}
+
 /// The concrete per-instance source ports a source spec expands to; its length is the source's ports-per-instance in a coupled `src(*) >> sink[a..b]` flatten.
 pub fn source_ports(source_port: &Port) -> Vec<Port> {
     match source_port {

@@ -24,7 +24,10 @@ impl Sweep {
             range: new_range,
             duration,
             elapsed: 0,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .default_out()
+                .build(),
         }
     }
 }
@@ -56,6 +59,10 @@ impl Node for Sweep {
                 chan[n] = sample;
             }
         }
+    }
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.phase = 0.0;
+        self.elapsed = 0;
     }
     fn ports(&self) -> &Ports {
         &self.ports

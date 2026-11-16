@@ -36,7 +36,7 @@ impl Noise {
     fn from_rng(rng: XorShift) -> Self {
         Self {
             rng,
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().audio_out(1).default_out().build(),
         }
     }
 

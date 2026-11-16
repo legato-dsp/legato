@@ -29,6 +29,7 @@ impl HadamardMixer {
                 .audio_in(chans)
                 .default_in()
                 .audio_out(chans)
+                .default_out()
                 .build(),
             chans,
             vertical_slice: vec![0.0; chans].into(), // could maybe be an enum and on the stack?

@@ -1,7 +1,7 @@
 use crate::dsl::{
     ir::*,
     pipeline::GraphPass,
-    resolve::{port_for_instance, source_ports},
+    resolve::{port_for_instance, source_port_for_instance, source_ports},
 };
 use crate::{builder::ValidationError, node_state::NodeState};
 use indexmap::IndexMap;
@@ -139,14 +139,16 @@ impl MacroExpansionPass {
                 // instance — but only when there are several instances. A single
                 // instance keeps the port intact (e.g. its full stereo slice) so
                 // the builder can fan it across channels rather than collapsing it.
-                let resolved_source_port = if node.count > 1 {
-                    port_for_instance(&edge.source_port, i)
-                } else {
-                    edge.source_port.clone()
+                let sources = selection_of(graph, edge.source, &edge.source_selector);
+                let resolved_source_port = match &edge.source_port {
+                    Port::Named(_) if sources.len() == 1 => {
+                        source_port_for_instance(&edge.source_port, pos, picked.len())
+                    }
+                    _ if node.count > 1 => port_for_instance(&edge.source_port, i),
+                    _ => edge.source_port.clone(),
                 };
 
                 // Pair the source selection against this instance's position.
-                let sources = selection_of(graph, edge.source, &edge.source_selector);
                 let resolved_source_selector =
                     pair_selector(&sources, pos, picked.len(), &edge.source_selector).ok_or_else(
                         || {
@@ -158,6 +160,36 @@ impl MacroExpansionPass {
                             ))
                         },
                     )?;
+
+                if let (Port::None, Port::None) = (&edge.source_port, &edge.sink_port)
+                    && remapped_virtual.len() > 1
+                {
+                    let inputs: Vec<String> = remapped_virtual.keys().cloned().collect();
+                    let (instance, instances) = if sources.len() == 1 {
+                        (pos, picked.len())
+                    } else {
+                        (0, 1)
+                    };
+                    for (name, targets) in &remapped_virtual {
+                        for (target_id, target_selector, target_port) in targets {
+                            graph.connect_multi(
+                                edge.source,
+                                resolved_source_selector.clone(),
+                                Port::Matching {
+                                    name: name.clone(),
+                                    inputs: inputs.clone(),
+                                    patch: node.node_type.clone(),
+                                    instance,
+                                    instances,
+                                },
+                                *target_id,
+                                target_selector.clone(),
+                                target_port.clone(),
+                            );
+                        }
+                    }
+                    continue;
+                }
 
                 let targets: Vec<(NodeId, NodeSelector, Port)> = match &edge.sink_port {
                     Port::Named(name) => remapped_virtual.get(name).cloned().unwrap_or_else(|| {
@@ -173,7 +205,10 @@ impl MacroExpansionPass {
                         .get_index(0)
                         .map(|(_, v)| v.clone())
                         .unwrap_or_else(|| vec![(new_sink, NodeSelector::Single, Port::None)]),
-                    Port::Slice(..) | Port::Stride { .. } => {
+                    Port::Slice(..)
+                    | Port::Stride { .. }
+                    | Port::Member { .. }
+                    | Port::Matching { .. } => {
                         return Err(ValidationError::Expansion(format!(
                             "slice and stride ports are not supported on the virtual ports of \
                              patch '{}'",

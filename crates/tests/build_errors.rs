@@ -152,3 +152,64 @@ fn signals_with_same_name_and_different_meta_are_rejected() {
         "{err:?}"
     );
 }
+
+#[test]
+fn bare_edge_from_a_node_without_a_default_output() {
+    let err = build(
+        "midi { voice { chan: 0 } }\naudio { onepole { chans: 1, cutoff: 500.0 } }\nvoice >> onepole\n{ onepole }",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidConnection(m) if m.contains("has no default output")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn bare_edge_into_a_node_without_a_default_input() {
+    let err = build("audio { noise, sine }\nnoise >> sine\n{ sine }").unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidConnection(m) if m.contains("has no default input")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn bare_kernel_edge_into_a_node_without_a_default_input() {
+    let err = build(
+        "kernel k() {\n    audio { noise, sine }\n    noise >> sine\n    { sine }\n}\n\
+         patches { k }\n{ k }",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidConnection(m) if m.contains("has no default port")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn bare_source_cannot_be_summed_into_a_named_port() {
+    let err = build(
+        "control { constant { chans: 2 } }\naudio { onepole { chans: 1, cutoff: 500.0 } }\n\
+         constant >> onepole.cutoff\n{ onepole }",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::SelectionArity(m) if m.contains("would reduce 2 channels to 1")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn named_source_ports_can_still_be_summed() {
+    build(
+        "control { constant { chans: 2 } }\naudio { onepole { chans: 1, cutoff: 500.0 } }\n\
+         constant[0..2] >> onepole.cutoff\n{ onepole }",
+    )
+    .unwrap();
+}
+
+#[test]
+fn one_default_output_broadcasts_across_default_inputs() {
+    build("audio { noise, plate480 }\nnoise >> plate480\n{ plate480 }").unwrap();
+}

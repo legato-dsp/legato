@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     context::AudioContext,
     dsl::{
-        ir::{DSLParams, NodeId, Port},
+        ir::{DSLParams, IRGraph, NodeId, Port},
         parse::legato_parser,
         pipeline::Pipeline,
     },
@@ -20,6 +20,7 @@ use crate::{
     node::LegatoNode,
     node_state::NodeState,
     nodes::audio::mixer::{MonoFanOut, TrackMixer},
+    ports::{Signal, member_index},
     registry::{NodeRegistry, default_namespaces},
     resources::{
         AudioInputKey, DelayLineKey, ExternalBufferKey, ResourceBuilder, Resources,
@@ -383,14 +384,54 @@ where
 {
     /// This pattern is used because we sometimes execute this in a non-owned context
     fn _connect_ref_self(&mut self, connection: AddConnectionProps) -> Result<(), ValidationError> {
-        let source_indicies =
-            self.port_indices(&connection.source, &connection.source_kind, PortDir::Out)?;
-        let sink_indicies =
-            self.port_indices(&connection.sink, &connection.sink_kind, PortDir::In)?;
+        let bare_out = self.default_out_signal(&connection.source);
+        let (source_signal, source_indicies) = self.port_indices(
+            &connection.source,
+            &connection.source_kind,
+            PortDir::Out,
+            bare_out,
+        )?;
+        let (sink_signal, sink_indicies) = self.port_indices(
+            &connection.sink,
+            &connection.sink_kind,
+            PortDir::In,
+            source_signal,
+        )?;
+
+        if source_signal != sink_signal {
+            let (src, _) = self.describe(&connection.source);
+            let (sink, _) = self.describe(&connection.sink);
+            return Err(ValidationError::InvalidConnection(format!(
+                "cannot connect a {source_signal:?} output of '{src}' to a {sink_signal:?} input of '{sink}'"
+            )));
+        }
+
+        if source_signal == Signal::Midi {
+            let Some(pairs) = midi_pairs(&source_indicies, &sink_indicies) else {
+                let (src, _) = self.describe(&connection.source);
+                let (sink, _) = self.describe(&connection.sink);
+                return Err(ValidationError::SelectionArity(format!(
+                    "cannot connect {} MIDI output(s) of '{src}' to {} MIDI input(s) of \
+                     '{sink}': counts must match, or one side must be a single port",
+                    source_indicies.len(),
+                    sink_indicies.len()
+                )));
+            };
+            for (source, sink) in pairs {
+                add_signal_edge(
+                    &mut self.runtime,
+                    Signal::Midi,
+                    (connection.source, source),
+                    (connection.sink, sink),
+                )?;
+            }
+            return Ok(());
+        }
 
         let source_arity = source_indicies.len();
         let sink_arity = sink_indicies.len();
         let bare_sink = matches!(connection.sink_kind, Port::None);
+        let bare_source = matches!(connection.source_kind, Port::None);
 
         match (source_arity, sink_arity) {
             (1, 1) => one_to_one(
@@ -405,11 +446,13 @@ where
                 source_indicies[0],
                 sink_indicies.as_slice(),
             ),
-            (n, 1) if n > 1 && bare_sink => {
+            (n, 1) if n > 1 && (bare_sink || bare_source) => {
+                let (src, src_kind) = self.describe(&connection.source);
                 let (alias, node_kind) = self.describe(&connection.sink);
                 Err(ValidationError::SelectionArity(format!(
-                    "bare `>>` into '{alias}' ({node_kind}) would reduce {n} channels to 1: \
-                     name a target port or route through a mixer (e.g. track_mixer)"
+                    "bare `>>` from '{src}' ({src_kind}) into '{alias}' ({node_kind}) would \
+                     reduce {n} channels to 1: name the ports or route through a mixer \
+                     (e.g. track_mixer)"
                 )))
             }
             (n, 1) if n > 1 => n_to_one(
@@ -455,16 +498,20 @@ where
     ///
     /// Range checking here keeps a bad index (e.g. `mixer[2..4]` on a node with
     /// only 2 outputs) from slipping through to the audio thread.
+    ///
+    /// Indices and ranges address stream ports. Names search both lists, and a
+    /// bare port resolves within `bare`.
     fn port_indices(
         &self,
         key: &NodeKey,
         port: &Port,
         dir: PortDir,
-    ) -> Result<Vec<usize>, ValidationError> {
+        bare: Signal,
+    ) -> Result<(Signal, Vec<usize>), ValidationError> {
         let ports = self.runtime.get_node_ports(key);
-        let side = match dir {
-            PortDir::In => &ports.ports_in,
-            PortDir::Out => &ports.ports_out,
+        let list = |signal| match dir {
+            PortDir::In => ports.inputs(signal),
+            PortDir::Out => ports.outputs(signal),
         };
         let dir_name = match dir {
             PortDir::In => "input",
@@ -475,22 +522,46 @@ where
             ValidationError::InvalidConnection(format!("'{alias}' ({kind}): {msg}"))
         };
 
+        let signal = match port {
+            Port::None => bare,
+            Port::Named(name) | Port::Member { name, .. } => [Signal::Stream, Signal::Midi]
+                .into_iter()
+                .find(|&s| list(s).iter().any(|p| p.name == name))
+                .unwrap_or(Signal::Stream),
+            _ => Signal::Stream,
+        };
+        let side = list(signal);
+
         let indices: Vec<usize> = match port {
             Port::None => match dir {
-                PortDir::In => ports.default_in(),
-                PortDir::Out => ports.default_out(),
+                PortDir::In => ports.default_in_of(signal),
+                PortDir::Out => ports.default_out_of(signal),
             },
             Port::Index(i) => vec![*i],
             Port::Named(name) => match side.iter().find(|p| p.name == name) {
                 Some(p) => vec![p.index],
                 None => {
-                    let known: Vec<&str> = side.iter().map(|p| p.name).collect();
+                    let known: Vec<&str> = list(Signal::Stream)
+                        .iter()
+                        .chain(list(Signal::Midi))
+                        .map(|p| p.name)
+                        .collect();
                     return Err(invalid(format!(
                         "no {dir_name} port named '{name}' (expected one of: {})",
                         known.join(", ")
                     )));
                 }
             },
+            Port::Member {
+                name,
+                instance,
+                instances,
+            } => vec![member_index(side, name, *instance, *instances).map_err(invalid)?],
+            Port::Matching { name, .. } => {
+                return Err(invalid(format!(
+                    "internal: bare `>>` candidate '{name}' reached the connect step unresolved"
+                )));
+            }
             Port::Slice(start, end) | Port::Stride { start, end, .. } if end <= start => {
                 return Err(invalid(format!(
                     "port range {start}..{end} is empty: the end must be greater than the start"
@@ -511,12 +582,37 @@ where
             )));
         }
 
-        Ok(indices)
+        if indices.is_empty() && signal == Signal::Midi && side.is_empty() {
+            return Err(invalid(format!("has no MIDI {dir_name} ports")));
+        }
+
+        if indices.is_empty() && matches!(port, Port::None) {
+            let names: Vec<&str> = list(Signal::Stream)
+                .iter()
+                .chain(list(Signal::Midi))
+                .map(|p| p.name)
+                .collect();
+            return Err(invalid(if names.is_empty() {
+                format!("has no {dir_name} ports")
+            } else {
+                format!(
+                    "has no default {dir_name}, so a bare `>>` is ambiguous: name a port \
+                     (one of: {})",
+                    names.join(", ")
+                )
+            }));
+        }
+
+        Ok((signal, indices))
     }
 
     /// The bare-`>>` target input indices on `sink`.
     fn default_in(&self, sink: &NodeKey) -> Vec<usize> {
         self.runtime.get_node_ports(sink).default_in()
+    }
+
+    fn default_out_signal(&self, source: &NodeKey) -> Signal {
+        self.runtime.get_node_ports(source).default_out_signal()
     }
 }
 
@@ -657,6 +753,78 @@ impl LegatoBuilder<DslBuilding> {
         Ok(())
     }
 
+    /// The IR's edges on runtime keys, with bare-`>>` patch candidates
+    /// ([`Port::Matching`]) settled: all of a patch's inputs matched by name
+    /// connect by name, none matched falls back to the first input, and a
+    /// partial match is an error.
+    fn resolve_matching(
+        &self,
+        ir: &IRGraph,
+        keys: &HashMap<NodeId, NodeKey>,
+    ) -> Result<Vec<KeyedEdge>, ValidationError> {
+        let has_output = |key: &NodeKey, name: &str| {
+            let ports = self.runtime.get_node_ports(key);
+            [Signal::Stream, Signal::Midi]
+                .into_iter()
+                .any(|s| ports.outputs(s).iter().any(|p| p.name == name))
+        };
+
+        let mut edges = Vec::new();
+        for edge in ir.edges() {
+            let source = keys[&edge.source];
+            let source_port = match &edge.source_port {
+                Port::Matching {
+                    name,
+                    inputs,
+                    patch,
+                    instance,
+                    instances,
+                } => {
+                    let (matched, missing): (Vec<&String>, Vec<&String>) =
+                        inputs.iter().partition(|n| has_output(&source, n));
+                    if matched.is_empty() {
+                        if *name != inputs[0] {
+                            continue;
+                        }
+                        Port::None
+                    } else if !missing.is_empty() {
+                        let (alias, kind) = self.describe(&source);
+                        let list = |names: Vec<&String>| {
+                            names
+                                .iter()
+                                .map(|n| format!("`{n}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        return Err(ValidationError::InvalidConnection(format!(
+                            "bare `>>` from '{alias}' ({kind}) into patch '{patch}' matches {} \
+                             but not {}: connect the ports by name, or remove the unmatched \
+                             `in` ports from the patch",
+                            list(matched),
+                            list(missing),
+                        )));
+                    } else if *instances > 1 {
+                        Port::Member {
+                            name: name.clone(),
+                            instance: *instance,
+                            instances: *instances,
+                        }
+                    } else {
+                        Port::Named(name.clone())
+                    }
+                }
+                other => other.clone(),
+            };
+            edges.push(KeyedEdge {
+                source,
+                source_port,
+                sink: keys[&edge.sink],
+                sink_port: edge.sink_port.clone(),
+            });
+        }
+        Ok(edges)
+    }
+
     fn _build_dsl(mut self, content: &str) -> Result<(LegatoApp, LegatoFrontend), ValidationError> {
         let ast = legato_parser(content)?;
         let ir = Pipeline::default().run_from_ast(ast)?;
@@ -703,16 +871,19 @@ impl LegatoBuilder<DslBuilding> {
 
         // Count narrow bare sources per sink: several small feeds into one sink's
         // default bus zip across it rather than each broadcasting over the whole bus.
+        let edges = self.resolve_matching(&ir, &ir_to_runtime)?;
+
         let mut narrow_bare_count: HashMap<NodeKey, usize> = HashMap::new();
-        for edge in ir.edges() {
+        for edge in &edges {
             if !matches!(edge.sink_port, Port::None) {
                 continue;
             }
-            let source = ir_to_runtime[&edge.source];
-            let sink = ir_to_runtime[&edge.sink];
-            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
+            let (source, sink) = (edge.source, edge.sink);
+            let bare_out = self.default_out_signal(&source);
+            let (signal, out_indices) =
+                self.port_indices(&source, &edge.source_port, PortDir::Out, bare_out)?;
             let matched = self.default_in(&sink);
-            if out_indices.len() < matched.len() {
+            if signal == Signal::Stream && out_indices.len() < matched.len() {
                 *narrow_bare_count.entry(sink).or_default() += 1;
             }
         }
@@ -720,14 +891,16 @@ impl LegatoBuilder<DslBuilding> {
         // Where the next group member lands on each sink's default bus.
         let mut zip_cursor: HashMap<NodeKey, usize> = HashMap::new();
 
-        for edge in ir.edges() {
-            let source = ir_to_runtime[&edge.source];
-            let sink = ir_to_runtime[&edge.sink];
+        for edge in &edges {
+            let (source, sink) = (edge.source, edge.sink);
 
-            let out_indices = self.port_indices(&source, &edge.source_port, PortDir::Out)?;
+            let bare_out = self.default_out_signal(&source);
+            let (signal, out_indices) =
+                self.port_indices(&source, &edge.source_port, PortDir::Out, bare_out)?;
             let matched = self.default_in(&sink);
 
-            let in_fan_group = matches!(edge.sink_port, Port::None)
+            let in_fan_group = signal == Signal::Stream
+                && matches!(edge.sink_port, Port::None)
                 && out_indices.len() < matched.len()
                 && narrow_bare_count.get(&sink).copied().unwrap_or(0) > 1;
 
@@ -776,6 +949,14 @@ impl LegatoBuilder<DslBuilding> {
 
         self.try_build()
     }
+}
+
+/// An IR edge on runtime node keys, ready to connect.
+struct KeyedEdge {
+    source: NodeKey,
+    source_port: Port,
+    sink: NodeKey,
+    sink_port: Port,
 }
 
 #[derive(Debug)]
@@ -1022,6 +1203,20 @@ fn add_edge(
     (source, source_index): (NodeKey, usize),
     (sink, sink_index): (NodeKey, usize),
 ) -> Result<(), ValidationError> {
+    add_signal_edge(
+        runtime,
+        Signal::Stream,
+        (source, source_index),
+        (sink, sink_index),
+    )
+}
+
+fn add_signal_edge(
+    runtime: &mut Runtime,
+    signal: Signal,
+    (source, source_index): (NodeKey, usize),
+    (sink, sink_index): (NodeKey, usize),
+) -> Result<(), ValidationError> {
     runtime
         .add_edge(Connection {
             source: ConnectionEntry {
@@ -1032,6 +1227,7 @@ fn add_edge(
                 node_key: sink,
                 port_index: sink_index,
             },
+            signal,
         })
         .map(|_| ())
         .map_err(|e| {
@@ -1105,6 +1301,17 @@ fn n_to_one(
     }
 
     add_edge(runtime, (mixer, 0), (props.sink, sink_index))
+}
+
+/// MIDI needs no mixer nodes: the executor merges every edge into an input,
+/// and fans an output out by copying it into each input.
+fn midi_pairs(sources: &[usize], sinks: &[usize]) -> Option<Vec<(usize, usize)>> {
+    match (sources.len(), sinks.len()) {
+        (1, _) => Some(sinks.iter().map(|&k| (sources[0], k)).collect()),
+        (_, 1) => Some(sources.iter().map(|&s| (s, sinks[0])).collect()),
+        (n, m) if n == m => Some(sources.iter().copied().zip(sinks.iter().copied()).collect()),
+        _ => None,
+    }
 }
 
 fn n_to_n(

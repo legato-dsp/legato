@@ -27,12 +27,17 @@ impl FirFilter {
                 .audio_in(chans)
                 .default_in()
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }
 }
 
 impl Node for FirFilter {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.state.iter_mut().for_each(RingBuffer::clear);
+    }
+
     #[cfg(feature = "simd")]
     fn process(&mut self, _: &mut AudioContext, ai: &Inputs, ao: &mut [&mut [f32]]) {
         // These checks are important because we are using this elsewhere for oversampling

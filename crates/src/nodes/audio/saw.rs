@@ -40,6 +40,7 @@ impl Saw {
             ports: PortBuilder::default()
                 .control_in_named(&["freq"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }
@@ -179,6 +180,10 @@ impl PerSampleNode for Saw {
         Node::handle_msg(self, msg);
     }
 
+    fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+
     fn runtime_params(&self) -> Option<Vec<&str>> {
         Node::runtime_params(self)
     }
@@ -203,6 +208,10 @@ impl Node for Saw {
 
     fn runtime_params(&self) -> Option<Vec<&str>> {
         Some(vec!["freq"])
+    }
+
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
     }
 
     fn ports(&self) -> &Ports {

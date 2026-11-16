@@ -30,6 +30,7 @@ pub struct Env {
     attack_starting_level: f32,
     release_starting_level: f32,
     last_gate: f32,
+    last_trig: f32,
     ports: Ports,
 }
 
@@ -45,9 +46,11 @@ impl Env {
             attack_starting_level: 0.0,
             release_starting_level: 0.0,
             last_gate: 0.0,
+            last_trig: 0.0,
             ports: PortBuilder::default()
                 .control_in_named(&["gate"])
                 .default_in()
+                .control_in_named(&["trig"])
                 .control_out_named(&["env"])
                 .default_out()
                 .build(),
@@ -136,20 +139,33 @@ impl NodeDefinition for Env {
 }
 
 impl Node for Env {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.state = EnvState::Idle;
+        self.state_delta_t = 0.0;
+        self.attack_starting_level = 0.0;
+        self.release_starting_level = 0.0;
+        self.last_gate = 0.0;
+        self.last_trig = 0.0;
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let dt = 1000.0 / config.sample_rate as f32;
 
         let Some(gate_chan) = inputs[0] else { return };
+        let trig_chan = inputs[1];
 
         for n in 0..config.block_size {
             let gate = gate_chan[n];
-            if gate > 0.5 && self.last_gate <= 0.5 {
+            let trig = trig_chan.map_or(0.0, |t| t[n]);
+            let retrig = trig > 0.5 && self.last_trig <= 0.5 && gate > 0.5 && self.last_gate > 0.5;
+            if (gate > 0.5 && self.last_gate <= 0.5) || retrig {
                 self.on_gate();
             } else if gate <= 0.5 && self.last_gate > 0.5 && self.state != EnvState::Idle {
                 self.on_gate_release();
             }
             self.last_gate = gate;
+            self.last_trig = trig;
 
             outputs[0][n] = self.get_gain();
 
@@ -192,8 +208,25 @@ mod test {
             sample_rate: 1_000,
         });
         let mut out = vec![0.0f32; gates.len()];
-        node.process(&mut ctx, &[Some(gates)], &mut [&mut out]);
+        node.process(&mut ctx, &[Some(gates), None], &mut [&mut out]);
         out
+    }
+
+    #[test]
+    fn trig_while_gate_held_restarts_attack() {
+        let mut node = Env::new(2.0, 2.0, 0.3, 10.0);
+        let mut ctx = build_placeholder_context(Config {
+            block_size: 16,
+            channels: 1,
+            rt_capacity: 0,
+            sample_rate: 1_000,
+        });
+        let mut trigs = [0.0; 16];
+        trigs[10] = 1.0;
+        let mut out = [0.0f32; 16];
+        node.process(&mut ctx, &[Some(&[1.0; 16]), Some(&trigs)], &mut [&mut out]);
+        assert!((out[9] - 0.3).abs() < 1e-6);
+        assert!(out[11] > out[10] && out[11] > 0.3);
     }
 
     #[test]

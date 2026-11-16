@@ -40,12 +40,17 @@ impl Allpass {
                 .default_in()
                 .audio_in_named(&["delay_length", "feedback"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }
 }
 
 impl PerSampleNode for Allpass {
+    fn reset(&mut self) {
+        self.delay_lines.iter_mut().for_each(RingBuffer::clear);
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -82,6 +87,10 @@ impl PerSampleNode for Allpass {
 }
 
 impl Node for Allpass {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sr = ctx.get_config().sample_rate as f32;
 

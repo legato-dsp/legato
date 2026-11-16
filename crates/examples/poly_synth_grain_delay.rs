@@ -1,5 +1,12 @@
 use legato::prelude::*;
 
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 /// A five voice sawtooth example
 fn main() {
     let graph = String::from(
@@ -17,7 +24,7 @@ fn main() {
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             saw >> adsr[1]
 
@@ -33,10 +40,10 @@ fn main() {
                     diffusion: 1.0,
                     grain_size: 400,
                     spray: 6.0,
-                    damping: 0.8,
+                    damping: 0.4,
                     scan: 1.0,
                     delay_length: 1000,
-                    shape: 0.5,
+                    shape: 0.2,
                     feedback: 0.8
                 },
                 plate480 { mix: 0.8, decay: 0.8 },
@@ -66,8 +73,7 @@ fn main() {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        poly_voice[0:13:3] >> voice(*).gate
-        poly_voice[1:13:3] >> voice(*).freq
+        poly_voice >> voice(*)
         voice(*) >> osc_mixer[0..5]
 
         osc_mixer >> svf
@@ -79,10 +85,10 @@ fn main() {
     );
 
     let config = Config {
-        sample_rate: 48_000,
-        block_size: 4096,
-        channels: 2,
-        rt_capacity: 0,
+        sample_rate: env_or("LEGATO_SAMPLE_RATE", 44_100),
+        block_size: env_or("LEGATO_BLOCK_SIZE", 256),
+        channels: env_or("LEGATO_CHANNELS", 2),
+        rt_capacity: env_or("LEGATO_RT_CAPACITY", 0),
     };
 
     let midi_rt_fe = start_midi_thread(

@@ -243,6 +243,10 @@ impl NodeDefinition for Quantize {
 }
 
 impl Node for Quantize {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let Some(pitch_in) = inputs[0] else { return };
 
@@ -263,6 +267,11 @@ impl Node for Quantize {
 }
 
 impl PerSampleNode for Quantize {
+    fn reset(&mut self) {
+        self.last_freq = f32::NEG_INFINITY;
+        self.last_note = f32::NEG_INFINITY;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

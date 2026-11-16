@@ -16,6 +16,7 @@ use legato::{
     harness::build_placeholder_context,
     node::{Inputs, LegatoNode, Node},
     node_state::{NodeState, fade_samples},
+    ports::Signal,
     ports::{PortBuilder, Ports},
     runtime::NodeKey,
 };
@@ -46,6 +47,7 @@ impl Node for Const {
 
 /// Doubles its input, so its processed output differs from a bypass.
 struct Double {
+    resets: Arc<AtomicUsize>,
     ports: Ports,
 }
 
@@ -55,6 +57,9 @@ impl Node for Double {
         for (y, x) in outputs[0].iter_mut().zip(input) {
             *y = 2.0 * x;
         }
+    }
+    fn reset(&mut self, _: &mut AudioContext) {
+        self.resets.fetch_add(1, Ordering::Relaxed);
     }
     fn ports(&self) -> &Ports {
         &self.ports
@@ -67,11 +72,13 @@ struct Rig {
     src: NodeKey,
     double: NodeKey,
     calls: Arc<AtomicUsize>,
+    resets: Arc<AtomicUsize>,
 }
 
 /// `Const(val) >> Double`, with `sink` chosen by the caller.
 fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
     let calls = Arc::new(AtomicUsize::new(0));
+    let resets = Arc::new(AtomicUsize::new(0));
     let mut executor = Executor::default();
     let src = executor.graph.add_node(LegatoNode::new(
         "src".into(),
@@ -79,17 +86,19 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
         Box::new(Const {
             val,
             calls: calls.clone(),
-            ports: PortBuilder::default().audio_out(1).build(),
+            ports: PortBuilder::default().audio_out(1).default_out().build(),
         }),
     ));
     let double = executor.graph.add_node(LegatoNode::new(
         "double".into(),
         "double".into(),
         Box::new(Double {
+            resets: resets.clone(),
             ports: PortBuilder::default()
                 .audio_in(1)
                 .default_in()
                 .audio_out(1)
+                .default_out()
                 .build(),
         }),
     ));
@@ -100,6 +109,7 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
     executor
         .graph
         .add_edge(Connection {
+            signal: Signal::Stream,
             source: entry(src),
             sink: entry(double),
         })
@@ -121,6 +131,7 @@ fn rig(val: f32, block: usize, fade: u32, sink_is_double: bool) -> Rig {
         src,
         double,
         calls,
+        resets,
     }
 }
 
@@ -134,6 +145,10 @@ impl Rig {
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
+    }
+
+    fn resets(&self) -> usize {
+        self.resets.load(Ordering::Relaxed)
     }
 }
 
@@ -187,6 +202,76 @@ fn bypassed_crossfades_to_the_dry_input() {
 }
 
 #[test]
+fn bypass_resets_once_the_fade_has_finished() {
+    let fade_blocks = (FADE as usize).div_ceil(BLOCK);
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_state(r.double, NodeState::Bypassed);
+
+    r.render(fade_blocks);
+    assert_eq!(r.resets(), 0);
+    r.render(3);
+    assert_eq!(r.resets(), 1);
+}
+
+#[test]
+fn every_bypass_resets_again() {
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    for expected in 1..=2 {
+        r.executor.set_state(r.double, NodeState::Bypassed);
+        r.render(BLOCKS);
+        r.executor.set_state(r.double, NodeState::Active);
+        r.render(BLOCKS);
+        assert_eq!(r.resets(), expected);
+    }
+}
+
+#[test]
+fn starting_bypassed_resets_on_the_first_block() {
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_initial_state(r.double, NodeState::Bypassed);
+    r.render(1);
+    assert_eq!(r.resets(), 1);
+}
+
+#[test]
+fn suspend_resets_once_the_fade_has_finished() {
+    let fade_blocks = (FADE as usize).div_ceil(BLOCK);
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_state(r.double, NodeState::Suspended);
+
+    r.render(fade_blocks);
+    assert_eq!(r.resets(), 0);
+    r.render(3);
+    assert_eq!(r.resets(), 1);
+}
+
+#[test]
+fn starting_suspended_resets_on_the_first_block() {
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_initial_state(r.double, NodeState::Suspended);
+    r.render(3);
+    assert_eq!(r.resets(), 1);
+}
+
+#[test]
+fn switching_from_bypass_to_suspend_resets_again() {
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_state(r.double, NodeState::Bypassed);
+    r.render(BLOCKS);
+    r.executor.set_state(r.double, NodeState::Suspended);
+    r.render(2 * BLOCKS);
+    assert_eq!(r.resets(), 2);
+}
+
+#[test]
+fn mute_does_not_reset() {
+    let mut r = rig(0.25, BLOCK, FADE, true);
+    r.executor.set_state(r.double, NodeState::Muted);
+    r.render(BLOCKS);
+    assert_eq!(r.resets(), 0);
+}
+
+#[test]
 fn reactivating_a_suspended_node_fades_back_in() {
     let mut r = rig(1.0, BLOCK, FADE, false);
     r.executor.set_state(r.src, NodeState::Suspended);
@@ -209,7 +294,7 @@ fn every_channel_gets_the_same_fade() {
         Box::new(Const {
             val: 1.0,
             calls: Arc::default(),
-            ports: PortBuilder::default().audio_out(2).build(),
+            ports: PortBuilder::default().audio_out(2).default_out().build(),
         }),
     ));
     executor.set_sink(src).unwrap();
@@ -270,7 +355,10 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
     let ports = |marked: bool| {
         let b = PortBuilder::default().audio_in(2);
         let b = if marked { b.default_in() } else { b };
-        b.control_in_named(&["drive", "tone"]).audio_out(2).build()
+        b.control_in_named(&["drive", "tone"])
+            .audio_out(2)
+            .default_out()
+            .build()
     };
 
     // Without `default_in()` no input is marked, so there is no signal path.
@@ -287,7 +375,9 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
     let src = executor.graph.add_node(LegatoNode::new(
         "src".into(),
         "src".into(),
-        Box::new(Sources(PortBuilder::default().audio_out(4).build())),
+        Box::new(Sources(
+            PortBuilder::default().audio_out(4).default_out().build(),
+        )),
     ));
     let dist = executor.graph.add_node(LegatoNode::new(
         "dist".into(),
@@ -298,6 +388,7 @@ fn distortion_bypass_passes_only_the_stereo_signal() {
         executor
             .graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: src,
                     port_index: i,
@@ -354,6 +445,7 @@ fn bypass_needs_paired_default_ports() {
         "osc".into(),
         "osc".into(),
         Box::new(Double {
+            resets: Arc::default(),
             ports: PortBuilder::default().audio_in(1).audio_out(1).build(),
         }),
     ));

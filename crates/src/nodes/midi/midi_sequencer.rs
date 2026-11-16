@@ -47,6 +47,7 @@ impl MidiSequencer {
     pub fn new(midi_chan: u8, num_steps: usize) -> Self {
         let ports = PortBuilder::default()
             .control_in_named(&["phasor"])
+            .default_in()
             .required_in()
             .control_out_named(&["freq", "vel", "gate"])
             .build();
@@ -81,13 +82,16 @@ impl Node for MidiSequencer {
         let sr = cfg.sample_rate;
         let block_size = cfg.block_size;
 
-        let block_start = ctx.get_instant();
+        // `get_instant` is when the previous block finished, so schedule a block ahead
+        // to keep every event in the future and preserve its offset within the block.
+        let block_start =
+            ctx.get_instant() + Duration::from_secs_f64(block_size as f64 / sr as f64);
+        let at = move |n: usize| block_start + Duration::from_secs_f64(n as f64 / sr as f64);
+
         for n in 0..block_size {
             let phase = phasor_in[n];
             let idx = self.step_index(phase);
             let local_phase = (phase * self.num_steps as f32).fract();
-
-            let when = block_start + Duration::from_secs_f32(n as f32 / sr as f32);
 
             // Step edge: send NoteOff for previous note, NoteOn for new step
             if idx != self.last_idx {
@@ -102,7 +106,7 @@ impl Node for MidiSequencer {
                             },
                             channel_idx: self.midi_chan,
                         },
-                        when,
+                        at(n),
                     );
                 }
 
@@ -117,7 +121,7 @@ impl Node for MidiSequencer {
                             },
                             channel_idx: self.midi_chan,
                         },
-                        when,
+                        at(n),
                     );
                     self.held_note = Some(note);
                 }
@@ -135,13 +139,28 @@ impl Node for MidiSequencer {
                                 data: MidiMessageKind::NoteOff { note, velocity: 0 },
                                 channel_idx: self.midi_chan,
                             },
-                            when,
+                            at(n),
                         );
                     }
                     self.note_off_sent = true;
                 }
             }
         }
+    }
+
+    /// Notes go straight to the system, so nothing else will end a held one.
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        if let Some(note) = self.held_note.take() {
+            let _ = ctx.send_to_system_midi(
+                MidiMessage {
+                    data: MidiMessageKind::NoteOff { note, velocity: 0 },
+                    channel_idx: self.midi_chan,
+                },
+                ctx.get_instant(),
+            );
+        }
+        self.last_idx = 0;
+        self.note_off_sent = false;
     }
 
     fn handle_msg(&mut self, msg: NodeMessage) {

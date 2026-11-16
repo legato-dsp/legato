@@ -103,6 +103,26 @@
     ]
   },
   {
+    "name": "grain_delay",
+    "namespace": "audio",
+    "description": "A basic grain delay, with no parameters yet",
+    "required_params": [
+      "delay_length"
+    ],
+    "optional_params": [
+      "chans",
+      "damping",
+      "diffusion",
+      "feedback",
+      "grain_size",
+      "jitter",
+      "overlap",
+      "scan",
+      "shape",
+      "spray"
+    ]
+  },
+  {
     "name": "hadamard",
     "namespace": "audio",
     "description": "Walsh-Hadamard transform mixer for feedback delay networks",
@@ -336,7 +356,7 @@
   {
     "name": "signal",
     "namespace": "control",
-    "description": "Smoothed control parameter exposed to the host application",
+    "description": "Control parameter exposed to the host application, gliding to each new value over `glide` ms (default 5, 0 for none)",
     "required_params": [
       "default",
       "max",
@@ -344,7 +364,32 @@
       "name"
     ],
     "optional_params": [
-      "smoothing"
+      "glide"
+    ]
+  },
+  {
+    "name": "arp",
+    "namespace": "midi",
+    "description": "Arpeggiates held MIDI notes, one per step of a phasor. `gate` is a fraction of the step; `gate_ms` overrides it",
+    "required_params": [
+      "steps"
+    ],
+    "optional_params": [
+      "gate",
+      "gate_ms",
+      "mode",
+      "octaves",
+      "seed"
+    ]
+  },
+  {
+    "name": "chance",
+    "namespace": "midi",
+    "description": "Passes each MIDI note with probability `p`; other messages always pass",
+    "required_params": [],
+    "optional_params": [
+      "p",
+      "seed"
     ]
   },
   {
@@ -360,7 +405,7 @@
   {
     "name": "poly_voice",
     "namespace": "midi",
-    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, frequency, and velocity",
+    "description": "Polyphonic MIDI voice decoder outputting per-voice gate, freq, vel, and trig groups; `poly_voice >> voice(*)` wires them to a patch's matching `in` ports",
     "required_params": [
       "chan",
       "voices"
@@ -370,7 +415,7 @@
   {
     "name": "voice",
     "namespace": "midi",
-    "description": "Decodes MIDI note events on a channel to gate, frequency, and velocity signals",
+    "description": "Decodes MIDI note events on a channel to gate, frequency, velocity, and a one-sample trig on each note-on",
     "required_params": [
       "chan"
     ],

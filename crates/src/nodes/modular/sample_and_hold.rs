@@ -120,6 +120,11 @@ impl NodeDefinition for SampleAndHold {
 }
 
 impl PerSampleNode for SampleAndHold {
+    fn reset(&mut self) {
+        self.held = 0.0;
+        self.samples_held = 0;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -138,6 +143,10 @@ impl PerSampleNode for SampleAndHold {
 }
 
 impl Node for SampleAndHold {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, _ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         if inputs[1].is_some() {
             self.process_with_modulation(inputs, outputs);

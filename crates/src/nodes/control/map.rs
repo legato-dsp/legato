@@ -27,7 +27,12 @@ impl Map {
             max: range[1],
             mapped_min: new_range[0],
             mapped_max: new_range[1],
-            ports: PortBuilder::default().control_in(1).control_out(1).build(),
+            ports: PortBuilder::default()
+                .control_in(1)
+                .default_in()
+                .control_out(1)
+                .default_out()
+                .build(),
         }
     }
 }

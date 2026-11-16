@@ -20,7 +20,9 @@ impl DelayWrite {
             delay_line_keys,
             ports: PortBuilder::default()
                 .audio_in(chans)
-                .audio_out(chans) // Just for graph semantics
+                .default_in()
+                .audio_out(chans)
+                .default_out() // Just for graph semantics
                 .build(),
         }
     }
@@ -37,6 +39,12 @@ impl Node for DelayWrite {
                     view.push(sample);
                 }
             }
+        }
+    }
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        let resources = ctx.get_resources_mut();
+        for &key in &self.delay_line_keys {
+            resources.delay_line_view_mut(key).clear();
         }
     }
     fn ports(&self) -> &Ports {
@@ -72,7 +80,10 @@ impl DelayRead {
             delay_line_keys,
             len,
             quality,
-            ports: PortBuilder::default().audio_out(chans).build(),
+            ports: PortBuilder::default()
+                .audio_out(chans)
+                .default_out()
+                .build(),
         }
     }
 

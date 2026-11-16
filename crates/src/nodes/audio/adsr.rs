@@ -1,4 +1,5 @@
 use crate::{
+    context::AudioContext,
     math::lerp,
     msg::{NodeMessage, RtValue},
     node::Node,
@@ -28,6 +29,7 @@ pub struct Adsr {
     attack_starting_level: f32,
     release_starting_level: f32,
     gate_open: bool,
+    trig_high: bool,
     ports: Ports,
 }
 
@@ -44,13 +46,16 @@ impl Adsr {
             attack_starting_level: 0.0,
             release_starting_level: 0.0,
             gate_open: false,
+            trig_high: false,
             ports: PortBuilder::default()
                 .control_in_named(&["gate"])
                 .required_in()
                 .audio_in(chans)
                 .default_in()
                 .silent_in()
+                .control_in_named(&["trig"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         }
     }
@@ -112,6 +117,15 @@ impl Adsr {
 }
 
 impl Node for Adsr {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.state = AdsrState::Idle;
+        self.state_delta_t = 0.0;
+        self.attack_starting_level = 0.0;
+        self.release_starting_level = 0.0;
+        self.gate_open = false;
+        self.trig_high = false;
+    }
+
     fn process(
         &mut self,
         ctx: &mut crate::context::AudioContext,
@@ -125,17 +139,21 @@ impl Node for Adsr {
         let dt = 1000.0 / sr as f32; // Using ms here
 
         let gate_chan = inputs[0].expect("ADSR Filter requires gate channel at index 0!");
+        let trig_chan = inputs[self.chans + 1];
 
         // TODO: A lot of branches here. May be worth writing branchless or with a simple LUT
         for n in 0..block_size {
             // Only act on gate edges, so a held gate runs the full attack/decay/sustain.
             let gate_open = gate_chan[n] > 0.5;
-            if gate_open && !self.gate_open {
+            let trig_high = trig_chan.is_some_and(|t| t[n] > 0.5);
+            let retrig = trig_high && !self.trig_high && gate_open && self.gate_open;
+            if (gate_open && !self.gate_open) || retrig {
                 self.on_gate();
             } else if !gate_open && self.gate_open {
                 self.on_gate_release();
             }
             self.gate_open = gate_open;
+            self.trig_high = trig_high;
 
             let gain = self.get_gain();
 
@@ -202,6 +220,10 @@ mod test {
     use crate::{config::Config, harness::build_placeholder_context};
 
     fn run(node: &mut Adsr, gates: &[f32]) -> Vec<f32> {
+        run_with_trig(node, gates, None)
+    }
+
+    fn run_with_trig(node: &mut Adsr, gates: &[f32], trigs: Option<&[f32]>) -> Vec<f32> {
         let mut ctx = build_placeholder_context(Config {
             block_size: gates.len(),
             channels: 1,
@@ -210,8 +232,44 @@ mod test {
         });
         let ones = vec![1.0f32; gates.len()];
         let mut out = vec![0.0f32; gates.len()];
-        node.process(&mut ctx, &[Some(gates), Some(&ones)], &mut [&mut out]);
+        node.process(
+            &mut ctx,
+            &[Some(gates), Some(&ones), trigs],
+            &mut [&mut out],
+        );
         out
+    }
+
+    #[test]
+    fn trig_while_gate_held_restarts_attack() {
+        let mut node = Adsr::new(1, 2.0, 2.0, 0.3, 10.0);
+        let mut trigs = [0.0; 16];
+        trigs[10] = 1.0;
+        let out = run_with_trig(&mut node, &[1.0; 16], Some(&trigs));
+        assert!((out[9] - 0.3).abs() < 1e-6);
+        assert!(out[11] > out[10] && out[11] > 0.3);
+    }
+
+    #[test]
+    fn trig_without_gate_is_ignored() {
+        let mut node = Adsr::new(1, 2.0, 2.0, 0.3, 10.0);
+        let mut trigs = [0.0; 8];
+        trigs[2] = 1.0;
+        let out = run_with_trig(&mut node, &[0.0; 8], Some(&trigs));
+        assert!(out.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn trig_on_the_rising_gate_edge_triggers_once() {
+        let mut with = Adsr::new(1, 4.0, 2.0, 0.3, 10.0);
+        let mut without = Adsr::new(1, 4.0, 2.0, 0.3, 10.0);
+        let mut trigs = [0.0; 8];
+        trigs[0] = 1.0;
+        let gates = [1.0; 8];
+        assert_eq!(
+            run_with_trig(&mut with, &gates, Some(&trigs)),
+            run(&mut without, &gates)
+        );
     }
 
     #[test]

@@ -50,6 +50,12 @@ impl Oversampler2X {
 }
 
 impl Node for Oversampler2X {
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        self.node.get_node_mut().reset(ctx);
+        self.upsamplers.iter_mut().for_each(Upsampler16::clear);
+        self.downsamplers.iter_mut().for_each(Downsampler16::clear);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let cfg = ctx.get_config();
 

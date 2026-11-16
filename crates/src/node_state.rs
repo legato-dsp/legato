@@ -89,6 +89,16 @@ impl NodeRuntime {
         self.zeroed = false;
     }
 
+    /// Get the node's plan from it's current state. We have a few potential states here.
+    ///
+    /// - Active: it plays, nothing fancy
+    /// - Muted: it continues to play interiorly, but not exporting audio
+    /// - Bypassed: copies inputs marked by default in
+    /// - Suspended has two variants. We either need to zero on the first
+    /// switch, and reset the node, or we can just continue to send zero blocks.
+    /// This saves on work (zero'ing the buffer each process), and avoids resetting
+    /// the node every block (expensive, imagine zero'ing a large delay line every block)
+    /// - Fading: it's current fading, this state is tracked internally here
     pub fn plan(&mut self) -> Plan {
         let settled_active = self.target == NodeState::Active && self.pos == self.len;
         let settled_off = self.mode == self.target && self.pos == 0;

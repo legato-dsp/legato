@@ -58,7 +58,7 @@ let graph = String::from(
             adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
         }
 
-        freq >> saw
+        freq >> saw.freq
         gate >> adsr.gate
         saw >> adsr[1]
 
@@ -79,8 +79,7 @@ let graph = String::from(
         poly_voice { chan: 0, voices: 5 }
     }
 
-    poly_voice[0:13:3] >> voice(*).gate
-    poly_voice[1:13:3] >> voice(*).freq
+    poly_voice >> voice(*)
     voice(*) >> osc_mixer[0..5]
 
     osc_mixer >> svf

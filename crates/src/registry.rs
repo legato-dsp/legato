@@ -43,6 +43,8 @@ use crate::{
             signal::Signal,
         },
         midi::{
+            arp::Arp,
+            chance::Chance,
             midi_sequencer::MidiSequencer,
             voice::{PolyVoice, Voice},
         },
@@ -172,6 +174,8 @@ pub fn midi_registry_factory() -> NodeRegistry {
     registry.register_node::<Voice>();
     registry.register_node::<PolyVoice>();
     registry.register_node::<MidiSequencer>();
+    registry.register_node::<Arp>();
+    registry.register_node::<Chance>();
     registry
 }
 

@@ -74,7 +74,7 @@ You'll notice that the `mono_fan_out` node has some additional syntax. We can cr
 
 After our namespace, we declare where in the graph our nodes will process. This is quite similar to frameworks like Pure Data, except we can handle this all in code and track our application in `git` as opposed to using a graphical interface.
 
-This is a very simple connection. Legato supports a few more types, including named selection, port selection, port slicing, and port striding.
+This is a very simple connection. Legato supports a few more types, including named selection, port selection, port slicing, and port striding. Connecting `poly_voice >> voice(*)` wires each `in` port of the patch to the poly_voice output of the same name, one voice per instance.
 
 Finally, we declare where we want the runtime to pull samples from. This is explicitly defined because we *could* continue processing elsewhere if we wanted to.
 
@@ -98,7 +98,7 @@ patch voice(
         adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
     }
 
-    freq >> saw
+    freq >> saw.freq
     gate >> adsr.gate
     saw >> adsr[1]
 
@@ -119,8 +119,7 @@ midi {
     poly_voice { chan: 0, voices: 5 }
 }
 
-poly_voice[0:13:3] >> voice(*).gate
-poly_voice[1:13:3] >> voice(*).freq
+poly_voice >> voice(*)
 voice(*) >> osc_mixer[0..5]
 
 osc_mixer >> svf

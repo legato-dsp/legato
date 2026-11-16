@@ -20,7 +20,10 @@ impl Constant {
     pub fn new(val: f32, chans: usize) -> Self {
         Self {
             val,
-            ports: PortBuilder::default().control_out(chans).build(),
+            ports: PortBuilder::default()
+                .control_out(chans)
+                .default_out()
+                .build(),
         }
     }
 

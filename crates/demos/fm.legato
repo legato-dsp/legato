@@ -18,13 +18,13 @@ kernel fm(
     }
 
     // The modulator follows the note at a ratio, plus its own output one sample ago
-    freq >> mod_freq >> modulator
-    modulator >> fb >> modulator
+    freq >> mod_freq >> modulator.freq
+    modulator >> fb >> modulator.freq
 
     // The modulator bends the carrier frequency by up to `index` Hz
     freq >> car_freq
     modulator >> depth >> car_freq
-    car_freq >> carrier
+    car_freq >> carrier.freq
 
     { carrier }
 }

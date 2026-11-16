@@ -196,7 +196,9 @@ impl Fm3 {
             z_fb_0: 0.0,
             ports: legato::ports::PortBuilder::default()
                 .audio_in_named(&["fm_in"])
+                .default_in()
                 .audio_out(1)
+                .default_out()
                 .build(),
         })
     }
@@ -273,6 +275,20 @@ impl legato::persample::PerSampleNode for Fm3 {
 
         // Commit the one-sample delays for the next tick.
         self.z_fb_0 = v_fb_0;
+    }
+
+    fn reset(&mut self) {
+        legato::persample::PerSampleNode::reset(&mut self.n_dc);
+        legato::persample::PerSampleNode::reset(&mut self.n_b3);
+        legato::persample::PerSampleNode::reset(&mut self.n_op3);
+        legato::persample::PerSampleNode::reset(&mut self.n_i3);
+        legato::persample::PerSampleNode::reset(&mut self.n_fb);
+        legato::persample::PerSampleNode::reset(&mut self.n_b2);
+        legato::persample::PerSampleNode::reset(&mut self.n_op2);
+        legato::persample::PerSampleNode::reset(&mut self.n_i2);
+        legato::persample::PerSampleNode::reset(&mut self.n_b1);
+        legato::persample::PerSampleNode::reset(&mut self.n_op1);
+        self.z_fb_0 = 0.0;
     }
 
     fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {

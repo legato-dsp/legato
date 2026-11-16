@@ -75,6 +75,7 @@ impl Svf {
                 .silent_in()
                 .control_in_named(&["cutoff", "q"])
                 .audio_out(chans)
+                .default_out()
                 .build(),
         };
 
@@ -278,6 +279,10 @@ impl Svf {
 }
 
 impl PerSampleNode for Svf {
+    fn reset(&mut self) {
+        self.filter_state.fill(SvfState::default());
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -323,6 +328,10 @@ impl PerSampleNode for Svf {
 }
 
 impl Node for Svf {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let chans = self.ports.ports_out.len();
 

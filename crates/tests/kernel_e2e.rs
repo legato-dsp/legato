@@ -695,7 +695,7 @@ fn poly_voice_bare_zip_adds_no_auto_fan_out() {
                 adsr { attack: $attack, decay: $decay, sustain: $sustain, release: $release, chans: 1 },
             }
 
-            freq >> saw
+            freq >> saw.freq
             gate >> adsr.gate
             saw >> adsr
 
@@ -717,8 +717,8 @@ fn poly_voice_bare_zip_adds_no_auto_fan_out() {
             poly_voice { chan: 0, voices: 5 }
         }
 
-        poly_voice[0:10:3] >> voice(*).gate
-        poly_voice[1:10:3] >> voice(*).freq
+        poly_voice.gate >> voice(*).gate
+        poly_voice.freq >> voice(*).freq
 
         voice(*) >> track_mixer
 

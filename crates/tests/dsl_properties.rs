@@ -562,6 +562,28 @@ fn strip(prefix: &str) -> impl Fn(&str) -> String + '_ {
     move |alias| alias.strip_prefix(prefix).unwrap_or(alias).to_string()
 }
 
+/// Which instance of a fan a port belongs to only matters when the source has a
+/// port group to split, and the generated leaves never do, so `src >> a(*)` and
+/// one edge per declared instance wire the same graph.
+fn without_instance_split(port: &Port) -> Port {
+    match port.clone() {
+        Port::Member { name, .. } => Port::Named(name),
+        Port::Matching {
+            name,
+            inputs,
+            patch,
+            ..
+        } => Port::Matching {
+            name,
+            inputs,
+            patch,
+            instance: 0,
+            instances: 1,
+        },
+        other => other,
+    }
+}
+
 fn fingerprint(graph: &IRGraph, rename: impl Fn(&str) -> String) -> Fingerprint {
     let name = |id: NodeId| rename(&graph.get_node(id).expect("endpoint must exist").alias);
     let mut nodes: Vec<String> = graph
@@ -583,7 +605,7 @@ fn fingerprint(graph: &IRGraph, rename: impl Fn(&str) -> String) -> Fingerprint 
             format!(
                 "{}{:?} -> {}{:?}",
                 name(e.source),
-                e.source_port,
+                without_instance_split(&e.source_port),
                 name(e.sink),
                 e.sink_port
             )
@@ -639,7 +661,9 @@ fn render_selector(sel: &NodeSelector) -> String {
 fn render_port(port: &Port) -> String {
     match port {
         Port::None => String::new(),
-        Port::Named(n) => format!(".{n}"),
+        Port::Named(n) | Port::Member { name: n, .. } | Port::Matching { name: n, .. } => {
+            format!(".{n}")
+        }
         Port::Index(i) => format!("[{i}]"),
         Port::Slice(a, b) => format!("[{a}..{b}]"),
         Port::Stride { start, end, stride } => format!("[{start}:{end}:{stride}]"),

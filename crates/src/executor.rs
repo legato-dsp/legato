@@ -2,8 +2,10 @@ use crate::{
     builder::ValidationError,
     context::AudioContext,
     graph::{AudioGraph, GraphError},
+    midi::MidiEvent,
+    midi_bus::MAX_MIDI_INPUTS,
     node_state::{NodeRuntime, NodeState, Plan},
-    ports::{Ports, Unpatched},
+    ports::{MidiUnpatched, PortKind, Ports, Signal, Unpatched},
     runtime::NodeKey,
 };
 use slotmap::SecondaryMap;
@@ -29,17 +31,71 @@ pub struct OutputView<'a> {
     pub chans: usize,
 }
 
+/// The Executor for Legato handles audio and midi processing
+/// within a realtime context.
+///
+/// The Runtime drains all incoming SPSC messages, such
+/// as midi data, node messages, sample updates, and the
+/// BlockRateAdapter handles incoming audio from any
+/// interfaces that are setup. So at this point, we are simply
+/// processing audio and dealing with state that was already updated.
+///
+/// The main functionality here is to process all of the nodes in topological
+/// sort order. Additionally, we also are keeping track of the state of each node.
+/// As nodes can be active, muted, bypassed, and cross-fading between these,
+/// we store these within `node_states`.
+///
+/// In-between these states, we reset nodes so that they don't have stale state,
+/// such as stale reverb tales, or holding incorrect midi notes.
+///
+/// Additionally, bypassed nodes need to understand what exactly they should
+/// bypass. This is stored on `bypass_pairs`.
+///
+/// The internal data is a flat, heap-allocated `f32` array. Nodes "own" a slice
+/// of this given the block size, number of output ports before them, etc.
+///
+/// Note(Luke): The flat layout is a deliberate choice, and yields much better performance
+/// due to cache locality.
+///
+/// Note(Luke): In the future, there will likely be oversampling and delay compensation, and this
+/// might get a bit trickier.
 #[derive(Debug, Default)]
 pub struct Executor {
     data: Box<[f32]>,
     scratch: Box<[f32]>,
     pub graph: AudioGraph,
     node_offsets: SecondaryMap<NodeKey, usize>,
+    /// Each node's first slot in the context's MIDI bus.
+    midi_offsets: SecondaryMap<NodeKey, usize>,
+    midi_output_ports: usize,
     sink_key: Option<NodeKey>,
     state: ExecutorState,
     node_states: SecondaryMap<NodeKey, NodeRuntime>,
     /// (input, output) port pairs a bypassed node copies; `None` if it can't be bypassed.
     bypass_pairs: SecondaryMap<NodeKey, Option<BypassPairs>>,
+    midi_bypass_pairs: SecondaryMap<NodeKey, Option<BypassPairs>>,
+    /// Where each node's MIDI outputs came from last block.
+    midi_sources: SecondaryMap<NodeKey, MidiSource>,
+}
+
+/// Where a node's MIDI outputs come from in a block. Notes still sounding
+/// when this changes are released, since the new source won't end them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum MidiSource {
+    #[default]
+    Process,
+    Bypass,
+    Silent,
+}
+
+impl MidiSource {
+    fn of(plan: Plan) -> Self {
+        match plan {
+            Plan::Active | Plan::Fading => MidiSource::Process,
+            Plan::Bypassed => MidiSource::Bypass,
+            Plan::Muted | Plan::Suspended { .. } => MidiSource::Silent,
+        }
+    }
 }
 
 impl Executor {
@@ -63,15 +119,16 @@ impl Executor {
         for node in self.graph.nodes() {
             let ports = node.get_node().ports();
 
-            for (count, dir) in [
-                (ports.ports_in.len(), "input"),
-                (ports.ports_out.len(), "output"),
+            for (count, dir, max) in [
+                (ports.ports_in.len(), "audio input", MAX_ARITY),
+                (ports.ports_out.len(), "audio output", MAX_ARITY),
+                (ports.midi_in.len(), "MIDI input", MAX_MIDI_INPUTS),
             ] {
-                if count > MAX_ARITY {
+                if count > max {
                     return Err(ValidationError::ArityExceeded(format!(
-                        "node '{}' ({}) has {} audio {} ports, but the executor supports \
-                         at most {} per side",
-                        node.name, node.node_kind, count, dir, MAX_ARITY
+                        "node '{}' ({}) has {} {} ports, but the executor supports \
+                         at most {}",
+                        node.name, node.node_kind, count, dir, max
                     )));
                 }
             }
@@ -83,16 +140,21 @@ impl Executor {
     /// Reject graphs that leave a [`Unpatched::Required`] input unconnected.
     pub fn validate_required_inputs(&self) -> Result<(), ValidationError> {
         for (key, node) in self.graph.iter() {
-            let connected: Vec<usize> = self
+            let connected: Vec<(Signal, usize)> = self
                 .graph
                 .incoming_connections(key)
                 .into_iter()
                 .flatten()
-                .map(|c| c.sink.port_index)
+                .map(|c| (c.signal, c.sink.port_index))
                 .collect();
 
-            for port in &node.get_node().ports().ports_in {
-                if port.unpatched == Unpatched::Required && !connected.contains(&port.index) {
+            let ports = node.get_node().ports();
+            for port in ports.ports_in.iter().chain(&ports.midi_in) {
+                let required = matches!(
+                    port.kind,
+                    PortKind::Stream(Unpatched::Required) | PortKind::Midi(MidiUnpatched::Required)
+                );
+                if required && !connected.contains(&(port.kind.signal(), port.index)) {
                     return Err(ValidationError::UnconnectedInput(format!(
                         "node '{}' ({}) requires its '{}' input (index {}) to be connected",
                         node.name, node.node_kind, port.name, port.index
@@ -127,34 +189,59 @@ impl Executor {
             .expect("Invalid graph topology found in prepare!");
 
         let mut total_ports = 0_usize;
+        let mut total_midi_ports = 0_usize;
 
         self.node_offsets.clear();
+        self.midi_offsets.clear();
 
         for key in keys {
             self.node_offsets.insert(key, total_ports * block_size);
+            self.midi_offsets.insert(key, total_midi_ports);
 
-            let arity = self
-                .graph
-                .get_node(key)
-                .unwrap()
-                .get_node()
-                .ports()
-                .ports_out
-                .len();
+            let ports = self.graph.get_node(key).unwrap().get_node().ports();
 
-            total_ports += arity;
+            total_ports += ports.ports_out.len();
+            total_midi_ports += ports.midi_out.len();
         }
+
+        self.midi_output_ports = total_midi_ports;
 
         self.node_states.clear();
         self.bypass_pairs.clear();
+        self.midi_bypass_pairs.clear();
+        self.midi_sources.clear();
 
         for (key, node) in self.graph.iter() {
             self.node_states.insert(key, NodeRuntime::new(fade_len));
+            let ports = node.get_node().ports();
             self.bypass_pairs
-                .insert(key, bypass_pairs(node.get_node().ports()));
+                .insert(key, bypass_pairs(ports, Signal::Stream));
+            self.midi_bypass_pairs
+                .insert(key, bypass_pairs(ports, Signal::Midi));
+            self.midi_sources.insert(key, MidiSource::default());
         }
 
         self.state = ExecutorState::Prepared;
+    }
+
+    /// MIDI output ports across the graph; the context's MIDI bus must be prepared with this many.
+    pub fn midi_output_ports(&self) -> usize {
+        self.midi_output_ports
+    }
+
+    /// What `key` wrote to its MIDI output `port` in the last block.
+    pub fn midi_output<'a>(
+        &self,
+        ctx: &'a AudioContext,
+        key: NodeKey,
+        port: usize,
+    ) -> Option<&'a [MidiEvent]> {
+        let ports = self.graph.get_node(key)?.get_node().ports();
+        (port < ports.midi_out.len()).then(|| {
+            ctx.midi_bus()
+                .output(self.midi_offsets[key] + port)
+                .events()
+        })
     }
 
     /// Whether `key` has matching default inputs and outputs to bypass.
@@ -164,6 +251,7 @@ impl Executor {
     /// bypassable audio. This also matches what various VST hosts expect.
     pub fn can_bypass(&self, key: NodeKey) -> bool {
         matches!(self.bypass_pairs.get(key), Some(Some(_)))
+            || matches!(self.midi_bypass_pairs.get(key), Some(Some(_)))
     }
 
     /// Fade `key` toward `state` from the next block. Returns false, changing
@@ -206,9 +294,23 @@ impl Executor {
     pub fn process(&mut self, ctx: &mut AudioContext) -> OutputView<'_> {
         assert!(self.state == ExecutorState::Prepared);
 
+        assert!(
+            ctx.midi_bus().output_ports() >= self.midi_output_ports,
+            "the context's MIDI bus is smaller than the graph: prepare it via Runtime::prepare"
+        );
+
         let block_size = ctx.get_config().block_size;
 
-        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
+        // We are not sorting again here, as we have a correct topo sort already.
+        //
+        // In would likely be quite trivial to allow for realtime connection changes, and
+        // to make the toposort realtime safe by reusing the allocation, but I have not
+        // played with this too much. It would likely be a new state, and I am more
+        // interested in using Legato for creating standalone applications than I am
+        // for say live-coding performances, as cool as they are.
+        //
+        // TODO(Luke): I don't like this, feels like incorrect ownership
+        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info();
 
         for node_key in sorted_order {
             let ports = nodes[*node_key].get_node().ports();
@@ -219,13 +321,30 @@ impl Executor {
             let node_start = *self.node_offsets.get(*node_key).unwrap();
             let node_end = node_start + audio_outputs_size * block_size;
 
+            let midi_start = self.midi_offsets[*node_key];
+            ctx.midi_bus_mut()
+                .bind(midi_start, ports.midi_out.len(), ports.midi_in.len());
+
+            // Get the current plan for this node. This can be a variety of states,
+            // such as Active, Muted, Bypassed, and Suspended.
+            //
+            // `plan()` actually does work here. It can tick its own internal state,
+            // handle crossfades, and lets us know if we potentially need to reset
+            // a node.
             let plan = self.node_states[*node_key].plan();
+
+            let midi_source = MidiSource::of(plan);
+            let last_midi_source = &mut self.midi_sources[*node_key];
 
             // If the node is suspended, simply zero the buffer
             if let Plan::Suspended { zero } = plan {
+                // `zero` is only set on the first settled block, once the fade has finished.
                 if zero {
+                    nodes[*node_key].get_node_mut().reset(ctx);
                     self.data[node_start..node_end].fill(0.0);
                 }
+                // Check for a change in MIDI input state and return early
+                finish_midi(ctx, last_midi_source, midi_source);
                 continue;
             }
 
@@ -251,7 +370,7 @@ impl Executor {
             //
             // So we do the general case here, which is adding the incoming block/stream to the block
             // that is being written to.
-            for conn in incoming {
+            for conn in incoming.iter().filter(|c| c.signal == Signal::Stream) {
                 // We're panicking here if we can't find the offset, as something would have gone wildly wrong...
                 let base_offset = self
                     .node_offsets
@@ -275,7 +394,7 @@ impl Executor {
             }
 
             for i in 0..audio_inputs_size {
-                if has_inputs[i] || ports.ports_in[i].unpatched == Unpatched::Silent {
+                if has_inputs[i] || ports.ports_in[i].kind == PortKind::Stream(Unpatched::Silent) {
                     // Pass references to each slice to the inputs now
                     let start = i * block_size;
                     let end = start + block_size;
@@ -283,16 +402,48 @@ impl Executor {
                 }
             }
 
+            let mut has_midi_inputs = [false; MAX_MIDI_INPUTS];
+            for conn in incoming.iter().filter(|c| c.signal == Signal::Midi) {
+                let source_slot = self.midi_offsets[conn.source.node_key] + conn.source.port_index;
+                ctx.midi_bus_mut().gather(conn.sink.port_index, source_slot);
+                has_midi_inputs[conn.sink.port_index] = true;
+            }
+
+            // For all of our midi ports, if they are marked to default to host input we use host midi
+            //
+            // TODO(Luke): what do we do in a VST context here?
+            for port in &ports.midi_in {
+                if !has_midi_inputs[port.index] && port.kind == PortKind::Midi(MidiUnpatched::Host)
+                {
+                    ctx.gather_host_midi(port.index);
+                }
+            }
+
             let pairs = self.bypass_pairs[*node_key].as_deref().unwrap_or_default();
             let dry_in = |i: usize| &self.scratch[i * block_size..(i + 1) * block_size];
 
             if plan == Plan::Bypassed {
-                // Zero this out first as we have no unified zero-ing out step
+                // The fade out has finished, so clearing state here can't click.
+                if *last_midi_source != MidiSource::Bypass {
+                    nodes[*node_key].get_node_mut().reset(ctx);
+                }
+                // Zero this node's work buffer as well
                 self.data[node_start..node_end].fill(0.0);
+
+                // Copy the bypassed pairs out, marked by `default_in()`
                 for &(i, o) in pairs {
                     let out = node_start + o * block_size;
                     self.data[out..out + block_size].copy_from_slice(dry_in(i));
                 }
+
+                // Do the same thing with midi
+                let midi_pairs = self.midi_bypass_pairs[*node_key].as_deref();
+                for &(i, o) in midi_pairs.unwrap_or_default() {
+                    ctx.midi_bus_mut().pass_through(i, o);
+                }
+
+                // Check for a change in MIDI input state and return early
+                finish_midi(ctx, last_midi_source, midi_source);
                 continue;
             }
 
@@ -322,7 +473,10 @@ impl Executor {
             //
             // - Others -> The others were already silenced or bypassed, and don't require postprocessing
             match plan {
-                Plan::Muted => self.data[node_start..node_end].fill(0.0),
+                Plan::Muted => {
+                    self.data[node_start..node_end].fill(0.0);
+                    ctx.midi_bus_mut().clear_bound_outputs();
+                }
                 Plan::Fading => {
                     // Each channel replays the curve from the block's start.
                     let rt = &mut self.node_states[*node_key];
@@ -345,8 +499,15 @@ impl Executor {
                 }
                 _ => {}
             }
+
+            // If our midi source has changed, we reset all held notes within this nodes midi bus.
+            // This helps prevent stuck notes when bypassing nodes, etc.
+            //
+            // The other paths also call this, but they return early.
+            finish_midi(ctx, last_midi_source, midi_source);
         }
 
+        ctx.midi_bus_mut().unbind();
         ctx.set_instant();
 
         let sink_key = self.sink_key.expect("Sink node must be provided");
@@ -374,11 +535,24 @@ impl Executor {
     }
 }
 
+/// Releases sounding notes if the node's MIDI now comes from somewhere else,
+/// then records what this block's outputs leave sounding.
+fn finish_midi(ctx: &mut AudioContext, last: &mut MidiSource, source: MidiSource) {
+    let bus = ctx.midi_bus_mut();
+    if std::mem::replace(last, source) != source {
+        bus.release_bound();
+    }
+    bus.track_bound();
+}
+
 /// Marked default inputs paired with default outputs by position, if the
 /// counts match. Unmarked inputs never count, so bypass is opt-in: an
 /// oscillator's `freq` is never passed through as signal.
-fn bypass_pairs(ports: &Ports) -> Option<BypassPairs> {
-    let (ins, outs) = (ports.marked_default_in(), ports.default_out());
+fn bypass_pairs(ports: &Ports, signal: Signal) -> Option<BypassPairs> {
+    let (ins, outs) = (
+        ports.marked_default_in_of(signal),
+        ports.default_out_of(signal),
+    );
     (!ins.is_empty() && ins.len() == outs.len()).then(|| ins.into_iter().zip(outs).collect())
 }
 

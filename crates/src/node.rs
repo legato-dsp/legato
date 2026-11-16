@@ -22,6 +22,12 @@ pub trait Node {
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]);
     // Pass messages to your nodes. Values should be realtime safe and require no allocations or syscalls
     fn handle_msg(&mut self, _msg: NodeMessage) {}
+    /// Return to the state the node was built in, keeping its params:
+    /// clear delay lines and filter memory, rewind phases, forget held notes.
+    ///
+    /// The executor calls this once a node has faded fully into bypass or
+    /// suspend, so it resumes clean. Runs on the audio thread, so it must not allocate.
+    fn reset(&mut self, _ctx: &mut AudioContext) {}
     /// The param names [`Node::handle_msg`] accepts in a
     /// [`NodeMessage::SetParam`]. Read once on the control thread, so the
     /// frontend rejects a misspelled name instead of the node ignoring it.

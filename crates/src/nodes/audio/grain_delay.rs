@@ -50,6 +50,10 @@ impl Diffuser {
             .zip(self.delays)
             .fold(x, |x, (ring, d)| allpass(ring, x, DIFFUSER_GAIN, d))
     }
+
+    fn clear(&mut self) {
+        self.rings.iter_mut().for_each(RingBuffer::clear);
+    }
 }
 
 // TODO: DoD and SIMD audit
@@ -177,6 +181,17 @@ impl GrainDelay {
 impl Node for GrainDelay {
     fn ports(&self) -> &Ports {
         &self.ports
+    }
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        let resources = ctx.get_resources_mut();
+        for &key in &self.delay_keys {
+            resources.delay_line_view_mut(key).clear();
+        }
+        self.grains.iter_mut().flatten().for_each(Grain::stop);
+        self.damping_state.fill(0.0);
+        self.spawn_offset.fill(self.delay_len as f32);
+        self.spawn_timer.fill(0.0);
+        self.diffusers.iter_mut().for_each(Diffuser::clear);
     }
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sr = ctx.get_config().sample_rate;

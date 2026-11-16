@@ -7,7 +7,7 @@ use indexmap::IndexSet;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::{node::LegatoNode, runtime::NodeKey};
+use crate::{node::LegatoNode, ports::Signal, runtime::NodeKey};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum GraphError {
@@ -17,6 +17,12 @@ pub enum GraphError {
     CycleDetected,
     #[error("node does not exist")]
     NodeDoesNotExist,
+    #[error("no {signal:?} port at index {index} on the {side} side")]
+    NoSuchPort {
+        signal: Signal,
+        side: &'static str,
+        index: usize,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -25,10 +31,12 @@ pub struct ConnectionEntry {
     pub port_index: usize,
 }
 
+/// An edge between two ports of the same [`Signal`]; port indices are into that signal's lists.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Connection {
     pub source: ConnectionEntry,
     pub sink: ConnectionEntry,
+    pub signal: Signal,
 }
 
 pub type EdgeMap = SecondaryMap<NodeKey, IndexSet<Connection>>;
@@ -154,10 +162,34 @@ impl AudioGraph {
     }
 
     pub fn add_edge(&mut self, connection: Connection) -> Result<Connection, GraphError> {
-        if !self.nodes.contains_key(connection.source.node_key)
-            || !self.nodes.contains_key(connection.sink.node_key)
-        {
+        let (Some(source), Some(sink)) = (
+            self.nodes.get(connection.source.node_key),
+            self.nodes.get(connection.sink.node_key),
+        ) else {
             return Err(GraphError::BadConnection);
+        };
+
+        let signal = connection.signal;
+        let checks = [
+            (
+                "output",
+                source.get_node().ports().outputs(signal).len(),
+                connection.source.port_index,
+            ),
+            (
+                "input",
+                sink.get_node().ports().inputs(signal).len(),
+                connection.sink.port_index,
+            ),
+        ];
+        for (side, len, index) in checks {
+            if index >= len {
+                return Err(GraphError::NoSuchPort {
+                    signal,
+                    side,
+                    index,
+                });
+            }
         }
 
         match self.outgoing_edges.get_mut(connection.source.node_key) {
@@ -331,7 +363,7 @@ mod test {
         context::AudioContext,
         graph::{AudioGraph, NodeKey},
         node::{Inputs, Node},
-        ports::{PortMeta, Ports, Unpatched},
+        ports::{PortKind, PortMeta, Ports},
     };
 
     #[derive(Clone)]
@@ -347,14 +379,15 @@ mod test {
                         name: "in",
                         index: 0,
                         default: true,
-                        unpatched: Unpatched::Absent,
+                        kind: PortKind::default(),
                     }],
                     ports_out: vec![PortMeta {
                         name: "out",
                         index: 0,
                         default: true,
-                        unpatched: Unpatched::Absent,
+                        kind: PortKind::default(),
                     }],
+                    ..Default::default()
                 },
             }
         }
@@ -405,6 +438,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
@@ -417,6 +451,7 @@ mod test {
             .unwrap();
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
@@ -452,6 +487,7 @@ mod test {
 
         let e1 = graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
@@ -465,6 +501,7 @@ mod test {
 
         let e2 = graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
@@ -538,6 +575,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
@@ -551,6 +589,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
@@ -564,6 +603,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: d,
                     port_index: 0,
@@ -577,6 +617,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: c,
                     port_index: 0,
@@ -608,6 +649,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
@@ -620,6 +662,7 @@ mod test {
             .unwrap();
 
         let back = Connection {
+            signal: Signal::Stream,
             source: ConnectionEntry {
                 node_key: b,
                 port_index: 0,
@@ -650,6 +693,7 @@ mod test {
         ));
 
         let res = graph.add_edge(Connection {
+            signal: Signal::Stream,
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
@@ -700,6 +744,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: a,
                     port_index: 0,
@@ -713,6 +758,7 @@ mod test {
 
         graph
             .add_edge(Connection {
+                signal: Signal::Stream,
                 source: ConnectionEntry {
                     node_key: b,
                     port_index: 0,
@@ -752,6 +798,7 @@ mod test {
         };
 
         let res = graph.add_edge(Connection {
+            signal: Signal::Stream,
             source: ConnectionEntry {
                 node_key: a,
                 port_index: 0,
@@ -763,5 +810,47 @@ mod test {
         });
 
         assert_eq!(res.unwrap_err(), GraphError::BadConnection);
+    }
+
+    #[test]
+    fn edges_must_name_ports_that_exist_for_their_signal() {
+        let mut graph = AudioGraph::with_capacity(2);
+        let mono = || {
+            LegatoNode::new(
+                "m".into(),
+                "MonoExample".into(),
+                Box::new(MonoExample::default()),
+            )
+        };
+        let (a, b) = (graph.add_node(mono()), graph.add_node(mono()));
+        let edge = |signal, source, sink| Connection {
+            source: ConnectionEntry {
+                node_key: a,
+                port_index: source,
+            },
+            sink: ConnectionEntry {
+                node_key: b,
+                port_index: sink,
+            },
+            signal,
+        };
+
+        assert_eq!(
+            graph.add_edge(edge(Signal::Midi, 0, 0)),
+            Err(GraphError::NoSuchPort {
+                signal: Signal::Midi,
+                side: "output",
+                index: 0
+            })
+        );
+        assert_eq!(
+            graph.add_edge(edge(Signal::Stream, 0, 1)),
+            Err(GraphError::NoSuchPort {
+                signal: Signal::Stream,
+                side: "input",
+                index: 1
+            })
+        );
+        assert!(graph.add_edge(edge(Signal::Stream, 0, 0)).is_ok());
     }
 }

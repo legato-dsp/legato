@@ -74,6 +74,7 @@ impl Quality {
 pub struct Sine {
     freq: f32,
     phase: f32,
+    start_phase: f32,
     quality: Quality,
     sr: f32,
     ports: Ports,
@@ -88,17 +89,20 @@ impl Sine {
         Self {
             freq,
             phase: 0.0,
+            start_phase: 0.0,
             quality,
             sr,
             ports: PortBuilder::default()
                 .audio_in_named(&["freq"])
                 .audio_out(1)
+                .default_out()
                 .build(),
         }
     }
 
     pub fn with_start_phase(mut self, phase_turns: f32) -> Self {
         self.phase = phase_turns;
+        self.start_phase = phase_turns;
         self
     }
 
@@ -250,6 +254,10 @@ impl PerSampleNode for Sine {
         Node::handle_msg(self, msg);
     }
 
+    fn reset(&mut self) {
+        self.phase = self.start_phase;
+    }
+
     fn runtime_params(&self) -> Option<Vec<&str>> {
         Node::runtime_params(self)
     }
@@ -277,6 +285,10 @@ impl Node for Sine {
 
     fn runtime_params(&self) -> Option<Vec<&str>> {
         Some(vec!["freq"])
+    }
+
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
     }
 
     fn ports(&self) -> &Ports {

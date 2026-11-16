@@ -44,7 +44,7 @@ use crate::{
         ir::{DSLParams, IRMacro, IRNodeKind, NodeId, NodeSelector, Object, Port, Value},
     },
     persample::MAX_FRAME_PORTS,
-    ports::{PortMeta, Ports, Unpatched, default_indices},
+    ports::{PortKind, PortMeta, Ports, default_indices, member_index},
 };
 use std::collections::HashMap;
 
@@ -216,7 +216,7 @@ impl KernelPlan {
                     name: Box::leak(name.clone().into_boxed_str()),
                     index,
                     default: true,
-                    unpatched: Unpatched::Absent,
+                    kind: PortKind::default(),
                 })
                 .collect()
         };
@@ -224,6 +224,7 @@ impl KernelPlan {
         Ports {
             ports_in: meta(&self.input_names),
             ports_out: meta(&self.output_names),
+            ..Default::default()
         }
     }
 
@@ -271,7 +272,22 @@ fn resolve_port(
     node_alias: &str,
 ) -> Result<Vec<usize>, ValidationError> {
     match port {
-        Port::None => Ok(default_indices(ports)),
+        Port::None => {
+            let indices = default_indices(ports);
+            if indices.is_empty() {
+                let names: Vec<&str> = ports.iter().map(|p| p.name).collect();
+                return Err(ValidationError::InvalidConnection(if names.is_empty() {
+                    format!("kernel: '{node_alias}' has no ports to connect a bare `>>` to")
+                } else {
+                    format!(
+                        "kernel: '{node_alias}' has no default port, so a bare `>>` is \
+                         ambiguous: name a port (one of: {})",
+                        names.join(", ")
+                    )
+                }));
+            }
+            Ok(indices)
+        }
         Port::Index(i) => {
             if *i >= ports.len() {
                 return Err(ValidationError::InvalidParameter(format!(
@@ -290,7 +306,16 @@ fn resolve_port(
                     "kernel: no port named '{name}' on '{node_alias}'"
                 ))
             }),
-        Port::Slice(..) | Port::Stride { .. } => Err(unsupported(format!(
+        Port::Member {
+            name,
+            instance,
+            instances,
+        } => member_index(ports, name, *instance, *instances)
+            .map(|i| vec![i])
+            .map_err(|msg| {
+                ValidationError::InvalidParameter(format!("kernel: '{node_alias}': {msg}"))
+            }),
+        Port::Slice(..) | Port::Stride { .. } | Port::Matching { .. } => Err(unsupported(format!(
             "port slices/strides on '{node_alias}'"
         ))),
     }
