@@ -2,13 +2,11 @@ use std::time::Duration;
 
 use crate::{
     math::fast_tanh,
+    msg::{NodeMessage, RtValue},
     node::Node,
-    nodes::{
-        audio::{
-            grain::{Grain, tukey},
-            plate::Allpass,
-        },
-        midi::voice::MIDDLE_C,
+    nodes::audio::{
+        grain::{Grain, tukey},
+        plate::Allpass,
     },
     ports::Ports,
     prelude::*,
@@ -17,7 +15,20 @@ use crate::{
     simd::LANES,
 };
 
-const NUM_GRAINS: usize = 8;
+/// The most grains that may sound at once.
+pub const MAX_OVERLAP: usize = 8;
+
+/// One spare, so a grain running a step past its slot never delays the next spawn.
+const NUM_GRAINS: usize = MAX_OVERLAP + 1;
+
+/// Grains can be pitched up to an octave either way.
+///
+/// This is arbitrary so feel free to make a PR if you want more
+pub const MAX_PITCH_SEMITONES: f32 = 12.0;
+
+fn semitones_to_rate(semitones: f32) -> f32 {
+    (semitones.clamp(-MAX_PITCH_SEMITONES, MAX_PITCH_SEMITONES) / 12.0).exp2()
+}
 
 /// Amount of padding needed on either side for cubic interpolation,
 /// we then have to use these offsets to safely spawn grains without
@@ -28,6 +39,9 @@ const CUBIC_OLDER: f32 = 2.0;
 /// We read a whole chunk before pushing it, so no read may reach into the
 /// `LANES - 1` samples that would have been pushed earlier in the same chunk.
 const MIN_READ: f32 = CUBIC_NEWER + (LANES - 1) as f32;
+
+const MIN_GRAIN_SIZE: Duration = Duration::from_millis(5);
+const MAX_GRAIN_SIZE: Duration = Duration::from_secs(3);
 
 /// Allpass tunings borrowed from mutable instruments clouds.
 const DIFFUSER_REF_SR: f32 = 32_000.0;
@@ -61,6 +75,77 @@ impl Diffuser {
     }
 }
 
+/// Decides, sample by sample, when a channel spawns its next grain.
+///
+/// Free running, it fires every `interval` samples, with jitter pulling spawns earlier.
+/// Given a phasor, it fires at each of `slots` even divisions of the cycle instead, with
+/// jitter pushing spawns later, so grains stay locked to whatever drives the phasor.
+#[derive(Clone, Copy, Debug)]
+struct SpawnClock {
+    timer: f32,
+    last_phase: f32,
+    armed: bool,
+}
+
+impl Default for SpawnClock {
+    fn default() -> Self {
+        Self {
+            timer: 0.0,
+            // Below any phase, so the first sample counts as a new slot
+            last_phase: -1.0,
+            armed: false,
+        }
+    }
+}
+
+impl SpawnClock {
+    #[inline(always)]
+    fn due(
+        &mut self,
+        phase: Option<f32>,
+        slots: f32,
+        interval: f32,
+        jitter: f32,
+        rng: &mut XorShift,
+    ) -> bool {
+        self.timer -= 1.0;
+        let Some(phase) = phase else {
+            return self.timer <= 0.0;
+        };
+        let slot = |p: f32| (p * slots).floor();
+        // A wrap starts a new cycle even when there is only one slot per cycle
+        let new_slot = slot(phase) != slot(self.last_phase) || phase < self.last_phase;
+        self.last_phase = phase;
+        if new_slot {
+            self.armed = true;
+            self.timer = interval * jitter * rng.unipolar();
+        }
+        self.armed && self.timer <= 0.0
+    }
+
+    /// Only called once a grain actually spawned, so a full pool retries next sample.
+    #[inline(always)]
+    fn spawned(&mut self, synced: bool, interval: f32, jitter: f32, rng: &mut XorShift) {
+        if synced {
+            self.armed = false;
+        } else {
+            self.timer = interval * (1.0 - jitter * rng.unipolar());
+        }
+    }
+}
+
+/// Samples per cycle of `phasor`, from its mean step across the block.
+///
+/// Steps of over half a cycle are taken as transport jumps (loops, seeks) and skipped.
+fn phasor_period(phasor: &[f32]) -> Option<f32> {
+    let (sum, steps) = phasor
+        .windows(2)
+        .map(|w| (w[1] - w[0]).rem_euclid(1.0))
+        .filter(|&d| d < 0.5)
+        .fold((0.0, 0), |(sum, n), d| (sum + d, n + 1));
+    (sum > 0.0).then(|| steps as f32 / sum)
+}
+
 // TODO: DoD and SIMD audit
 
 /// A Granular delay implementation using [`NUM_GRAINS`] grains
@@ -84,6 +169,10 @@ impl Diffuser {
 /// for each channel. This was taken from mutable instruments clouds.
 ///
 /// Currently I only have one playback algorithm, feel free to add more!
+///
+/// Patching a 0..1 phasor into `phase` locks grains to it: `overlap` grains spawn per
+/// cycle and each lasts exactly one cycle, ignoring `grain_size`. This is how a plugin
+/// syncs grains to the host tempo. The `sync` param switches this off at runtime.
 pub struct GrainDelay {
     /// Keys corresponding to each channels delay line
     delay_keys: Vec<DelayLineKey>,
@@ -101,23 +190,24 @@ pub struct GrainDelay {
     grain_size: Duration,
     /// from 0.001 to 0.5, controls how rectangular (0) -> Hann shaped (0.5) the grains are
     shape: f32,
-    /// The playhead rate shift relative to [`MIDDLE_C`], used to shift the grain sound any make shimmers
-    /// or other affects. Not currently exposed as I am still working on the semantics.
-    freq: f32,
+    /// Grain playback rate, from the `pitch` param in semitones. 2.0 is an octave up,
+    /// used for shimmers and similar effects.
+    rate: f32,
     /// Spawn position relative for each channel, relative to the delay line
     spawn_offset: Vec<f32>,
     /// Amount we move the spawn offset per sample, per channel
     scan: Vec<f32>,
     /// Amount of grain input that gets fed back into the delay line
     feedback: f32,
-    /// Average number of grains sounding at once, 1..=NUM_GRAINS
+    /// Average number of grains sounding at once, 1..=MAX_OVERLAP
     overlap: f32,
-    /// 0..1, how much earlier than scheduled a grain may spawn
+    /// 0..1, how far from its scheduled time a grain may spawn
     jitter: f32,
     /// Max random spawn offset either side of the scanner, in samples
     spray: f32,
-    /// Per channel, samples until the next grain spawns
-    spawn_timer: Vec<f32>,
+    clocks: Vec<SpawnClock>,
+    /// Follow the `phase` input when it is patched
+    sync: bool,
     // Note(Luke): If we don't add jitter, the delays start to flutter and make strange correlations.
     // I think a WSOLA algorithm might be the *correct* approach, but this is fine for now.
     rngs: Vec<XorShift>,
@@ -137,6 +227,7 @@ impl GrainDelay {
         damping: f32,
         chans: usize,
         shape: f32,
+        pitch: f32,
         scan: f32,
         grain_size: Duration,
         feedback: f32,
@@ -144,6 +235,7 @@ impl GrainDelay {
         jitter: f32,
         spray: f32,
         diffusion: f32,
+        sync: bool,
         sr: f32,
     ) -> Self {
         debug_assert_eq!(delay_keys.len(), chans);
@@ -161,12 +253,13 @@ impl GrainDelay {
             shape,
             spawn_offset: vec![delay_len as f32; chans],
             scan: vec![scan; chans],
-            freq: MIDDLE_C,
+            rate: semitones_to_rate(pitch),
             feedback,
-            overlap: overlap.clamp(1.0, NUM_GRAINS as f32),
+            overlap: overlap.clamp(1.0, MAX_OVERLAP as f32),
             jitter: jitter.clamp(0.0, 1.0),
             spray: spray.max(0.0),
-            spawn_timer: vec![0.0; chans],
+            clocks: vec![SpawnClock::default(); chans],
+            sync,
             rngs: (0..chans).map(|_| XorShift::seeded()).collect(),
             diffusion: diffusion.clamp(0.0, 1.0),
             diffusers: (0..chans)
@@ -176,6 +269,7 @@ impl GrainDelay {
                 .audio_in(chans)
                 .required_in()
                 .default_in()
+                .audio_in_named(&["phase"])
                 .audio_out(chans)
                 .default_out()
                 .build(),
@@ -195,17 +289,29 @@ impl Node for GrainDelay {
         self.grains.iter_mut().flatten().for_each(Grain::stop);
         self.damping_state.fill(0.0);
         self.spawn_offset.fill(self.delay_len as f32);
-        self.spawn_timer.fill(0.0);
+        self.clocks.fill(SpawnClock::default());
         self.diffusers.iter_mut().for_each(Diffuser::clear);
     }
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sr = ctx.get_config().sample_rate;
         let resources = ctx.get_resources_mut();
 
-        let grain_len = self.grain_size.as_secs_f32() * sr as f32;
+        let sr = sr as f32;
+        let chans = self.delay_keys.len();
+        let phasor = inputs.get(chans).copied().flatten().filter(|_| self.sync);
+        let synced = phasor.is_some();
+
+        let free_len = self.grain_size.as_secs_f32() * sr;
+        let slots = self.overlap.round();
+        let (grain_len, interval) = match phasor.and_then(phasor_period) {
+            Some(period) => {
+                let lifetime = self.fit_lifetime(period, sr);
+                (lifetime * self.rate, lifetime / slots)
+            }
+            None => (free_len, self.spawn_interval(free_len)),
+        };
         let (lo, hi) = self.spawn_band(grain_len);
         let band_ok = hi > lo;
-        let interval = self.spawn_interval(grain_len);
 
         // TODO(Luke): sample accurate modulation for various parameters
         //
@@ -222,7 +328,7 @@ impl Node for GrainDelay {
 
             let grains = &mut self.grains[c];
             let rng = &mut self.rngs[c];
-            let timer = &mut self.spawn_timer[c];
+            let clock = &mut self.clocks[c];
             let diffuser = &mut self.diffusers[c];
 
             // TODO(Luke): don't unwrap here
@@ -232,10 +338,12 @@ impl Node for GrainDelay {
                 .chunks_exact(LANES)
                 .zip(chan_out.chunks_exact_mut(LANES));
 
-            for (chunk_in, chunk_out) in chunks {
+            for (ci, (chunk_in, chunk_out)) in chunks.enumerate() {
                 // Grain scheduling never depends on the signal, so we resolve the whole
-                // chunk up front. Offsets are rebased onto the cursor at the chunk start,
-                // which lets every read below happen before this chunk is pushed.
+                // chunk up front.
+                //
+                // Breaking up this dependency helps performance as LLVM can likely get a bit more
+                // aggressive here.
                 let mut phase = [[0.0f32; LANES]; NUM_GRAINS];
                 let mut offset = [[0.0f32; LANES]; NUM_GRAINS];
                 let mut live = [false; NUM_GRAINS];
@@ -248,14 +356,14 @@ impl Node for GrainDelay {
                     // it's worth noting this was an explicit decision.
                     //
                     // Something like WSOLA might be the more proper approach for this?
-                    *timer -= 1.0;
-                    if *timer <= 0.0
+                    let host_phase = phasor.map(|p| p[ci * LANES + k]);
+                    if clock.due(host_phase, slots, interval, self.jitter, rng)
                         && band_ok
                         && let Some(grain) = grains.iter_mut().find(|x| x.ready())
                     {
                         let pos = (*spawn_offset + self.spray * rng.bipolar()).clamp(lo, hi);
-                        grain.spawn(pos, grain_len, self.freq, self.shape);
-                        *timer = interval * (1.0 - self.jitter * rng.unipolar());
+                        grain.spawn(pos, grain_len, self.rate, self.shape);
+                        clock.spawned(synced, interval, self.jitter, rng);
                     }
 
                     for (g, grain) in grains.iter_mut().enumerate() {
@@ -309,6 +417,7 @@ impl Node for GrainDelay {
                     chunk_out[k] = finished;
 
                     // Add to delay line with feedback, check math here, might need different fade/normalization logic
+                    // depending on the number of grains, if they are correlating, etc.
                     let with_feedback = chunk_in[k] + (finished * self.feedback);
 
                     // Damping the feedback with a basic one-pole filter
@@ -321,14 +430,68 @@ impl Node for GrainDelay {
             }
         }
     }
+
+    fn handle_msg(&mut self, msg: NodeMessage) {
+        if let NodeMessage::SetParam(p) = msg
+            && let RtValue::F32(v) = p.value
+        {
+            match p.param_name {
+                "pitch" => self.rate = semitones_to_rate(v),
+                "feedback" => self.feedback = v.clamp(0.0, 1.0),
+                "damping" => self.damping_a = v.clamp(0.0001, 0.999),
+                "diffusion" => self.diffusion = v.clamp(0.0, 1.0),
+                "shape" => self.shape = v.clamp(0.001, 0.5),
+                "grain_size" => {
+                    self.grain_size = Duration::from_secs_f32(v.max(0.0) / 1000.0)
+                        .clamp(MIN_GRAIN_SIZE, MAX_GRAIN_SIZE)
+                }
+                "overlap" => self.overlap = v.clamp(1.0, MAX_OVERLAP as f32),
+                "jitter" => self.jitter = v.clamp(0.0, 1.0),
+                "sync" => self.sync = v >= 0.5,
+                _ => {}
+            }
+        }
+    }
+
+    fn runtime_params(&self) -> Option<Vec<&str>> {
+        Some(vec![
+            "pitch",
+            "feedback",
+            "damping",
+            "diffusion",
+            "shape",
+            "grain_size",
+            "overlap",
+            "jitter",
+            "sync",
+        ])
+    }
 }
 
 impl GrainDelay {
     /// Samples between spawns. A grain lives for `grain_len / rate` samples,
     /// so spawning `overlap` times per lifetime keeps N `overlap` grains sounding.
     fn spawn_interval(&self, grain_len: f32) -> f32 {
-        let rate = self.freq.max(1e-3) / MIDDLE_C;
-        grain_len / rate / self.overlap
+        grain_len / self.rate / self.overlap
+    }
+
+    /// Clamps a synced grain's lifetime, in samples, so that its drift at the current
+    /// rate still fits in the delay line. Past that the spawn band would be empty, and
+    /// long synced grains pitched up would go silent rather than just shorter.
+    fn fit_lifetime(&self, lifetime: f32, sr: f32) -> f32 {
+        let lifetime = lifetime.clamp(
+            MIN_GRAIN_SIZE.as_secs_f32() * sr,
+            MAX_GRAIN_SIZE.as_secs_f32() * sr,
+        );
+        let newest = self.delay_capacity as f32 - 1.0 - CUBIC_OLDER;
+        let room = if self.rate > 1.0 {
+            newest.min(self.delay_len as f32) - MIN_READ
+        } else {
+            newest - MIN_READ
+        };
+        // A lifetime of L drifts (rate - 1) * L samples through the line
+        let max = 0.99 * room / (self.rate - 1.0).abs();
+        lifetime.min(max)
     }
 
     /// Give us an acceptable range to spawn a grain.
@@ -339,17 +502,17 @@ impl GrainDelay {
     /// Then, we need to take into consideration the possible
     /// drift of the grain we are about to spawn.
     fn spawn_band(&self, grain_len: f32) -> (f32, f32) {
-        // Convert our pitch variable to some multiple of middle c
-        // We're using middle c because this make it more "playable"
-        // down the line.
-        let rate = self.freq.max(1e-3) / MIDDLE_C;
+        let rate = self.rate;
 
         // We move 1.0 sample per tick, but we also have to factor in the rate.
         //
         // For an intuitive visualization, if we advanced one sample for every tick,
         // we would always be reading the same point in time, as this would cancel out
         // with the natural 1 sample tick from pushing to the delay line.
-        let drift = (1.0 - rate) * grain_len / rate;
+        // A grain may run a step past `grain_len / rate` before its window closes, and f32
+        // accumulation of the window phase can stretch long grains a little further.
+        let steps = grain_len / rate * 1.005 + 2.0;
+        let drift = (1.0 - rate) * steps;
 
         // Pad our low sample by our interpolation steps and our drift
         let lo = MIN_READ + (-drift).max(0.0);
@@ -364,12 +527,13 @@ impl GrainDelay {
 
 impl NodeDefinition for GrainDelay {
     const NAME: &'static str = "grain_delay";
-    const DESCRIPTION: &'static str = "A basic grain delay, with no parameters yet";
+    const DESCRIPTION: &'static str = "A granular delay with feedback, diffusion, +-12 semitone grain pitch, and optional phasor sync";
     const REQUIRED_PARAMS: &'static [&'static str] = &["delay_length"];
     const OPTIONAL_PARAMS: &'static [&'static str] = &[
         "chans",
         "grain_size",
         "shape",
+        "pitch",
         "feedback",
         "damping",
         "scan",
@@ -377,6 +541,7 @@ impl NodeDefinition for GrainDelay {
         "spray",
         "overlap",
         "diffusion",
+        "sync",
     ];
 
     fn create(
@@ -400,9 +565,11 @@ impl NodeDefinition for GrainDelay {
         let grain_size = p
             .get_duration_ms("grain_size")?
             .unwrap_or(Duration::from_millis(200))
-            .clamp(Duration::from_millis(5), Duration::from_secs(3));
+            .clamp(MIN_GRAIN_SIZE, MAX_GRAIN_SIZE);
 
         let shape = p.get_f32("shape")?.unwrap_or(0.3);
+
+        let pitch = p.get_f32("pitch")?.unwrap_or(0.0);
 
         let feedback = p.get_f32("feedback")?.unwrap_or(0.3);
 
@@ -416,9 +583,11 @@ impl NodeDefinition for GrainDelay {
 
         let overlap = p.get_f32("overlap")?.unwrap_or(2.0);
 
+        let sync = p.get_bool("sync")?.unwrap_or(true);
+
         let mut keys = Vec::new();
         for i in 0..chans {
-            // Note(Luke): this is for convenience, perhaps it does not make a tone of sense to
+            // Note(Luke): this is for convenience, perhaps it does not make a ton of sense to
             // have this delay line key globally accesible?
             let key = rb.add_delay_line(&format!("grain_delay_key_{}", (i)), delay_capacity);
             keys.push(key);
@@ -431,6 +600,7 @@ impl NodeDefinition for GrainDelay {
             damping,
             chans,
             shape,
+            pitch,
             scan,
             grain_size,
             feedback,
@@ -438,6 +608,7 @@ impl NodeDefinition for GrainDelay {
             jitter,
             spray,
             diffusion,
+            sync,
             sr as f32,
         );
 
@@ -449,7 +620,7 @@ impl NodeDefinition for GrainDelay {
 mod tests {
     use super::*;
 
-    fn node(delay_len: usize, capacity: usize, freq: f32) -> GrainDelay {
+    fn node(delay_len: usize, capacity: usize, rate: f32) -> GrainDelay {
         let mut n = GrainDelay::new(
             vec![DelayLineKey::default()],
             capacity,
@@ -457,6 +628,7 @@ mod tests {
             0.5,
             1,
             0.3,
+            0.0,
             1.0,
             Duration::from_millis(100),
             0.0,
@@ -464,16 +636,17 @@ mod tests {
             0.0,
             0.0,
             0.0,
+            true,
             48_000.0,
         );
-        n.freq = freq;
+        n.rate = rate;
         n
     }
 
     /// Replays the spawn clock with no jitter and checks the pool never runs
     /// dry and the windows never dip below unity once the first grain is in.
-    fn assert_clock_is_gapless(overlap: f32, freq: f32, shape: f32) {
-        let mut n = node(48_000, 65_536, freq);
+    fn assert_clock_is_gapless(overlap: f32, rate: f32, shape: f32) {
+        let mut n = node(48_000, 65_536, rate);
         n.overlap = overlap;
         n.shape = shape;
         let grain_len = 4800.0;
@@ -481,13 +654,13 @@ mod tests {
 
         let mut grains = [Grain::default(); NUM_GRAINS];
         let mut timer = 0.0;
-        let warmup = (grain_len / (freq / MIDDLE_C)) as usize;
+        let warmup = (grain_len / rate) as usize;
 
         for i in 0..warmup * 4 {
             timer -= 1.0;
             if timer <= 0.0 {
                 let g = grains.iter_mut().find(|g| g.ready()).expect("pool ran dry");
-                g.spawn(0.0, grain_len, n.freq, n.shape);
+                g.spawn(0.0, grain_len, n.rate, n.shape);
                 timer = interval;
             }
 
@@ -513,8 +686,8 @@ mod tests {
     #[test]
     fn spawn_clock_is_gapless_across_overlaps_and_pitches() {
         for overlap in [2.0, 3.0, 4.0, 7.5] {
-            for freq in [MIDDLE_C * 0.5, MIDDLE_C, MIDDLE_C * 2.0] {
-                assert_clock_is_gapless(overlap, freq, 0.5);
+            for rate in [0.5, 1.0, 2.0] {
+                assert_clock_is_gapless(overlap, rate, 0.5);
             }
         }
     }
@@ -538,8 +711,8 @@ mod tests {
     fn complementary_tapers_sum_to_unity() {
         let mut out = Grain::default();
         let mut inc = Grain::default();
-        out.spawn(0.0, 1000.0, MIDDLE_C, 0.25);
-        inc.spawn(0.0, 1000.0, MIDDLE_C, 0.25);
+        out.spawn(0.0, 1000.0, 1.0, 0.25);
+        inc.spawn(0.0, 1000.0, 1.0, 0.25);
         for k in 0..=100 {
             let t = 0.25 * k as f32 / 100.0;
             out.win_phase = 0.75 + t;
@@ -553,7 +726,7 @@ mod tests {
     /// anything pushed earlier in the same chunk.
     fn assert_grain_stays_in_bounds(n: &GrainDelay, spawn_at: f32, grain_len: f32) {
         let mut g = Grain::default();
-        g.spawn(spawn_at, grain_len, n.freq, n.shape);
+        g.spawn(spawn_at, grain_len, n.rate, n.shape);
         let max = n.delay_capacity as f32 - 1.0 - CUBIC_OLDER;
         while g.active {
             assert!(
@@ -570,10 +743,10 @@ mod tests {
     }
 
     #[test]
-    fn band_edges_are_safe_across_pitches() {
+    fn band_edges_are_safe_across_pitch_range() {
         let grain_len = 4800.0;
-        for freq in [MIDDLE_C * 0.5, MIDDLE_C, MIDDLE_C * 1.5, MIDDLE_C * 2.0] {
-            let n = node(48_000, 65_536, freq);
+        for semitones in -12..=12 {
+            let n = node(48_000, 65_536, semitones_to_rate(semitones as f32));
             let (lo, hi) = n.spawn_band(grain_len);
             assert!(hi > lo);
             assert_grain_stays_in_bounds(&n, lo, grain_len);
@@ -583,8 +756,156 @@ mod tests {
 
     #[test]
     fn band_is_empty_when_drift_exceeds_buffer() {
-        let n = node(1_000, 1_024, MIDDLE_C * 4.0);
+        let n = node(1_000, 1_024, 4.0);
         let (lo, hi) = n.spawn_band(48_000.0);
         assert!(hi <= lo);
+    }
+
+    #[test]
+    fn pitch_spans_an_octave_either_way_and_clamps() {
+        assert_eq!(semitones_to_rate(0.0), 1.0);
+        assert!((semitones_to_rate(12.0) - 2.0).abs() < 1e-6);
+        assert!((semitones_to_rate(-12.0) - 0.5).abs() < 1e-6);
+        assert!((semitones_to_rate(7.0) - 1.498_307).abs() < 1e-5);
+        assert_eq!(semitones_to_rate(40.0), semitones_to_rate(12.0));
+        assert_eq!(semitones_to_rate(-40.0), semitones_to_rate(-12.0));
+    }
+
+    #[test]
+    fn pitch_message_sets_rate() {
+        let mut n = node(48_000, 65_536, 1.0);
+        n.handle_msg(NodeMessage::SetParam(crate::msg::ParamPayload {
+            param_name: "pitch",
+            value: RtValue::F32(-12.0),
+        }));
+        assert!((n.rate - 0.5).abs() < 1e-6);
+    }
+
+    fn ramp(period: f32, len: usize, start: f32) -> Vec<f32> {
+        (0..len)
+            .map(|i| (start + i as f32 / period).rem_euclid(1.0))
+            .collect()
+    }
+
+    #[test]
+    fn phasor_period_reads_through_wraps_and_jumps() {
+        let mut p = ramp(100.0, 256, 0.9);
+        assert!((phasor_period(&p).unwrap() - 100.0).abs() < 0.1);
+
+        // A loop back in the transport is a single large step, which is skipped
+        p[128..]
+            .iter_mut()
+            .for_each(|x| *x = (*x + 0.6).rem_euclid(1.0));
+        assert!((phasor_period(&p).unwrap() - 100.0).abs() < 0.1);
+
+        assert_eq!(phasor_period(&[0.25; 64]), None);
+    }
+
+    /// Drives a clock and grain pool from a phasor, returning the spawn sample indexes
+    /// and asserting the summed windows never dip below unity once warmed up.
+    fn run_synced(period: f32, slots: f32, jitter: f32, rate: f32) -> Vec<usize> {
+        let mut clock = SpawnClock::default();
+        let mut rng = XorShift::seeded();
+        let mut grains = [Grain::default(); NUM_GRAINS];
+        let interval = period / slots;
+        let cycles = 6;
+        let phasor = ramp(period, period as usize * cycles, 0.0);
+        let mut spawns = vec![];
+
+        for (i, &phase) in phasor.iter().enumerate() {
+            if clock.due(Some(phase), slots, interval, jitter, &mut rng)
+                && let Some(g) = grains.iter_mut().find(|g| g.ready())
+            {
+                g.spawn(0.0, period * rate, rate, 0.5);
+                clock.spawned(true, interval, jitter, &mut rng);
+                spawns.push(i);
+            }
+
+            let weight: f32 = grains
+                .iter_mut()
+                .filter(|g| g.active)
+                .map(|g| {
+                    let env = g.get_window();
+                    g.win_phase += g.win_phase_inc;
+                    if g.win_phase >= 1.0 {
+                        g.active = false;
+                    }
+                    env
+                })
+                .sum();
+
+            if jitter == 0.0 && slots >= 2.0 && i > period as usize {
+                assert!(weight >= 1.0 - 1e-2, "dip to {weight} at {i}");
+            }
+        }
+        spawns
+    }
+
+    #[test]
+    fn synced_grains_spawn_on_every_slot_boundary() {
+        let period = 4800.0;
+        for slots in 1..=MAX_OVERLAP {
+            let slots = slots as f32;
+            let spawns = run_synced(period, slots, 0.0, 1.0);
+            assert_eq!(spawns.len(), 6 * slots as usize);
+            for (n, &at) in spawns.iter().enumerate() {
+                let boundary = (n as f32 * period / slots).ceil() as usize;
+                assert!(
+                    at.abs_diff(boundary) <= 1,
+                    "slots {slots} spawn {n} at {at}, slot at {boundary}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn synced_grains_are_gapless_across_overlaps_and_pitches() {
+        for slots in 2..=MAX_OVERLAP {
+            for semitones in [-12.0, 0.0, 7.0, 12.0] {
+                run_synced(4800.0, slots as f32, 0.0, semitones_to_rate(semitones));
+            }
+        }
+    }
+
+    #[test]
+    fn synced_jitter_only_delays_within_a_slot() {
+        let (period, slots, jitter) = (4800.0, 4.0, 0.5);
+        let slot_len = period / slots;
+        let spawns = run_synced(period, slots, jitter, 1.0);
+        assert_eq!(spawns.len(), 6 * slots as usize);
+        for (n, &at) in spawns.iter().enumerate() {
+            let boundary = n as f32 * slot_len;
+            let late = at as f32 - boundary;
+            assert!(
+                (-1.0..=jitter * slot_len + 1.0).contains(&late),
+                "spawn {n} {late} late"
+            );
+        }
+    }
+
+    #[test]
+    fn synced_lifetimes_always_fit_the_delay_line() {
+        let sr = 48_000.0;
+        for semitones in -12..=12 {
+            let n = node(48_000, 65_536, semitones_to_rate(semitones as f32));
+            for secs in [0.001, 0.1, 0.5, 1.0, 2.0, 3.0, 10.0] {
+                let lifetime = n.fit_lifetime(secs * sr, sr);
+                let grain_len = lifetime * n.rate;
+                let (lo, hi) = n.spawn_band(grain_len);
+                assert!(hi > lo, "{semitones}st {secs}s: empty band");
+                assert_grain_stays_in_bounds(&n, lo, grain_len);
+                assert_grain_stays_in_bounds(&n, hi, grain_len);
+            }
+        }
+    }
+
+    #[test]
+    fn sync_message_toggles_phasor_following() {
+        let mut n = node(48_000, 65_536, 1.0);
+        n.handle_msg(NodeMessage::SetParam(crate::msg::ParamPayload {
+            param_name: "sync",
+            value: RtValue::F32(0.0),
+        }));
+        assert!(!n.sync);
     }
 }
