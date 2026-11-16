@@ -1,13 +1,12 @@
-use std::f32::consts::TAU;
-
 use crate::{
     builder::{ResourceBuilderView, ValidationError},
     dsl::ir::DSLParams,
     msg::{NodeMessage, RtValue},
     node::DynNode,
+    nodes::audio::sine::sin_turns_scalar,
     persample::{PerSample, PerSampleNode},
     ports::{PortBuilder, Ports},
-    ring::RingBuffer,
+    resources::{delay::ResourceDelay, window::Window},
     spec::NodeDefinition,
 };
 
@@ -15,12 +14,93 @@ use crate::{
 /// original design's reference rate and rescaled to the actual sample rate.
 const REF_SR: f32 = 29761.0;
 
+/// A [`ResourceDelay`] that owns its samples, as a per-sample node has no arena.
+#[derive(Clone)]
+struct Line {
+    delay: ResourceDelay,
+    data: Box<[f32]>,
+}
+
+impl Line {
+    /// Rounded up to a power of two, so any offset below `min_len` is valid.
+    fn new(min_len: usize) -> Self {
+        let len = min_len.next_power_of_two();
+        Self {
+            delay: ResourceDelay::new(Window { start: 0, len }),
+            data: vec![0.0; len].into(),
+        }
+    }
+
+    #[inline(always)]
+    fn push(&mut self, val: f32) {
+        self.delay.push(&mut self.data, val);
+    }
+
+    #[inline(always)]
+    fn get_offset(&self, k: usize) -> f32 {
+        self.delay.get_offset(&self.data, k)
+    }
+
+    #[inline(always)]
+    fn get_delay_cubic(&self, offset: f32) -> f32 {
+        self.delay.get_delay_cubic(&self.data, offset)
+    }
+
+    fn clear(&mut self) {
+        self.data.fill(0.0);
+    }
+}
+
+/// A Schroeder allpass with a fractional, modulatable delay.
 #[inline(always)]
-pub(crate) fn allpass(ring: &mut RingBuffer, x: f32, g: f32, delay: f32) -> f32 {
-    let d = ring.get_delay_cubic(delay);
+fn allpass_mod(line: &mut Line, x: f32, g: f32, delay: f32) -> f32 {
+    let d = line.get_delay_cubic(delay);
     let w = x + g * d;
-    ring.push(w);
+    line.push(w);
     d - g * w
+}
+
+/// A Schroeder allpass with a whole-sample delay. The buffer is exactly the
+/// delay long, so a read is a single load and wrapping needs no modulo.
+#[derive(Clone)]
+pub(crate) struct Allpass {
+    buf: Box<[f32]>,
+    idx: usize,
+}
+
+impl Allpass {
+    pub(crate) fn new(delay: usize) -> Self {
+        Self {
+            buf: vec![0.0; delay + 1].into(),
+            idx: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn tick(&mut self, x: f32, g: f32) -> f32 {
+        let d = self.buf[self.idx];
+        let w = x + g * d;
+        self.buf[self.idx] = w;
+        self.idx += 1;
+        if self.idx == self.buf.len() {
+            self.idx = 0;
+        }
+        d - g * w
+    }
+
+    /// The internal state written `k + 1` ticks ago, for `k` up to the delay.
+    #[inline(always)]
+    pub(crate) fn tap(&self, k: usize) -> f32 {
+        let len = self.buf.len();
+        debug_assert!(k < len);
+        let i = self.idx + len - 1 - k;
+        self.buf[if i >= len { i - len } else { i }]
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.buf.fill(0.0);
+        self.idx = 0;
+    }
 }
 
 /// Inspired by the Lexicon 480L: a Dattorro-style plate with a figure-eight
@@ -38,29 +118,26 @@ pub struct Plate480 {
     bandwidth: f32,
     mix: f32,
     // input chain
-    predelay: RingBuffer,
+    predelay: Line,
     predelay_s: usize,
-    diff: [RingBuffer; 4],
-    diff_d: [f32; 4],
+    diff: [Allpass; 4],
     idiff1: f32,
     idiff2: f32,
     // The two figure-eight branches
-    map_l: RingBuffer,
-    map_r: RingBuffer,
+    map_l: Line,
+    map_r: Line,
     map_l_d: f32,
     map_r_d: f32,
-    del_a: RingBuffer,
-    del_b: RingBuffer,
-    del_c: RingBuffer,
-    del_d: RingBuffer,
+    del_a: Line,
+    del_b: Line,
+    del_c: Line,
+    del_d: Line,
     a_d: usize,
     b_d: usize,
     c_d: usize,
     d_d: usize,
-    ap_l2: RingBuffer,
-    ap_r2: RingBuffer,
-    ap_l2_d: f32,
-    ap_r2_d: f32,
+    ap_l2: Allpass,
+    ap_r2: Allpass,
     dd1: f32,
     dd2: f32,
     // modulation
@@ -92,7 +169,7 @@ impl Plate480 {
         let s = |n: f32| (n * scale).round();
         let su = |n: f32| s(n) as usize;
 
-        let ring = |max_read: f32| RingBuffer::new(su(max_read) + 8);
+        let ring = |max_read: f32| Line::new(su(max_read) + 8);
 
         let predelay_s = ((predelay_ms / 1000.0) * sr as f32).round() as usize;
 
@@ -107,10 +184,9 @@ impl Plate480 {
             damping: damping.clamp(0.0, 0.999),
             bandwidth: bandwidth.clamp(0.0, 1.0),
             mix: mix.clamp(0.0, 1.0),
-            predelay: RingBuffer::new(predelay_s + 8),
+            predelay: Line::new(predelay_s + 8),
             predelay_s,
-            diff: [ring(142.0), ring(107.0), ring(379.0), ring(277.0)],
-            diff_d: [s(142.0), s(107.0), s(379.0), s(277.0)],
+            diff: [142.0, 107.0, 379.0, 277.0].map(|d| Allpass::new(su(d))),
             idiff1: 0.75,
             idiff2: 0.625,
 
@@ -126,10 +202,8 @@ impl Plate480 {
             b_d: su(3720.0),
             c_d: su(4217.0),
             d_d: su(3163.0),
-            ap_l2: ring(1800.0),
-            ap_r2: ring(2656.0),
-            ap_l2_d: s(1800.0),
-            ap_r2_d: s(2656.0),
+            ap_l2: Allpass::new(su(1800.0)),
+            ap_r2: Allpass::new(su(2656.0)),
             dd1: 0.70,
             dd2: 0.50,
             excursion: s(8.0),
@@ -177,22 +251,23 @@ impl Plate480 {
 
 impl PerSampleNode for Plate480 {
     fn reset(&mut self) {
-        for ring in [
+        for line in [
             &mut self.predelay,
             &mut self.map_l,
             &mut self.map_r,
-            &mut self.ap_l2,
-            &mut self.ap_r2,
-        ]
-        .into_iter()
-        .chain(&mut self.diff)
-        .chain([
             &mut self.del_a,
             &mut self.del_b,
             &mut self.del_c,
             &mut self.del_d,
-        ]) {
-            ring.clear();
+        ] {
+            line.clear();
+        }
+        for ap in self
+            .diff
+            .iter_mut()
+            .chain([&mut self.ap_l2, &mut self.ap_r2])
+        {
+            ap.clear();
         }
         self.lfo_phase = 0.0;
         self.bw_state = 0.0;
@@ -217,14 +292,14 @@ impl PerSampleNode for Plate480 {
         x = self.bw_state;
 
         // input diffusers
-        x = allpass(&mut self.diff[0], x, self.idiff1, self.diff_d[0]);
-        x = allpass(&mut self.diff[1], x, self.idiff1, self.diff_d[1]);
-        x = allpass(&mut self.diff[2], x, self.idiff2, self.diff_d[2]);
-        let diffused = allpass(&mut self.diff[3], x, self.idiff2, self.diff_d[3]);
+        x = self.diff[0].tick(x, self.idiff1);
+        x = self.diff[1].tick(x, self.idiff1);
+        x = self.diff[2].tick(x, self.idiff2);
+        let diffused = self.diff[3].tick(x, self.idiff2);
 
         // modulated allpass excursion (quadrature LFO across the two branches)
-        let exc_l = self.excursion * (self.lfo_phase * TAU).sin();
-        let exc_r = self.excursion * (self.lfo_phase * TAU + TAU * 0.25).sin();
+        let exc_l = self.excursion * sin_turns_scalar::<7>(self.lfo_phase);
+        let exc_r = self.excursion * sin_turns_scalar::<7>(self.lfo_phase + 0.25);
         self.lfo_phase = (self.lfo_phase + self.lfo_inc).fract();
 
         // figure-8: each branch takes diffused input + the *other* branch's last tail
@@ -232,48 +307,38 @@ impl PerSampleNode for Plate480 {
         let right_in = diffused + self.tank_l;
 
         // left branch
-        let t = allpass(&mut self.map_l, left_in, -self.dd1, self.map_l_d + exc_l);
+        let t = allpass_mod(&mut self.map_l, left_in, -self.dd1, self.map_l_d + exc_l);
         self.del_a.push(t);
         let a_out = self.del_a.get_offset(self.a_d);
         self.damp_l = (1.0 - self.damping) * a_out + self.damping * self.damp_l;
-        let s = allpass(
-            &mut self.ap_l2,
-            self.damp_l * self.decay,
-            self.dd2,
-            self.ap_l2_d,
-        );
+        let s = self.ap_l2.tick(self.damp_l * self.decay, self.dd2);
         self.del_b.push(s);
         self.tank_l = self.del_b.get_offset(self.b_d);
 
         // right branch
-        let t = allpass(&mut self.map_r, right_in, -self.dd1, self.map_r_d + exc_r);
+        let t = allpass_mod(&mut self.map_r, right_in, -self.dd1, self.map_r_d + exc_r);
         self.del_c.push(t);
         let c_out = self.del_c.get_offset(self.c_d);
         self.damp_r = (1.0 - self.damping) * c_out + self.damping * self.damp_r;
-        let s = allpass(
-            &mut self.ap_r2,
-            self.damp_r * self.decay,
-            self.dd2,
-            self.ap_r2_d,
-        );
+        let s = self.ap_r2.tick(self.damp_r * self.decay, self.dd2);
         self.del_d.push(s);
         self.tank_r = self.del_d.get_offset(self.d_d);
 
         // stereo output taps
         let wet_l = 0.6
             * (self.del_c.get_offset(self.yl[0]) + self.del_c.get_offset(self.yl[1])
-                - self.ap_r2.get_offset(self.yl[2])
+                - self.ap_r2.tap(self.yl[2])
                 + self.del_d.get_offset(self.yl[3])
                 - self.del_a.get_offset(self.yl[4])
-                - self.ap_l2.get_offset(self.yl[5])
+                - self.ap_l2.tap(self.yl[5])
                 - self.del_b.get_offset(self.yl[6]));
 
         let wet_r = 0.6
             * (self.del_a.get_offset(self.yr[0]) + self.del_a.get_offset(self.yr[1])
-                - self.ap_l2.get_offset(self.yr[2])
+                - self.ap_l2.tap(self.yr[2])
                 + self.del_b.get_offset(self.yr[3])
                 - self.del_c.get_offset(self.yr[4])
-                - self.ap_r2.get_offset(self.yr[5])
+                - self.ap_r2.tap(self.yr[5])
                 - self.del_d.get_offset(self.yr[6]));
 
         out[0] = dry_l * (1.0 - self.mix) + wet_l * self.mix;
