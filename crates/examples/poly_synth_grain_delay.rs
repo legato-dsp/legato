@@ -40,10 +40,10 @@ fn main() {
                     diffusion: 1.0,
                     grain_size: 400,
                     spray: 6.0,
-                    damping: 0.8,
+                    damping: 0.4,
                     scan: 1.0,
                     delay_length: 1000,
-                    shape: 0.5,
+                    shape: 0.2,
                     feedback: 0.8
                 },
                 plate480 { mix: 0.8, decay: 0.8 },

@@ -175,6 +175,19 @@ fn bare_edge_into_a_node_without_a_default_input() {
 }
 
 #[test]
+fn bare_kernel_edge_into_a_node_without_a_default_input() {
+    let err = build(
+        "kernel k() {\n    audio { noise, sine }\n    noise >> sine\n    { sine }\n}\n\
+         patches { k }\n{ k }",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, ValidationError::InvalidConnection(m) if m.contains("has no default port")),
+        "{err:?}"
+    );
+}
+
+#[test]
 fn bare_source_cannot_be_summed_into_a_named_port() {
     let err = build(
         "control { constant { chans: 2 } }\naudio { onepole { chans: 1, cutoff: 500.0 } }\n\

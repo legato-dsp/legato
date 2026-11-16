@@ -34,12 +34,12 @@ kernel fm(
         sine: carrier { freq: 0.0 },
     }
 
-    freq >> mod_freq >> modulator
-    modulator >> fb >> modulator
+    freq >> mod_freq >> modulator.freq
+    modulator >> fb >> modulator.freq
 
     freq >> car_freq
     modulator >> depth >> car_freq
-    car_freq >> carrier
+    car_freq >> carrier.freq
 
     { carrier }
 }

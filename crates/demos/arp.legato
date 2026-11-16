@@ -32,7 +32,7 @@ control {
 
 midi {
     arp { steps: 16, mode: "updown", octaves: 2, gate: 0.6 },
-    chance { p: 1.0 },
+    chance { p: 0.7 },
     poly_voice { chan: 0, voices: 4 },
 }
 

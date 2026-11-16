@@ -83,6 +83,8 @@ fn parse_demo(path: &PathBuf, source: String) -> Demo {
 fn load_demos(dir: &PathBuf) -> std::io::Result<Vec<Demo>> {
     let mut demos: Vec<Demo> = fs::read_dir(dir)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
+        // Filter out a demo we don't use here
+        .filter(|p| p.file_name().unwrap() != "presets.legato")
         .filter(|p| p.extension().is_some_and(|ext| ext == "legato"))
         .filter_map(|p| fs::read_to_string(&p).ok().map(|s| parse_demo(&p, s)))
         .collect();

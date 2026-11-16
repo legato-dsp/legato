@@ -272,7 +272,22 @@ fn resolve_port(
     node_alias: &str,
 ) -> Result<Vec<usize>, ValidationError> {
     match port {
-        Port::None => Ok(default_indices(ports)),
+        Port::None => {
+            let indices = default_indices(ports);
+            if indices.is_empty() {
+                let names: Vec<&str> = ports.iter().map(|p| p.name).collect();
+                return Err(ValidationError::InvalidConnection(if names.is_empty() {
+                    format!("kernel: '{node_alias}' has no ports to connect a bare `>>` to")
+                } else {
+                    format!(
+                        "kernel: '{node_alias}' has no default port, so a bare `>>` is \
+                         ambiguous: name a port (one of: {})",
+                        names.join(", ")
+                    )
+                }));
+            }
+            Ok(indices)
+        }
         Port::Index(i) => {
             if *i >= ports.len() {
                 return Err(ValidationError::InvalidParameter(format!(
