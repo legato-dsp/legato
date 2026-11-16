@@ -26,6 +26,7 @@ use legato::{
         svf::{FilterType, Svf},
     },
     persample::PerSampleNode,
+    resources::buffer::ExternalBuffer,
 };
 
 fn bench_stereo_sine(c: &mut Criterion) {
@@ -751,6 +752,105 @@ fn bench_plate_codegen_vs_interpreter(c: &mut Criterion) {
     group.finish();
 }
 
+/// The grain delay at its defaults, plus a dense setting where all
+/// `NUM_GRAINS` grains sound at once with the diffuser in the loop.
+fn bench_grain_delay(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 48_000,
+        rt_capacity: 0,
+    };
+
+    let build = |params: &str| {
+        let graph = format!(
+            r#"
+                audio {{
+                    saw {{ chans: 1, freq: 55.0 }},
+                    mono_fan_out {{ chans: 2 }},
+                    grain_delay {{ chans: 2, delay_length: 1000, {params} }}
+                }}
+
+                saw >> mono_fan_out >> grain_delay
+
+                {{ grain_delay }}
+            "#
+        );
+        let (app, _) = LegatoBuilder::new(config)
+            .build_dsl(&graph)
+            .expect("graph should build");
+        app
+    };
+
+    let mut group = c.benchmark_group("Grain delay");
+
+    let mut default = build("feedback: 0.5");
+    group.bench_function("default (overlap 2)", |b| {
+        b.iter(|| {
+            let out = default.next_block();
+            black_box(out);
+        });
+    });
+
+    let mut dense = build(
+        "feedback: 0.8, overlap: 8.0, shape: 0.5, grain_size: 400, spray: 6.0, jitter: 0.3, diffusion: 1.0",
+    );
+    group.bench_function("dense (overlap 8, diffusion)", |b| {
+        b.iter(|| {
+            let out = dense.next_block();
+            black_box(out);
+        });
+    });
+
+    group.finish();
+}
+
+/// The granular sampler over a synthetic stereo buffer, triggered once.
+fn bench_grain(c: &mut Criterion) {
+    let config = Config {
+        block_size: 4096,
+        channels: 2,
+        sample_rate: 48_000,
+        rt_capacity: 0,
+    };
+
+    let graph = r#"
+        audio {
+            grain { sampler_name: "main", chans: 2, size: 120, shape: 0.5, scan: 0.5 },
+        }
+
+        control {
+            constant: trig { val: 1.0 },
+            constant: freq { val: 330.0 },
+        }
+
+        trig >> grain.trig
+        freq >> grain.freq
+
+        { grain }
+    "#;
+
+    let (mut app, mut frontend) = LegatoBuilder::new(config)
+        .build_dsl(graph)
+        .expect("graph should build");
+
+    let len = 48_000;
+    let buffer = ExternalBuffer {
+        data: (0..len * 2)
+            .map(|i| ((i % len) as f32 * 0.013).sin())
+            .collect(),
+        num_channels: 2,
+    };
+    frontend.send_buffer("main", buffer).unwrap();
+
+    c.bench_function("Grain", |b| {
+        b.iter(|| {
+            let out = app.next_block();
+            black_box(out);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_fm3_codegen_vs_interpreter,
@@ -764,6 +864,8 @@ criterion_group!(
     bench_svf,
     bench_kitchen_sink,
     bench_kitchen_sink_fading,
-    bench_plate_rust_vs_kernel
+    bench_plate_rust_vs_kernel,
+    bench_grain_delay,
+    bench_grain
 );
 criterion_main!(benches);

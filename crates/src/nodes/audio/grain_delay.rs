@@ -1,16 +1,17 @@
 use std::time::Duration;
 
 use crate::{
+    math::fast_tanh,
     node::Node,
     nodes::{
-        audio::{grain::Grain, plate::allpass},
+        audio::grain::{Grain, tukey},
         midi::voice::MIDDLE_C,
     },
     ports::Ports,
     prelude::*,
     resources::DelayLineKey,
-    ring::RingBuffer,
     rng::XorShift,
+    simd::LANES,
 };
 
 const NUM_GRAINS: usize = 8;
@@ -21,38 +22,70 @@ const NUM_GRAINS: usize = 8;
 const CUBIC_NEWER: f32 = 1.0;
 const CUBIC_OLDER: f32 = 2.0;
 
+/// We read a whole chunk before pushing it, so no read may reach into the
+/// `LANES - 1` samples that would have been pushed earlier in the same chunk.
+const MIN_READ: f32 = CUBIC_NEWER + (LANES - 1) as f32;
+
 /// Allpass tunings borrowed from mutable instruments clouds.
 const DIFFUSER_REF_SR: f32 = 32_000.0;
 const DIFFUSER_GAIN: f32 = 0.625;
 const DIFFUSER_TUNINGS: [[f32; 4]; 2] =
     [[126.0, 180.0, 269.0, 444.0], [151.0, 205.0, 245.0, 405.0]];
 
+/// A Schroeder allpass with a whole-sample delay. The buffer is exactly the
+/// delay long, so a read is a single load and wrapping needs no modulo.
+struct Allpass {
+    buf: Box<[f32]>,
+    idx: usize,
+}
+
+impl Allpass {
+    fn new(delay: usize) -> Self {
+        Self {
+            buf: vec![0.0; delay + 1].into(),
+            idx: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn tick(&mut self, x: f32, g: f32) -> f32 {
+        let d = self.buf[self.idx];
+        let w = x + g * d;
+        self.buf[self.idx] = w;
+        self.idx += 1;
+        if self.idx == self.buf.len() {
+            self.idx = 0;
+        }
+        d - g * w
+    }
+}
+
 struct Diffuser {
-    rings: [RingBuffer; 4],
-    delays: [f32; 4],
+    stages: [Allpass; 4],
 }
 
 impl Diffuser {
     fn new(tuning: [f32; 4], sr: f32) -> Self {
         // We use whole samples as interpolating an allpass loop lowpasses it
         // This was only caught by a test
-        let delays = tuning.map(|d| (d * sr / DIFFUSER_REF_SR).round());
+        let delays = tuning.map(|d| (d * sr / DIFFUSER_REF_SR).round() as usize);
         Self {
-            rings: delays.map(|d| RingBuffer::new(d.ceil() as usize + 8)),
-            delays,
+            stages: delays.map(Allpass::new),
         }
     }
 
     #[inline(always)]
     fn tick(&mut self, x: f32) -> f32 {
-        self.rings
+        self.stages
             .iter_mut()
-            .zip(self.delays)
-            .fold(x, |x, (ring, d)| allpass(ring, x, DIFFUSER_GAIN, d))
+            .fold(x, |x, stage| stage.tick(x, DIFFUSER_GAIN))
     }
 
     fn clear(&mut self) {
-        self.rings.iter_mut().for_each(RingBuffer::clear);
+        for stage in &mut self.stages {
+            stage.buf.fill(0.0);
+            stage.idx = 0;
+        }
     }
 }
 
@@ -222,74 +255,96 @@ impl Node for GrainDelay {
 
             // TODO(Luke): don't unwrap here
             // CPU starts quivering...
-            for (sample_in, sample_out) in chan_in.unwrap().iter().zip(chan_out.iter_mut()) {
-                let mut accumulator = 0.0;
-                let mut weight = 0.0;
+            let chunks = chan_in
+                .unwrap()
+                .chunks_exact(LANES)
+                .zip(chan_out.chunks_exact_mut(LANES));
 
-                // Spawn our grains on a fixed clock so `overlap` grains sound at once.
-                //
-                // Note(Luke): We also add jitter here, as otherwise I was getting some nasty
-                // correlation or similar artifacts. With more grains it's probably not noticable, but
-                // it's worth noting this was an explicit decision.
-                //
-                // Something like WSOLA might be the more proper approach for this?
-                *timer -= 1.0;
-                if *timer <= 0.0
-                    && band_ok
-                    && let Some(grain) = grains.iter_mut().find(|x| x.ready())
-                {
-                    let pos = (*spawn_offset + self.spray * rng.bipolar()).clamp(lo, hi);
-                    grain.spawn(pos, grain_len, self.freq, self.shape);
-                    *timer = interval * (1.0 - self.jitter * rng.unipolar());
-                }
+            for (chunk_in, chunk_out) in chunks {
+                // Grain scheduling never depends on the signal, so we resolve the whole
+                // chunk up front. Offsets are rebased onto the cursor at the chunk start,
+                // which lets every read below happen before this chunk is pushed.
+                let mut phase = [[0.0f32; LANES]; NUM_GRAINS];
+                let mut offset = [[0.0f32; LANES]; NUM_GRAINS];
+                let mut live = [false; NUM_GRAINS];
 
-                // TODO: Audit this, adapted from other version
-                for g in grains.iter_mut() {
-                    if !g.active {
-                        continue;
+                for k in 0..LANES {
+                    // Spawn our grains on a fixed clock so `overlap` grains sound at once.
+                    //
+                    // Note(Luke): We also add jitter here, as otherwise I was getting some nasty
+                    // correlation or similar artifacts. With more grains it's probably not noticable, but
+                    // it's worth noting this was an explicit decision.
+                    //
+                    // Something like WSOLA might be the more proper approach for this?
+                    *timer -= 1.0;
+                    if *timer <= 0.0
+                        && band_ok
+                        && let Some(grain) = grains.iter_mut().find(|x| x.ready())
+                    {
+                        let pos = (*spawn_offset + self.spray * rng.bipolar()).clamp(lo, hi);
+                        grain.spawn(pos, grain_len, self.freq, self.shape);
+                        *timer = interval * (1.0 - self.jitter * rng.unipolar());
                     }
 
-                    let env = g.get_window();
+                    for (g, grain) in grains.iter_mut().enumerate() {
+                        if !grain.active {
+                            continue;
+                        }
 
-                    // TODO(Luke): how pricey is this?
-                    // TODO(Luke): I'm curious if we could use loop fission + interior and exterior SIMD here
-                    let delayed = delay_line.read_cubic(g.sample_pos);
+                        live[g] = true;
+                        phase[g][k] = grain.win_phase;
+                        offset[g][k] = grain.sample_pos - k as f32;
 
-                    g.win_phase += g.win_phase_inc;
-                    if g.win_phase >= 1.0 {
-                        g.active = false;
+                        grain.win_phase += grain.win_phase_inc;
+                        if grain.win_phase >= 1.0 {
+                            grain.active = false;
+                        }
+
+                        grain.sample_pos += 1.0 - grain.sample_inc;
                     }
 
-                    g.sample_pos += 1.0 - g.sample_inc;
+                    // We always move one sample forward from the delay line push, and scan then
+                    // determines how much our offset needed for the next grain spawn takes
+                    *spawn_offset += 1.0 - self.scan[c];
 
-                    accumulator += delayed * env;
-                    weight += env;
+                    // TODO: More algorithms
+                    //
+                    // For instance ping-pong, different directions for different channels, etc.
+                    if band_ok && (*spawn_offset < lo || *spawn_offset > hi) {
+                        *spawn_offset = lo + (*spawn_offset - lo).rem_euclid(hi - lo);
+                    }
                 }
 
-                let grained = (accumulator / weight.max(1.0)).tanh();
-                let finished = grained + self.diffusion * (diffuser.tick(grained) - grained);
+                // Idle lanes keep a zero phase, and so a zero envelope, adding nothing.
+                let mut accumulator = [0.0f32; LANES];
+                let mut weight = [0.0f32; LANES];
+                for g in (0..NUM_GRAINS).filter(|&g| live[g]) {
+                    let shape = grains[g].shape;
+                    let env = phase[g].map(|t| tukey(t, shape));
+                    for k in 0..LANES {
+                        let delayed = delay_line.read_cubic(offset[g][k]);
+                        accumulator[k] += delayed * env[k];
+                        weight[k] += env[k];
+                    }
+                }
 
-                *sample_out = finished;
+                let grained: [f32; LANES] =
+                    std::array::from_fn(|k| fast_tanh(accumulator[k] / weight[k].max(1.0)));
 
-                // Add to delay line with feedback, check math here, might need different fade/normalization logic
-                let with_feedback = sample_in + (finished * self.feedback);
+                for (k, grained) in grained.into_iter().enumerate() {
+                    let finished = grained + self.diffusion * (diffuser.tick(grained) - grained);
 
-                // Damping the feedback with a basic one-pole filter
-                let filtered =
-                    with_feedback * (1.0 - self.damping_a) + self.damping_state[c] * self.damping_a;
+                    chunk_out[k] = finished;
 
-                delay_line.push(filtered);
-                self.damping_state[c] = filtered;
+                    // Add to delay line with feedback, check math here, might need different fade/normalization logic
+                    let with_feedback = chunk_in[k] + (finished * self.feedback);
 
-                // We always move one sample forward from the delay line push, and scan then
-                // determines how much our offset needed for the next grain spawn takes
-                *spawn_offset += 1.0 - self.scan[c];
+                    // Damping the feedback with a basic one-pole filter
+                    let filtered = with_feedback * (1.0 - self.damping_a)
+                        + self.damping_state[c] * self.damping_a;
 
-                // TODO: More algorithms
-                //
-                // For instance ping-pong, different directions for different channels, etc.
-                if band_ok && (*spawn_offset < lo || *spawn_offset > hi) {
-                    *spawn_offset = lo + (*spawn_offset - lo).rem_euclid(hi - lo);
+                    delay_line.push(filtered);
+                    self.damping_state[c] = filtered;
                 }
             }
         }
@@ -325,7 +380,7 @@ impl GrainDelay {
         let drift = (1.0 - rate) * grain_len / rate;
 
         // Pad our low sample by our interpolation steps and our drift
-        let lo = CUBIC_NEWER + (-drift).max(0.0);
+        let lo = MIN_READ + (-drift).max(0.0);
 
         // Do the same, but using our delay length and the other side of the interpolation.
         let hi = (self.delay_len as f32)
@@ -522,15 +577,16 @@ mod tests {
     }
 
     /// Every read a grain makes, from spawn to deactivation, must keep its
-    /// cubic taps inside the written region of the ring buffer.
+    /// cubic taps inside the written region of the ring buffer, and clear of
+    /// anything pushed earlier in the same chunk.
     fn assert_grain_stays_in_bounds(n: &GrainDelay, spawn_at: f32, grain_len: f32) {
         let mut g = Grain::default();
         g.spawn(spawn_at, grain_len, n.freq, n.shape);
         let max = n.delay_capacity as f32 - 1.0 - CUBIC_OLDER;
         while g.active {
             assert!(
-                g.sample_pos >= CUBIC_NEWER && g.sample_pos <= max,
-                "pos {} outside [{CUBIC_NEWER}, {max}]",
+                g.sample_pos >= MIN_READ && g.sample_pos <= max,
+                "pos {} outside [{MIN_READ}, {max}]",
                 g.sample_pos
             );
             g.win_phase += g.win_phase_inc;

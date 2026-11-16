@@ -6,7 +6,7 @@ use crate::{
     dsl::ir::DSLParams,
     math::cubic_hermite,
     node::{DynNode, Inputs, Node},
-    nodes::midi::voice::MIDDLE_C,
+    nodes::{audio::sine::sin_turns_mhalfpi_halfpi_scalar, midi::voice::MIDDLE_C},
     ports::{PortBuilder, Ports},
     resources::ExternalBufferKey,
     spec::NodeDefinition,
@@ -32,6 +32,18 @@ pub(crate) struct Grain {
     pub(crate) shape: f32,
 }
 
+/// Tukey window at phase `t` with taper `a`, see [`Grain::get_window`].
+///
+/// Each taper is `0.5 * (1 - cos(pi * u)) = sin^2(pi * u / 2)` for `u` the
+/// distance into it, so a polynomial sine keeps this branchless and vectorizable.
+#[inline(always)]
+pub(crate) fn tukey(t: f32, a: f32) -> f32 {
+    let u = t.min(1.0 - t) / a;
+    let s = sin_turns_mhalfpi_halfpi_scalar::<7>(0.25 * u.min(1.0));
+    // The polynomial peaks a hair over unity, so clamp to keep the taper monotone.
+    if u >= 1.0 { 1.0 } else { (s * s).min(1.0) }
+}
+
 impl Grain {
     /// Process one sample of the underlying grain.
     ///
@@ -47,17 +59,25 @@ impl Grain {
         let len = active_chan_buffer.len();
 
         let floor = self.sample_pos.floor() as usize;
-        let i1 = floor % len;
-        let i0 = (i1 + len - 1) % len;
-        let i2 = (i1 + 1) % len;
-        let i3 = (i1 + 2) % len;
 
-        let (a, b, c, d) = (
-            active_chan_buffer[i0],
-            active_chan_buffer[i1],
-            active_chan_buffer[i2],
-            active_chan_buffer[i3],
-        );
+        // Away from the loop seam the taps are contiguous, so skip the modulo.
+        let (a, b, c, d) = if floor >= 1 && floor + 2 < len {
+            let [a, b, c, d] = active_chan_buffer[floor - 1..floor + 3] else {
+                unreachable!()
+            };
+            (a, b, c, d)
+        } else {
+            let i1 = floor % len;
+            let i0 = (i1 + len - 1) % len;
+            let i2 = (i1 + 1) % len;
+            let i3 = (i1 + 2) % len;
+            (
+                active_chan_buffer[i0],
+                active_chan_buffer[i1],
+                active_chan_buffer[i2],
+                active_chan_buffer[i3],
+            )
+        };
 
         let t = self.sample_pos - floor as f32;
         let sample = cubic_hermite(a, b, c, d, t) * env;
@@ -83,16 +103,7 @@ impl Grain {
     /// https://en.wikipedia.org/wiki/Window_function#Tukey_window
     #[inline(always)]
     pub(crate) fn get_window(&self) -> f32 {
-        let t = self.win_phase;
-        let a = self.shape;
-
-        if t < a {
-            0.5 * (1.0 - (std::f32::consts::PI * t / a).cos())
-        } else if t > 1.0 - a {
-            0.5 * (1.0 - (std::f32::consts::PI * (1.0 - t) / a).cos())
-        } else {
-            1.0
-        }
+        tukey(self.win_phase, self.shape)
     }
 
     #[inline(always)]
