@@ -160,6 +160,11 @@ impl Node for Sampler {
         }
     }
     fn handle_msg(&mut self, _msg: crate::msg::NodeMessage) {}
+    fn reset(&mut self, _ctx: &mut crate::prelude::AudioContext) {
+        self.playhead = self.start as f32;
+        self.active = true;
+        self.last_trig = 0.0;
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }

@@ -148,6 +148,21 @@ impl Node for MidiSequencer {
         }
     }
 
+    /// Notes go straight to the system, so nothing else will end a held one.
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        if let Some(note) = self.held_note.take() {
+            let _ = ctx.send_to_system_midi(
+                MidiMessage {
+                    data: MidiMessageKind::NoteOff { note, velocity: 0 },
+                    channel_idx: self.midi_chan,
+                },
+                ctx.get_instant(),
+            );
+        }
+        self.last_idx = 0;
+        self.note_off_sent = false;
+    }
+
     fn handle_msg(&mut self, msg: NodeMessage) {
         match msg {
             NodeMessage::SetParam(inner) => {

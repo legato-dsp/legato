@@ -80,6 +80,10 @@ impl Node for Chance {
         Some(vec!["p"])
     }
 
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.passed = [0; 16];
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

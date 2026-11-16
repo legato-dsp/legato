@@ -54,6 +54,10 @@ impl DelayTap {
 }
 
 impl PerSampleNode for DelayTap {
+    fn reset(&mut self) {
+        self.data.fill(0.0);
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -87,6 +91,10 @@ impl PerSampleNode for DelayTap {
 }
 
 impl Node for DelayTap {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sr = ctx.get_config().sample_rate as f32;
 

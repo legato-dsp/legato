@@ -158,6 +158,10 @@ impl NodeDefinition for Random {
 }
 
 impl Node for Random {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let block_size = ctx.get_config().block_size;
 
@@ -180,6 +184,12 @@ impl Node for Random {
 }
 
 impl PerSampleNode for Random {
+    fn reset(&mut self) {
+        self.smoothed = self.held;
+        self.samples_since_step = 0;
+        self.last_trig = 0.0;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

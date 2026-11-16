@@ -701,6 +701,19 @@ fn emit_tick(
 
     let _ = writeln!(out, "    }}");
 
+    let _ = writeln!(out, "\n    fn reset(&mut self) {{");
+    for node in &plan.nodes {
+        let _ = writeln!(
+            out,
+            "        {krate}::persample::PerSampleNode::reset(&mut self.n_{});",
+            sanitize(&node.alias)
+        );
+    }
+    for slot in delayed_slots {
+        let _ = writeln!(out, "        self.z_{} = 0.0;", slot_names[slot]);
+    }
+    let _ = writeln!(out, "    }}");
+
     // Routing by declared name is what makes a generated kernel reachable from
     // the existing frontend and UI layer, which send messages rather than
     // calling methods. Unknown names are ignored: these arrive from user input

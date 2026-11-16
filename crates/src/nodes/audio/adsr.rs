@@ -1,4 +1,5 @@
 use crate::{
+    context::AudioContext,
     math::lerp,
     msg::{NodeMessage, RtValue},
     node::Node,
@@ -116,6 +117,15 @@ impl Adsr {
 }
 
 impl Node for Adsr {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.state = AdsrState::Idle;
+        self.state_delta_t = 0.0;
+        self.attack_starting_level = 0.0;
+        self.release_starting_level = 0.0;
+        self.gate_open = false;
+        self.trig_high = false;
+    }
+
     fn process(
         &mut self,
         ctx: &mut crate::context::AudioContext,

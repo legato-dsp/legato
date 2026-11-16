@@ -182,6 +182,10 @@ impl<'a> DelayLineViewMut<'a> {
         self.delay.push(self.data, val);
     }
 
+    pub fn clear(&mut self) {
+        self.data.fill(0.0);
+    }
+
     #[inline(always)]
     pub fn read_linear(&self, offset: f32) -> f32 {
         self.delay.get_delay_linear(self.data, offset)

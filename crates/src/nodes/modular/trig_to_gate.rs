@@ -81,6 +81,10 @@ impl NodeDefinition for TrigToGate {
 }
 
 impl Node for TrigToGate {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, _ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let Some(trig_in) = inputs[0] else { return };
 
@@ -95,6 +99,11 @@ impl Node for TrigToGate {
 }
 
 impl PerSampleNode for TrigToGate {
+    fn reset(&mut self) {
+        self.samples_left = 0;
+        self.last_trig = 0.0;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

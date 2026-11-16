@@ -1867,6 +1867,76 @@ impl legato::persample::PerSampleNode for Plate {
         self.z_ap2_r_fb_0 = v_ap2_r_fb_0;
     }
 
+    fn reset(&mut self) {
+        legato::persample::PerSampleNode::reset(&mut self.n_dry_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_dry_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo_r_ms);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo_l_ms);
+        legato::persample::PerSampleNode::reset(&mut self.n_mono);
+        legato::persample::PerSampleNode::reset(&mut self.n_pre);
+        legato::persample::PerSampleNode::reset(&mut self.n_bw);
+        legato::persample::PerSampleNode::reset(&mut self.n_diff1);
+        legato::persample::PerSampleNode::reset(&mut self.n_diff2);
+        legato::persample::PerSampleNode::reset(&mut self.n_diff3);
+        legato::persample::PerSampleNode::reset(&mut self.n_diff4);
+        legato::persample::PerSampleNode::reset(&mut self.n_tank_ap_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr2);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr2);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr1);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr1);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl5);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl5);
+        legato::persample::PerSampleNode::reset(&mut self.n_del_a);
+        legato::persample::PerSampleNode::reset(&mut self.n_damp_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_decay_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_l_w);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr3);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr3);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl6);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl6);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_l_ff);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_l_d);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_l_out);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr4);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr4);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl7);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl7);
+        legato::persample::PerSampleNode::reset(&mut self.n_del_b);
+        legato::persample::PerSampleNode::reset(&mut self.n_tank_ap_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr5);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr5);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl2);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl2);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl1);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl1);
+        legato::persample::PerSampleNode::reset(&mut self.n_del_c);
+        legato::persample::PerSampleNode::reset(&mut self.n_damp_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_decay_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_r_w);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr6);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr6);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl3);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl3);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_r_ff);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_r_d);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_r_out);
+        legato::persample::PerSampleNode::reset(&mut self.n_yr7);
+        legato::persample::PerSampleNode::reset(&mut self.n_gr7);
+        legato::persample::PerSampleNode::reset(&mut self.n_wet_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_yl4);
+        legato::persample::PerSampleNode::reset(&mut self.n_gl4);
+        legato::persample::PerSampleNode::reset(&mut self.n_wet_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_out);
+        legato::persample::PerSampleNode::reset(&mut self.n_del_d);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_r_fb);
+        legato::persample::PerSampleNode::reset(&mut self.n_ap2_l_fb);
+        self.z_del_d_0 = 0.0;
+        self.z_ap2_l_fb_0 = 0.0;
+        self.z_ap2_r_fb_0 = 0.0;
+    }
+
     fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
         if let legato::msg::NodeMessage::SetParam(payload) = msg
             && let legato::msg::RtValue::F32(value) = payload.value

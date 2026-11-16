@@ -862,6 +862,38 @@ impl legato::persample::PerSampleNode for Modtap4 {
         self.z_fb_0 = v_fb_0;
     }
 
+    fn reset(&mut self) {
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo4);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo3);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo2);
+        legato::persample::PerSampleNode::reset(&mut self.n_lfo1);
+        legato::persample::PerSampleNode::reset(&mut self.n_depth);
+        legato::persample::PerSampleNode::reset(&mut self.n_dt4);
+        legato::persample::PerSampleNode::reset(&mut self.n_dt3);
+        legato::persample::PerSampleNode::reset(&mut self.n_dt2);
+        legato::persample::PerSampleNode::reset(&mut self.n_dt1);
+        legato::persample::PerSampleNode::reset(&mut self.n_m1);
+        legato::persample::PerSampleNode::reset(&mut self.n_t1);
+        legato::persample::PerSampleNode::reset(&mut self.n_d1);
+        legato::persample::PerSampleNode::reset(&mut self.n_fb);
+        legato::persample::PerSampleNode::reset(&mut self.n_m4);
+        legato::persample::PerSampleNode::reset(&mut self.n_t4);
+        legato::persample::PerSampleNode::reset(&mut self.n_d4);
+        legato::persample::PerSampleNode::reset(&mut self.n_m3);
+        legato::persample::PerSampleNode::reset(&mut self.n_t3);
+        legato::persample::PerSampleNode::reset(&mut self.n_out_l);
+        legato::persample::PerSampleNode::reset(&mut self.n_d3);
+        legato::persample::PerSampleNode::reset(&mut self.n_m2);
+        legato::persample::PerSampleNode::reset(&mut self.n_t2);
+        legato::persample::PerSampleNode::reset(&mut self.n_out_r);
+        legato::persample::PerSampleNode::reset(&mut self.n_out);
+        legato::persample::PerSampleNode::reset(&mut self.n_d2);
+        self.z_d2_0 = 0.0;
+        self.z_d3_0 = 0.0;
+        self.z_d4_0 = 0.0;
+        self.z_fb_0 = 0.0;
+    }
+
     fn handle_msg(&mut self, msg: legato::msg::NodeMessage) {
         if let legato::msg::NodeMessage::SetParam(payload) = msg
             && let legato::msg::RtValue::F32(value) = payload.value

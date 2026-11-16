@@ -98,6 +98,10 @@ impl PerSampleNode for KernelNode {
         dispatch!(self, inner => PerSampleNode::handle_msg(inner, msg))
     }
 
+    fn reset(&mut self) {
+        dispatch!(self, inner => PerSampleNode::reset(inner))
+    }
+
     fn runtime_params(&self) -> Option<Vec<&str>> {
         dispatch!(self, inner => PerSampleNode::runtime_params(inner))
     }
@@ -272,6 +276,11 @@ impl PerSampleNode for KernelGraph {
         for (out, &ValueSlot(slot)) in out_frame.iter_mut().zip(self.out_slots.iter()) {
             *out = self.values[slot as usize];
         }
+    }
+
+    fn reset(&mut self) {
+        self.nodes.iter_mut().for_each(PerSampleNode::reset);
+        self.values.fill(0.0);
     }
 
     /// Route a declared param to every interior node it feeds. Unknown names

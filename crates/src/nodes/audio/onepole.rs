@@ -40,6 +40,10 @@ impl OnePole {
 }
 
 impl Node for OnePole {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        PerSampleNode::reset(self);
+    }
+
     fn process(&mut self, _: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         for c in 0..self.chans {
             if let Some(input_buf) = inputs[c] {
@@ -74,6 +78,10 @@ impl Node for OnePole {
 }
 
 impl PerSampleNode for OnePole {
+    fn reset(&mut self) {
+        self.state.fill(0.0);
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

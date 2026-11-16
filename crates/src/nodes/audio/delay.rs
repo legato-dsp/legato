@@ -41,6 +41,12 @@ impl Node for DelayWrite {
             }
         }
     }
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        let resources = ctx.get_resources_mut();
+        for &key in &self.delay_line_keys {
+            resources.delay_line_view_mut(key).clear();
+        }
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }

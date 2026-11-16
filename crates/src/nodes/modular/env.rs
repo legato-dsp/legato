@@ -139,6 +139,15 @@ impl NodeDefinition for Env {
 }
 
 impl Node for Env {
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.state = EnvState::Idle;
+        self.state_delta_t = 0.0;
+        self.attack_starting_level = 0.0;
+        self.release_starting_level = 0.0;
+        self.last_gate = 0.0;
+        self.last_trig = 0.0;
+    }
+
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let config = ctx.get_config();
         let dt = 1000.0 / config.sample_rate as f32;

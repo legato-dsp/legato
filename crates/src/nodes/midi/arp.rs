@@ -215,6 +215,14 @@ impl Node for Arp {
         }
     }
 
+    /// Notes still sounding are released by the executor, which tracks them.
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.held_len = 0;
+        self.step = 0;
+        self.last_step_idx = None;
+        self.sounding = None;
+    }
+
     fn ports(&self) -> &Ports {
         &self.ports
     }

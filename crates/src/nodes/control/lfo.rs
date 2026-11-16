@@ -45,6 +45,10 @@ impl Node for Lfo {
         Node::handle_msg(&mut self.inner, msg);
     }
 
+    fn reset(&mut self, ctx: &mut AudioContext) {
+        Node::reset(&mut self.inner, ctx);
+    }
+
     fn runtime_params(&self) -> Option<Vec<&str>> {
         Node::runtime_params(&self.inner)
     }

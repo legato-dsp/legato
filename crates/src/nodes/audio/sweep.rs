@@ -60,6 +60,10 @@ impl Node for Sweep {
             }
         }
     }
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.phase = 0.0;
+        self.elapsed = 0;
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }

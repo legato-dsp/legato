@@ -501,6 +501,45 @@ fn muting_and_suspending_release_notes_too() {
 }
 
 #[test]
+fn a_bypassed_node_forgets_notes_the_executor_already_released() {
+    let Rig { builder, logs } = rig();
+    let (mut app, mut frontend) = builder
+        .build_dsl(
+            r#"
+            midi { chance { p: 1.0 }, probe }
+            chance >> probe
+            { probe }
+            "#,
+        )
+        .unwrap();
+
+    app.write_midi(0, note_on(60)).unwrap();
+    app.next_block();
+    frontend.set_state("chance", NodeState::Bypassed).unwrap();
+    for _ in 0..10 {
+        app.next_block();
+    }
+    frontend.set_state("chance", NodeState::Active).unwrap();
+    for _ in 0..10 {
+        app.next_block();
+    }
+
+    let off = MidiMessage {
+        channel_idx: 0,
+        data: MidiMessageKind::NoteOff {
+            note: 60,
+            velocity: 0,
+        },
+    };
+    app.write_midi(0, off).unwrap();
+    app.next_block();
+
+    let log = logs.lock().unwrap()[0].lock().unwrap().clone();
+    let offs = log.iter().filter(|e| e.2 == Off(60)).count();
+    assert_eq!(offs, 1, "{log:?}");
+}
+
+#[test]
 fn the_arp_demo_plays_a_held_chord() {
     let source = include_str!("../demos/arp.legato");
     let render = |chord: &[u8]| {

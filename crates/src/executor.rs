@@ -31,6 +31,34 @@ pub struct OutputView<'a> {
     pub chans: usize,
 }
 
+/// The Executor for Legato handles audio and midi processing
+/// within a realtime context.
+///
+/// The Runtime drains all incoming SPSC messages, such
+/// as midi data, node messages, sample updates, and the
+/// BlockRateAdapter handles incoming audio from any
+/// interfaces that are setup. So at this point, we are simply
+/// processing audio and dealing with state that was already updated.
+///
+/// The main functionality here is to process all of the nodes in topological
+/// sort order. Additionally, we also are keeping track of the state of each node.
+/// As nodes can be active, muted, bypassed, and cross-fading between these,
+/// we store these within `node_states`.
+///
+/// In-between these states, we reset nodes so that they don't have stale state,
+/// such as stale reverb tales, or holding incorrect midi notes.
+///
+/// Additionally, bypassed nodes need to understand what exactly they should
+/// bypass. This is stored on `bypass_pairs`.
+///
+/// The internal data is a flat, heap-allocated `f32` array. Nodes "own" a slice
+/// of this given the block size, number of output ports before them, etc.
+///
+/// Note(Luke): The flat layout is a deliberate choice, and yields much better performance
+/// due to cache locality.
+///
+/// Note(Luke): In the future, there will likely be oversampling and delay compensation, and this
+/// might get a bit trickier.
 #[derive(Debug, Default)]
 pub struct Executor {
     data: Box<[f32]>,
@@ -273,7 +301,16 @@ impl Executor {
 
         let block_size = ctx.get_config().block_size;
 
-        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info(); // TODO: I don't like this, feels like incorrect ownership
+        // We are not sorting again here, as we have a correct topo sort already.
+        //
+        // In would likely be quite trivial to allow for realtime connection changes, and
+        // to make the toposort realtime safe by reusing the allocation, but I have not
+        // played with this too much. It would likely be a new state, and I am more
+        // interested in using Legato for creating standalone applications than I am
+        // for say live-coding performances, as cool as they are.
+        //
+        // TODO(Luke): I don't like this, feels like incorrect ownership
+        let (sorted_order, nodes, incoming) = self.graph.get_sort_order_nodes_and_runtime_info();
 
         for node_key in sorted_order {
             let ports = nodes[*node_key].get_node().ports();
@@ -288,15 +325,25 @@ impl Executor {
             ctx.midi_bus_mut()
                 .bind(midi_start, ports.midi_out.len(), ports.midi_in.len());
 
+            // Get the current plan for this node. This can be a variety of states,
+            // such as Active, Muted, Bypassed, and Suspended.
+            //
+            // `plan()` actually does work here. It can tick its own internal state,
+            // handle crossfades, and lets us know if we potentially need to reset
+            // a node.
             let plan = self.node_states[*node_key].plan();
+
             let midi_source = MidiSource::of(plan);
             let last_midi_source = &mut self.midi_sources[*node_key];
 
             // If the node is suspended, simply zero the buffer
             if let Plan::Suspended { zero } = plan {
+                // `zero` is only set on the first settled block, once the fade has finished.
                 if zero {
+                    nodes[*node_key].get_node_mut().reset(ctx);
                     self.data[node_start..node_end].fill(0.0);
                 }
+                // Check for a change in MIDI input state and return early
                 finish_midi(ctx, last_midi_source, midi_source);
                 continue;
             }
@@ -361,6 +408,10 @@ impl Executor {
                 ctx.midi_bus_mut().gather(conn.sink.port_index, source_slot);
                 has_midi_inputs[conn.sink.port_index] = true;
             }
+
+            // For all of our midi ports, if they are marked to default to host input we use host midi
+            //
+            // TODO(Luke): what do we do in a VST context here?
             for port in &ports.midi_in {
                 if !has_midi_inputs[port.index] && port.kind == PortKind::Midi(MidiUnpatched::Host)
                 {
@@ -372,16 +423,26 @@ impl Executor {
             let dry_in = |i: usize| &self.scratch[i * block_size..(i + 1) * block_size];
 
             if plan == Plan::Bypassed {
-                // Zero this out first as we have no unified zero-ing out step
+                // The fade out has finished, so clearing state here can't click.
+                if *last_midi_source != MidiSource::Bypass {
+                    nodes[*node_key].get_node_mut().reset(ctx);
+                }
+                // Zero this node's work buffer as well
                 self.data[node_start..node_end].fill(0.0);
+
+                // Copy the bypassed pairs out, marked by `default_in()`
                 for &(i, o) in pairs {
                     let out = node_start + o * block_size;
                     self.data[out..out + block_size].copy_from_slice(dry_in(i));
                 }
+
+                // Do the same thing with midi
                 let midi_pairs = self.midi_bypass_pairs[*node_key].as_deref();
                 for &(i, o) in midi_pairs.unwrap_or_default() {
                     ctx.midi_bus_mut().pass_through(i, o);
                 }
+
+                // Check for a change in MIDI input state and return early
                 finish_midi(ctx, last_midi_source, midi_source);
                 continue;
             }
@@ -439,6 +500,10 @@ impl Executor {
                 _ => {}
             }
 
+            // If our midi source has changed, we reset all held notes within this nodes midi bus.
+            // This helps prevent stuck notes when bypassing nodes, etc.
+            //
+            // The other paths also call this, but they return early.
             finish_midi(ctx, last_midi_source, midi_source);
         }
 

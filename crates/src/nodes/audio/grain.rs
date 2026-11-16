@@ -198,6 +198,11 @@ impl Node for Granular {
     fn ports(&self) -> &Ports {
         &self.ports
     }
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.grains.iter_mut().flatten().for_each(Grain::stop);
+        self.sample_pos = 0.0;
+        self.last_trig = 0.0;
+    }
     fn process(&mut self, ctx: &mut AudioContext, inputs: &Inputs, outputs: &mut [&mut [f32]]) {
         let sample = ctx.get_resources().get_external_buffer(self.sample_key);
         let cfg = ctx.get_config();

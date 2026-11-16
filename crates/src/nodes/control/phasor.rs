@@ -62,6 +62,10 @@ impl Node for Phasor {
         &self.ports
     }
 
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.phase = 0.0;
+    }
+
     fn handle_msg(&mut self, msg: crate::msg::NodeMessage) {
         if let msg::NodeMessage::SetParam(inner) = msg {
             match (inner.param_name, inner.value) {

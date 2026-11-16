@@ -80,6 +80,11 @@ impl Node for Voice {
             outputs[2][last_sample..block_size].fill(self.cur_vel);
         }
     }
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.cur_freq = 0.0;
+        self.cur_gate = 0.0;
+        self.cur_vel = 0.0;
+    }
     fn ports(&self) -> &Ports {
         &self.ports
     }
@@ -147,6 +152,11 @@ impl VoiceAllocator {
             voices: vec![VoiceState::default(); capacity].into(),
             counter: 0,
         }
+    }
+
+    fn reset(&mut self) {
+        self.voices.fill(VoiceState::default());
+        self.counter = 0;
     }
 
     fn steal_voice(&mut self) -> (usize, &mut VoiceState) {
@@ -337,6 +347,10 @@ impl Node for PolyVoice {
                 outputs[start + 2][last_sample..block_size].fill(state.vel);
             }
         }
+    }
+    fn reset(&mut self, _ctx: &mut AudioContext) {
+        self.voice_allocator.reset();
+        self.port_caches.fill(NodePortCached::default());
     }
     fn ports(&self) -> &Ports {
         &self.ports
