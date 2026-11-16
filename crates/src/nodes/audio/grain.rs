@@ -131,13 +131,13 @@ impl Grain {
         self.shape
     }
 
-    /// grain_len_samples is the length at unison (freq == MIDDLE_C); the
-    /// effective length scales inversely with pitch, so each grain always
+    /// grain_len_samples is the length at unison (rate == 1.0); the
+    /// effective length scales inversely with rate, so each grain always
     /// covers the same span of source material.
     #[inline(always)]
-    pub(crate) fn spawn(&mut self, sample_pos: f32, grain_len_samples: f32, freq: f32, shape: f32) {
+    pub(crate) fn spawn(&mut self, sample_pos: f32, grain_len_samples: f32, rate: f32, shape: f32) {
         self.win_phase = 0.0;
-        self.sample_inc = freq.max(1e-3) / MIDDLE_C;
+        self.sample_inc = rate.max(1e-3);
         self.win_phase_inc = self.sample_inc / grain_len_samples;
         self.sample_pos = sample_pos;
         self.shape = shape.clamp(0.001, 0.5);
@@ -269,7 +269,12 @@ impl Node for Granular {
                     .any(|x| x.active() && x.window_phase() < 1.0 - x.get_shape());
 
                 if should_spawn_grain && let Some(grain) = streams.iter_mut().find(|x| x.ready()) {
-                    grain.spawn(self.sample_pos, grain_len_samples, self.freq, self.shape);
+                    grain.spawn(
+                        self.sample_pos,
+                        grain_len_samples,
+                        self.freq / MIDDLE_C,
+                        self.shape,
+                    );
                 }
             }
 
@@ -328,7 +333,7 @@ mod tests {
     #[test]
     fn tukey_window_ramps_in_and_out() {
         let mut g = Grain::default();
-        g.spawn(0.0, 100.0, MIDDLE_C, 0.25);
+        g.spawn(0.0, 100.0, 1.0, 0.25);
 
         // Starts at ~0, half-way up the ramp at a/2, flat in the middle, ~0 at the end
         assert!(g.get_window() < 1e-3);
@@ -344,7 +349,7 @@ mod tests {
     fn grain_deactivates_after_one_window() {
         let buf = vec![0.0f32; 64];
         let mut g = Grain::default();
-        g.spawn(0.0, 16.0, MIDDLE_C, 0.5);
+        g.spawn(0.0, 16.0, 1.0, 0.5);
 
         for _ in 0..17 {
             g.tick(&buf);
@@ -355,7 +360,7 @@ mod tests {
     #[test]
     fn grain_length_scales_inversely_with_pitch() {
         let mut g = Grain::default();
-        g.spawn(0.0, 100.0, MIDDLE_C * 2.0, 0.5);
+        g.spawn(0.0, 100.0, 2.0, 0.5);
         assert!((g.win_phase_inc - 0.02).abs() < 1e-6);
     }
 }
