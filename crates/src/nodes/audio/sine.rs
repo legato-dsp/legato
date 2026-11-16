@@ -349,9 +349,6 @@ impl NodeDefinition for Sine {
 
 // Start of BSD-3 Code
 
-// Only used by the scalar fallback and by equivalence tests; dead code when
-// the `simd` feature is active, which is expected.
-#[cfg_attr(feature = "simd", allow(dead_code))]
 #[inline(always)]
 fn fast_mod_mhalf_half_scalar(x: f32) -> f32 {
     x - x.round()
@@ -386,9 +383,8 @@ pub(crate) fn sin_turns_mhalfpi_halfpi_scalar<const ORDER: usize>(x: f32) -> f32
     y * (x + 0.5) * (x - 0.5)
 }
 
-#[cfg_attr(feature = "simd", allow(dead_code))]
 #[inline(always)]
-fn sin_turns_scalar<const ORDER: usize>(x: f32) -> f32 {
+pub(crate) fn sin_turns_scalar<const ORDER: usize>(x: f32) -> f32 {
     let x_wrapped = fast_mod_mhalf_half_scalar(x);
     sin_turns_mhalfpi_halfpi_scalar::<ORDER>(x_wrapped)
 }

@@ -4,7 +4,10 @@ use crate::{
     math::fast_tanh,
     node::Node,
     nodes::{
-        audio::grain::{Grain, tukey},
+        audio::{
+            grain::{Grain, tukey},
+            plate::Allpass,
+        },
         midi::voice::MIDDLE_C,
     },
     ports::Ports,
@@ -32,34 +35,6 @@ const DIFFUSER_GAIN: f32 = 0.625;
 const DIFFUSER_TUNINGS: [[f32; 4]; 2] =
     [[126.0, 180.0, 269.0, 444.0], [151.0, 205.0, 245.0, 405.0]];
 
-/// A Schroeder allpass with a whole-sample delay. The buffer is exactly the
-/// delay long, so a read is a single load and wrapping needs no modulo.
-struct Allpass {
-    buf: Box<[f32]>,
-    idx: usize,
-}
-
-impl Allpass {
-    fn new(delay: usize) -> Self {
-        Self {
-            buf: vec![0.0; delay + 1].into(),
-            idx: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn tick(&mut self, x: f32, g: f32) -> f32 {
-        let d = self.buf[self.idx];
-        let w = x + g * d;
-        self.buf[self.idx] = w;
-        self.idx += 1;
-        if self.idx == self.buf.len() {
-            self.idx = 0;
-        }
-        d - g * w
-    }
-}
-
 struct Diffuser {
     stages: [Allpass; 4],
 }
@@ -82,10 +57,7 @@ impl Diffuser {
     }
 
     fn clear(&mut self) {
-        for stage in &mut self.stages {
-            stage.buf.fill(0.0);
-            stage.idx = 0;
-        }
+        self.stages.iter_mut().for_each(Allpass::clear);
     }
 }
 
