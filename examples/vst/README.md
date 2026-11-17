@@ -10,7 +10,11 @@ It demonstrates two of the three ways that users can control Legato applications
 Pitch (±12 semitones), grain size, grain count, shape, jitter, feedback, damping, diffusion, and reverb decay are
 sent as messages, while the dry/wet mix drives a smoothed `signal` node.
 
-With **Tempo Sync** on, grain length follows a note division of the host tempo instead of Grain Size. The plugin
+With **Delay Sync** on, the delay time follows a note division (including dotted and triplet values) of the host
+tempo, otherwise it's set in ms. Either way it's sent to `grain_delay` as a `delay_length` message, clamped to
+the 4s line allocated by `max_delay_length` in `.legato`.
+
+With **Grain Sync** on, grain length follows a note division of the host tempo instead of Grain Size. The plugin
 renders a 0..1 phasor from the host transport (one cycle per grain, aligned to the beat grid) and feeds it to the
 graph as a second host input, which `grain_delay` reads on its `phase` port. Grains then spawn on even divisions of
 each cycle, and jitter delays them by up to that fraction of a division. When the transport is stopped, the phasor
@@ -42,5 +46,5 @@ You can also run it as a standalone app with `cargo run --release`.
 This example depends on Legato by path. To use it as a template, replace the dependency with the published crate:
 
 ```toml
-legato = { version = "0.3.0", default-features = false }
+legato = { version = "0.4.0", default-features = false }
 ```

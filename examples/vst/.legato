@@ -4,9 +4,11 @@ audio {
     // A 0..1 phasor locked to the host tempo, one cycle per grain.
     external: host_phase { interface_name: "phase", chans: 1 },
 
+    // `max_delay_length` sizes the line so the plugin can move `delay_length` at runtime.
     grain_delay: grains {
         chans: 2,
         delay_length: 1000,
+        max_delay_length: 4000,
         grain_size: 400,
         spray: 6.0,
         scan: 1.0,

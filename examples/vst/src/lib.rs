@@ -11,7 +11,7 @@ use nice_plug_egui::{
 };
 use std::sync::Arc;
 
-const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 600.0);
+const MIN_WINDOW_SIZE: LogicalSize<f32> = LogicalSize::new(300.0, 700.0);
 const RESIZE_HINT: ResizeHint = ResizeHint::resizable().with_min_logical_size(MIN_WINDOW_SIZE);
 
 /// The fixed block size the Legato graph runs at.
@@ -27,6 +27,9 @@ const PHASE_INPUT: &str = "phase";
 ///
 /// This phasor locks the interior graph rate for the
 const FALLBACK_TEMPO: f64 = 120.0;
+
+/// Matches `max_delay_length` in `.legato`: a whole note at 60 bpm.
+const MAX_DELAY_MS: f32 = 4000.0;
 
 const GRAIN_NODE: &str = "grains";
 const REVERB_NODE: &str = "verb";
@@ -74,6 +77,12 @@ impl NiceEguiApp for GrainDelayEditor {
                     .inner_margin(Margin::same(8))
                     .show(ui, |ui| {
                         ui.heading("Legato Grain Delay");
+                        param_row(ui, &p.delay_sync, &setter);
+                        if p.delay_sync.value() {
+                            param_row(ui, &p.delay_division, &setter);
+                        } else {
+                            param_row(ui, &p.delay_time, &setter);
+                        }
                         param_row(ui, &p.sync, &setter);
                         if p.sync.value() {
                             param_row(ui, &p.division, &setter);
@@ -98,25 +107,45 @@ impl NiceEguiApp for GrainDelayEditor {
     }
 }
 
-/// Grain length as a note value, when synced to the host tempo.
+/// A note value, for delay times and grain lengths synced to the host tempo.
+///
+/// The ids keep saved projects stable if variants are added or reordered.
 #[derive(Enum, Clone, Copy, Debug, PartialEq)]
 pub enum Division {
+    #[id = "1/32"]
     #[name = "1/32"]
     ThirtySecond,
+    #[id = "1/16t"]
     #[name = "1/16T"]
     SixteenthTriplet,
+    #[id = "1/16"]
     #[name = "1/16"]
     Sixteenth,
+    #[id = "1/16d"]
+    #[name = "1/16D"]
+    DottedSixteenth,
+    #[id = "1/8t"]
     #[name = "1/8T"]
     EighthTriplet,
+    #[id = "1/8"]
     #[name = "1/8"]
     Eighth,
+    #[id = "1/8d"]
+    #[name = "1/8D"]
+    DottedEighth,
+    #[id = "1/4t"]
     #[name = "1/4T"]
     QuarterTriplet,
+    #[id = "1/4"]
     #[name = "1/4"]
     Quarter,
+    #[id = "1/4d"]
+    #[name = "1/4D"]
+    DottedQuarter,
+    #[id = "1/2"]
     #[name = "1/2"]
     Half,
+    #[id = "1/1"]
     #[name = "1/1"]
     Whole,
 }
@@ -128,18 +157,31 @@ impl Division {
             Self::ThirtySecond => 1.0 / 8.0,
             Self::SixteenthTriplet => 1.0 / 6.0,
             Self::Sixteenth => 1.0 / 4.0,
+            Self::DottedSixteenth => 3.0 / 8.0,
             Self::EighthTriplet => 1.0 / 3.0,
             Self::Eighth => 1.0 / 2.0,
+            Self::DottedEighth => 3.0 / 4.0,
             Self::QuarterTriplet => 2.0 / 3.0,
             Self::Quarter => 1.0,
+            Self::DottedQuarter => 3.0 / 2.0,
             Self::Half => 2.0,
             Self::Whole => 4.0,
         }
+    }
+
+    pub fn ms(self, tempo: f64) -> f32 {
+        (self.beats() * 60_000.0 / tempo) as f32
     }
 }
 
 #[derive(Params)]
 pub struct GrainDelayParams {
+    #[id = "delay_sync"]
+    pub delay_sync: BoolParam,
+    #[id = "delay_division"]
+    pub delay_division: EnumParam<Division>,
+    #[id = "delay_time"]
+    pub delay_time: FloatParam,
     #[id = "sync"]
     pub sync: BoolParam,
     #[id = "division"]
@@ -188,8 +230,21 @@ impl Default for GrainDelayParams {
                 .with_string_to_value(formatters::s2v_f32_percentage())
         };
         Self {
-            sync: BoolParam::new("Tempo Sync", false),
-            division: EnumParam::new("Division", Division::Eighth),
+            delay_sync: BoolParam::new("Delay Sync", false),
+            delay_division: EnumParam::new("Delay Division", Division::DottedEighth),
+            delay_time: FloatParam::new(
+                "Delay Time",
+                1000.0,
+                FloatRange::Skewed {
+                    min: 10.0,
+                    max: MAX_DELAY_MS,
+                    factor: FloatRange::skew_factor(-1.0),
+                },
+            )
+            .with_unit(" ms")
+            .with_value_to_string(formatters::v2s_f32_rounded(0)),
+            sync: BoolParam::new("Grain Sync", false),
+            division: EnumParam::new("Grain Division", Division::Eighth),
             // Long grains pitched down drift far through the delay line, so we cap
             // this well below the node's 3s limit to keep a 1s delay usable.
             grain_size: FloatParam::new(
@@ -236,6 +291,8 @@ impl Default for GrainDelayParams {
 /// A snapshot of the plugin params for one host block.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
+    /// Resolved from the delay division and host tempo when synced.
+    pub delay_ms: f32,
     pub sync: bool,
     pub division: Division,
     pub grain_size: f32,
@@ -250,9 +307,18 @@ pub struct Settings {
     pub mix: f32,
 }
 
+/// The delay time sent to the graph: a note value at the host tempo when synced.
+pub fn delay_ms(synced: Option<Division>, free_ms: f32, tempo: f64) -> f32 {
+    synced
+        .map_or(free_ms, |division| division.ms(tempo))
+        .min(MAX_DELAY_MS)
+}
+
 impl GrainDelayParams {
-    pub fn settings(&self) -> Settings {
+    pub fn settings(&self, clock: &HostClock) -> Settings {
+        let synced = self.delay_sync.value().then(|| self.delay_division.value());
         Settings {
+            delay_ms: delay_ms(synced, self.delay_time.value(), clock.tempo),
             sync: self.sync.value(),
             division: self.division.value(),
             grain_size: self.grain_size.value(),
@@ -274,8 +340,9 @@ impl Settings {
     ///
     /// `grain_delay` and `plate480` have no control inputs for these yet, so they
     /// are messages, drained once per graph block and applied unsmoothed.
-    fn node_params(&self) -> [(&'static str, &'static str, f32); 10] {
+    fn node_params(&self) -> [(&'static str, &'static str, f32); 11] {
         [
+            (GRAIN_NODE, "delay_length", self.delay_ms),
             (GRAIN_NODE, "sync", if self.sync { 1.0 } else { 0.0 }),
             (GRAIN_NODE, "grain_size", self.grain_size),
             (GRAIN_NODE, "overlap", self.grains as f32),
@@ -517,7 +584,7 @@ impl Plugin for LegatoGrainDelay {
     ) -> ProcessStatus {
         if let Some(engine) = &mut self.engine {
             let clock = HostClock::from_transport(context.transport());
-            engine.process(self.params.settings(), clock, buffer.as_slice());
+            engine.process(self.params.settings(&clock), clock, buffer.as_slice());
         }
         // Keep processing so delay/reverb tails ring out
         ProcessStatus::KeepAlive
@@ -560,7 +627,7 @@ mod tests {
     #[test]
     fn graph_accepts_every_synced_param() {
         let mut engine = Engine::new(SR, 512);
-        let settings = GrainDelayParams::default().settings();
+        let settings = GrainDelayParams::default().settings(&PLAYING_120);
         assert!(engine.frontend.set_param(MIX_PARAM, settings.mix).is_ok());
         for (node, param_name, value) in settings.node_params() {
             let msg = NodeMessage::SetParam(ParamPayload {
@@ -591,7 +658,7 @@ mod tests {
 
     #[test]
     fn free_and_synced_grains_both_reach_output() {
-        let mut settings = GrainDelayParams::default().settings();
+        let mut settings = GrainDelayParams::default().settings(&PLAYING_120);
         settings.mix = 1.0;
         assert!(wet_energy(settings) > 1.0);
         settings.sync = true;
@@ -640,5 +707,12 @@ mod tests {
             beat: Some(1.0 - 1e-12),
         };
         assert!(phasor.render(clock, 1.0, 4096).iter().all(|&p| p < 1.0));
+    }
+
+    #[test]
+    fn synced_delay_follows_tempo_and_clamps_to_capacity() {
+        assert_eq!(delay_ms(Some(Division::DottedEighth), 1000.0, 120.0), 375.0);
+        assert_eq!(delay_ms(Some(Division::Whole), 1000.0, 30.0), MAX_DELAY_MS);
+        assert_eq!(delay_ms(None, 250.0, 30.0), 250.0);
     }
 }
