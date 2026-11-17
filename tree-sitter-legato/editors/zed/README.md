@@ -4,8 +4,9 @@ A dev extension that gives Zed syntax highlighting for `.legato` files.
 
 ## Install
 
-1. Commit and push this repository (Zed builds the grammar from git, not a local
-   path), then set `rev` in `extension.toml` to the pushed commit SHA.
+1. Commit and push the grammar (Zed builds it from a git commit, not the working
+   tree), then set `rev` in `extension.toml` to that commit SHA. To test before
+   pushing, set `repository` to `file:///path/to/legato` and use a local commit.
 2. In Zed, open the command palette and run **zed: install dev extension**.
 3. Select this directory (`editors/zed`).
 

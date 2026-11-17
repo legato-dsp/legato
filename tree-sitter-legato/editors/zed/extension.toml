@@ -4,11 +4,12 @@ version = "0.0.1"
 schema_version = 1
 authors = ["Luke <lukeweston1234@gmail.com>"]
 description = "Syntax highlighting for the Legato DSL"
-repository = "https://github.com/lukeweston1234/legato-experimental-tree-sitter"
+repository = "https://github.com/legato-dsp/legato"
 
-# Zed fetches and builds the grammar from git; it does not support local paths.
-# `rev` MUST be a commit that is pushed to the repository below and that contains
-# the generated src/parser.c (i.e. after the `kernel` change is committed).
+# Zed fetches and builds the grammar from a git commit, not the working tree.
+# `rev` MUST be a pushed commit containing the generated src/parser.c. For local
+# development, swap `repository` for "file:///path/to/legato" and use a local commit.
 [grammars.legato]
-repository = "https://github.com/lukeweston1234/legato-experimental-tree-sitter"
-rev = "771957229ecaff606160572b8c138b7a5256f4ba"
+repository = "https://github.com/legato-dsp/legato"
+path = "tree-sitter-legato"
+rev = "896dd744dae3fcb61aff771327bb7c4ff402ae86"
