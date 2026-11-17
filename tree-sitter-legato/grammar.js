@@ -21,12 +21,6 @@ module.exports = grammar({
   // only way to mark where the port list stops and the next scope begins.
   externals: $ => [$._newline],
 
-  conflicts: $ => [
-    // `{ ident: value, ... }` is shaped identically as node params and as an
-    // object literal; they occur in different positions but share the prefix.
-    [$.params, $.object],
-  ],
-
   rules: {
     // top-level: source? macros* scopes* connections* sink
     // mirrors legato_parser_inner: every section is extra_padded, source/connections optional.
@@ -102,13 +96,13 @@ module.exports = grammar({
       '}',
     ),
 
-    // type (:alias)? (*count)? params? pipes*
+    // state? type (:alias)? (*count)? params?
     node_declaration: $ => seq(
+      optional(field('state', alias($.identifier, $.node_state))),
       field('node_type', $.identifier),
       optional(seq(':', field('alias', $.identifier))),
       optional(seq('*', field('count', $.uint))),
       optional(field('params', $.params)),
-      repeat(field('pipe', $.pipe)),
     ),
 
     params: $ => seq(
@@ -122,13 +116,6 @@ module.exports = grammar({
       field('key', $.identifier),
       ':',
       field('value', $.value),
-    ),
-
-    // | name(value?)
-    pipe: $ => seq(
-      '|',
-      field('name', $.identifier),
-      optional(seq('(', optional(field('params', $.value)), ')')),
     ),
 
     // endpoint >> endpoint (>> endpoint)*

@@ -1,9 +1,9 @@
 ================================================================================
-node pipes and aliases
+node aliases and counts
 ================================================================================
 
 audio {
-    osc: sine * 4 { freq: 440 } | lowpass(100.5) | gain(null)
+    osc: sine * 4 { freq: 440 }
 }
 
 { sine }
@@ -18,9 +18,38 @@ audio {
       alias: (identifier)
       count: (uint)
       params: (params
-        (param key: (identifier) value: (value (integer))))
-      pipe: (pipe name: (identifier) params: (value (float)))
-      pipe: (pipe name: (identifier) params: (value (null)))))
+        (param key: (identifier) value: (value (integer))))))
+  (sink name: (identifier)))
+
+================================================================================
+node state prefixes
+================================================================================
+
+audio { muted: m, mutedsaw, suspended saw * 3 { chans: 1 }, bypassed muted: n, muted }
+{ m }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (scope
+    namespace: (identifier)
+    (node_declaration
+      node_type: (identifier)
+      alias: (identifier))
+    (node_declaration
+      node_type: (identifier))
+    (node_declaration
+      state: (node_state)
+      node_type: (identifier)
+      count: (uint)
+      params: (params
+        (param key: (identifier) value: (value (integer)))))
+    (node_declaration
+      state: (node_state)
+      node_type: (identifier)
+      alias: (identifier))
+    (node_declaration
+      node_type: (identifier)))
   (sink name: (identifier)))
 
 ================================================================================

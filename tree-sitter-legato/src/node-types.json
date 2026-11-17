@@ -176,12 +176,12 @@
           }
         ]
       },
-      "pipe": {
-        "multiple": true,
+      "state": {
+        "multiple": false,
         "required": false,
         "types": [
           {
-            "type": "pipe",
+            "type": "node_state",
             "named": true
           }
         ]
@@ -346,32 +346,6 @@
           "named": true
         }
       ]
-    }
-  },
-  {
-    "type": "pipe",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      },
-      "params": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "value",
-            "named": true
-          }
-        ]
-      }
     }
   },
   {
@@ -654,6 +628,10 @@
     "named": false
   },
   {
+    "type": "node_state",
+    "named": true
+  },
+  {
     "type": "null",
     "named": true
   },
@@ -675,10 +653,6 @@
   },
   {
     "type": "{",
-    "named": false
-  },
-  {
-    "type": "|",
     "named": false
   },
   {
