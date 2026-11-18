@@ -1,3 +1,11 @@
+// This is a grain delay, later fed into a plate-style dattorro reverb.
+//
+// Both of these nodes are internal Legato nodes rather than interpreted,
+// so performance is what you would expect from a VST.
+//
+// We take in a information about the host tempo and turn this into a phasor
+// that we can use to keep the grains and delay line in sync musically.
+
 audio {
     // Fed by the host's main input, see `Engine::process`.
     external: host_in { interface_name: "main", chans: 2 },
