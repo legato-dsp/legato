@@ -178,8 +178,9 @@ pub struct GrainDelay {
     delay_keys: Vec<DelayLineKey>,
     /// Maximum capacity of the delay line, in samples
     delay_capacity: usize,
-    /// Length of current delay line. Must be less than delay_capacity
-    delay_len: usize,
+    /// Target delay, in samples. Must be less than delay_capacity
+    delay_len: f32,
+    sr: f32,
     /// Without any damping, the feedback for grains folds and becomes very high pitched
     damping_a: f32,
     /// Current held state for interior lowpass filter
@@ -245,7 +246,8 @@ impl GrainDelay {
         Self {
             delay_keys,
             delay_capacity,
-            delay_len,
+            delay_len: delay_len as f32,
+            sr,
             damping_a: damping,
             damping_state: vec![0.0; chans],
             grains,
@@ -288,7 +290,7 @@ impl Node for GrainDelay {
         }
         self.grains.iter_mut().flatten().for_each(Grain::stop);
         self.damping_state.fill(0.0);
-        self.spawn_offset.fill(self.delay_len as f32);
+        self.spawn_offset.fill(self.delay_len);
         self.clocks.fill(SpawnClock::default());
         self.diffusers.iter_mut().for_each(Diffuser::clear);
     }
@@ -448,6 +450,7 @@ impl Node for GrainDelay {
                 "overlap" => self.overlap = v.clamp(1.0, MAX_OVERLAP as f32),
                 "jitter" => self.jitter = v.clamp(0.0, 1.0),
                 "sync" => self.sync = v >= 0.5,
+                "delay_length" => self.set_delay_len(v / 1000.0 * self.sr),
                 _ => {}
             }
         }
@@ -464,11 +467,26 @@ impl Node for GrainDelay {
             "overlap",
             "jitter",
             "sync",
+            "delay_length",
         ])
     }
 }
 
 impl GrainDelay {
+    /// The oldest sample a cubic read can reach.
+    fn oldest_read(&self) -> f32 {
+        self.delay_capacity as f32 - 1.0 - CUBIC_OLDER
+    }
+
+    /// Moves the delay, clamped to the line's capacity. The scanners shift with it,
+    /// so a scanning cloud keeps its place relative to the delay.
+    fn set_delay_len(&mut self, samples: f32) {
+        let delay_len = samples.clamp(MIN_READ + 1.0, self.oldest_read());
+        let shift = delay_len - self.delay_len;
+        self.spawn_offset.iter_mut().for_each(|o| *o += shift);
+        self.delay_len = delay_len;
+    }
+
     /// Samples between spawns. A grain lives for `grain_len / rate` samples,
     /// so spawning `overlap` times per lifetime keeps N `overlap` grains sounding.
     fn spawn_interval(&self, grain_len: f32) -> f32 {
@@ -477,18 +495,13 @@ impl GrainDelay {
 
     /// Clamps a synced grain's lifetime, in samples, so that its drift at the current
     /// rate still fits in the delay line. Past that the spawn band would be empty, and
-    /// long synced grains pitched up would go silent rather than just shorter.
+    /// long synced grains would go silent rather than just shorter.
     fn fit_lifetime(&self, lifetime: f32, sr: f32) -> f32 {
         let lifetime = lifetime.clamp(
             MIN_GRAIN_SIZE.as_secs_f32() * sr,
             MAX_GRAIN_SIZE.as_secs_f32() * sr,
         );
-        let newest = self.delay_capacity as f32 - 1.0 - CUBIC_OLDER;
-        let room = if self.rate > 1.0 {
-            newest.min(self.delay_len as f32) - MIN_READ
-        } else {
-            newest - MIN_READ
-        };
+        let room = self.oldest_read() - MIN_READ;
         // A lifetime of L drifts (rate - 1) * L samples through the line
         let max = 0.99 * room / (self.rate - 1.0).abs();
         lifetime.min(max)
@@ -518,8 +531,13 @@ impl GrainDelay {
         let lo = MIN_READ + (-drift).max(0.0);
 
         // Do the same, but using our delay length and the other side of the interpolation.
-        let hi = (self.delay_len as f32)
-            .min(self.delay_capacity as f32 - 1.0 - CUBIC_OLDER - drift.max(0.0));
+        //
+        // Pitched up grains read towards the write head, so they need at least `lo` of
+        // history. A shorter delay is stretched to that rather than going silent.
+        let hi = self
+            .delay_len
+            .max(lo + 1.0)
+            .min(self.oldest_read() - drift.max(0.0));
 
         (lo, hi)
     }
@@ -542,6 +560,7 @@ impl NodeDefinition for GrainDelay {
         "overlap",
         "diffusion",
         "sync",
+        "max_delay_length",
     ];
 
     fn create(
@@ -555,8 +574,14 @@ impl NodeDefinition for GrainDelay {
 
         let delay_len = (delay_len.as_secs_f32() * sr as f32).floor() as usize;
 
+        // Room for the delay to be moved up to this at runtime
+        let max_delay_len = p
+            .get_duration_ms("max_delay_length")?
+            .map_or(0, |d| (d.as_secs_f32() * sr as f32).floor() as usize)
+            .max(delay_len);
+
         let delay_capacity =
-            (delay_len + (CUBIC_NEWER + CUBIC_OLDER) as usize + 1).next_power_of_two();
+            (max_delay_len + (CUBIC_NEWER + CUBIC_OLDER) as usize + 1).next_power_of_two();
 
         let scan = p.get_f32("scan")?.unwrap_or(1.0);
 
@@ -907,5 +932,39 @@ mod tests {
             value: RtValue::F32(0.0),
         }));
         assert!(!n.sync);
+    }
+
+    fn set_delay_ms(n: &mut GrainDelay, ms: f32) {
+        n.handle_msg(NodeMessage::SetParam(crate::msg::ParamPayload {
+            param_name: "delay_length",
+            value: RtValue::F32(ms),
+        }));
+    }
+
+    #[test]
+    fn delay_length_message_moves_scanners_and_clamps_to_capacity() {
+        let mut n = node(48_000, 65_536, 1.0);
+        n.spawn_offset[0] = 40_000.0;
+
+        set_delay_ms(&mut n, 500.0);
+        assert_eq!(n.delay_len, 24_000.0);
+        assert_eq!(n.spawn_offset[0], 16_000.0);
+
+        set_delay_ms(&mut n, 10_000.0);
+        assert_eq!(n.delay_len, n.oldest_read());
+
+        set_delay_ms(&mut n, 0.0);
+        assert!(n.delay_len > MIN_READ);
+    }
+
+    #[test]
+    fn short_delays_pitched_up_stretch_rather_than_go_silent() {
+        let grain_len = 9600.0;
+        let mut n = node(48_000, 65_536, 2.0);
+        set_delay_ms(&mut n, 20.0);
+        let (lo, hi) = n.spawn_band(grain_len);
+        assert!(hi > lo);
+        assert_grain_stays_in_bounds(&n, lo, grain_len);
+        assert_grain_stays_in_bounds(&n, hi, grain_len);
     }
 }

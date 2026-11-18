@@ -495,8 +495,6 @@ impl Engine {
         );
     }
 
-    // TODO: Nodes do not actually have a reset trait yet, good
-    // first issue if anyone is interested!
     pub fn reset(&mut self) {
         self.adapter.reset();
     }

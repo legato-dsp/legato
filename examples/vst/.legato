@@ -1,10 +1,8 @@
 audio {
     // Fed by the host's main input, see `Engine::process`.
     external: host_in { interface_name: "main", chans: 2 },
-    // A 0..1 phasor locked to the host tempo, one cycle per grain.
     external: host_phase { interface_name: "phase", chans: 1 },
-
-    // `max_delay_length` sizes the line so the plugin can move `delay_length` at runtime.
+    // We can set the actual grain delay line length up to the maximum size
     grain_delay: grains {
         chans: 2,
         delay_length: 1000,
@@ -21,15 +19,16 @@ audio {
         jitter: 0.0,
         sync: false
     },
+    // Datorro-style plate reverb
     plate480: verb { mix: 0.8, decay: 0.8 },
 
     mult: dry_l { val: 0.5 },
     mult: dry_r { val: 0.5 },
     mult: wet_l { val: 0.5 },
     mult: wet_r { val: 0.5 },
+
     track_mixer: out { tracks: 2, chans_per_track: 2, gain: [1.0, 1.0] },
 
-    // dry_amount = 1 - mix
     mult: negate_mix { val: -1.0 },
     add: dry_amount { val: 1.0 },
 }
