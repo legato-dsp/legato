@@ -1,0 +1,9 @@
+[package]
+name = "gain_iced"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+legato = { version ="0.4.0", features = ["simd"] }
+nice-plug = { version = "0.4.2", features = [ "standalone"] }
+nice-plug-iced = "0.5.0"
