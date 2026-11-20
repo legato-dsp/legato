@@ -1,10 +1,3 @@
-use iced::alignment;
-use iced::mouse;
-use iced::time::{self, milliseconds};
-use iced::widget::canvas::{Cache, Geometry, LineCap, Path, Stroke, stroke};
-use iced::widget::{canvas, container, text};
-use iced::{Degrees, Fill, Font, Point, Radians, Rectangle, Renderer, Size, Subscription, Theme};
-
 pub mod knob;
 
 // use nice_plug::{editor::dpi::LogicalSize, prelude::*};

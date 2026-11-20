@@ -1,13 +1,12 @@
 use std::f32::consts::PI;
 
 use iced::gradient::ColorStop;
+use iced::mouse;
 use iced::widget::canvas::Gradient;
 use iced::widget::canvas::{Cache, LineCap, Path, Stroke, stroke};
 use iced::widget::{Action, canvas, container};
-use iced::window::Position;
 use iced::{Color, Element, Event};
-use iced::{Degrees, Fill, Font, Point, Radians, Rectangle, Renderer, Size, Subscription, Theme};
-use iced::{event, mouse};
+use iced::{Fill, Point, Rectangle, Renderer, Theme};
 
 const SENSITIVITY: f32 = 1.0 / 200.0;
 
@@ -57,6 +56,12 @@ impl Knob {
     }
 }
 
+impl Default for Knob {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub enum KnobMsg {
     StartDrag,
     EndDrag,
@@ -75,7 +80,7 @@ impl canvas::Program<KnobMsg> for Knob {
     ) -> Option<Action<KnobMsg>> {
         if let Event::Mouse(inner) = event {
             match inner {
-                mouse::Event::ButtonPressed(inner) => {
+                mouse::Event::ButtonPressed(_inner) => {
                     Some(Action::publish(KnobMsg::StartDrag).and_capture())
                 }
                 mouse::Event::ButtonReleased(_) => {
@@ -113,7 +118,7 @@ impl canvas::Program<KnobMsg> for Knob {
         &self,
         _state: &(),
         renderer: &Renderer,
-        theme: &Theme,
+        _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
