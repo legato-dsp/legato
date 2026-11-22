@@ -16,3 +16,5 @@ pub const SATOSHI: Font = Font {
     ..Font::with_name("Satoshi")
 };
 pub const CHILLAX: Font = Font::with_name("Chillax");
+
+pub const LOGO_SVG: &[u8] = include_bytes!("../assets/logo/logo.svg");

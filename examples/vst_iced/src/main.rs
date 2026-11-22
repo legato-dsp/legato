@@ -2,8 +2,8 @@
 
 // use gain_iced::Gain;
 
-use gain_iced::app::App;
-use gain_iced::theme;
+use legato_grain_delay::app::App;
+use legato_grain_delay::theme;
 
 pub fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)

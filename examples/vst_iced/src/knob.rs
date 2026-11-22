@@ -3,11 +3,11 @@ use std::f32::consts::PI;
 use iced::mouse;
 use iced::widget::canvas::Gradient;
 use iced::widget::canvas::{LineCap, Path, Stroke, stroke};
-use iced::widget::{Action, canvas, container};
+use iced::widget::{Action, canvas};
 use iced::{Element, Event};
 
 use crate::theme;
-use iced::{Fill, Point, Rectangle, Renderer, Theme};
+use iced::{Point, Rectangle, Renderer, Theme};
 
 const SENSITIVITY: f32 = 1.0 / 200.0;
 
@@ -19,14 +19,24 @@ pub struct Knob<Message> {
     /// The normalized value from [0, 1] for the parameter
     value: f32,
     on_change: fn(f32) -> Message,
+    /// Side length of the knob's square bounds, in logical pixels
+    size: f32,
 }
 
 impl<Message> Knob<Message> {
+    pub const DEFAULT_SIZE: f32 = 96.0;
+
     pub fn new(value: f32, on_change: fn(f32) -> Message) -> Self {
         Knob {
             value: value.clamp(0.0, 1.0),
             on_change,
+            size: Self::DEFAULT_SIZE,
         }
+    }
+
+    pub fn size(mut self, size: f32) -> Self {
+        self.size = size;
+        self
     }
 }
 
@@ -94,26 +104,21 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
         const WIDTH: f32 = 4.0;
+        const INDICATOR_ARM_RADIUS: f32 = 1.3;
+        const INDICATOR_RADIUS: f32 = 2.0;
 
         let center = frame.center();
+        let half = frame.width().min(frame.height()) / 2.0;
 
-        let top = (frame.height() / 2.0) + center.y;
-        let bottom = center.y - (frame.height() / 2.0);
-
-        // TODO: proper padding?
-        let radius = 0.9 * (frame.width().min(frame.height()) / 2.0) - WIDTH * 2.0;
+        let arm = half - INDICATOR_RADIUS;
+        let radius = arm / INDICATOR_ARM_RADIUS;
 
         let border = Path::circle(center, radius);
 
         let indicator_phase = indicator_angle(self.value);
-
-        const INDICATOR_ARM_RADIUS: f32 = 1.3;
-        const INDICATOR_RADIUS: f32 = 2.0;
-
-        // TODO: Diff with padding as opposed to some fraction
         let indicator_pos = Point::new(
-            (indicator_phase.cos() * radius * INDICATOR_ARM_RADIUS) + center.x,
-            (indicator_phase.sin() * radius * INDICATOR_ARM_RADIUS) + center.y,
+            indicator_phase.cos() * arm + center.x,
+            indicator_phase.sin() * arm + center.y,
         );
 
         frame.fill(
@@ -121,10 +126,12 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
             theme::KNOB_INDICATOR,
         );
 
-        let ring =
-            canvas::gradient::Linear::new(Point::new(center.x, bottom), Point::new(center.x, top))
-                .add_stop(0.0, theme::KNOB_RING_HIGHLIGHT)
-                .add_stop(1.0, theme::KNOB_RING_SHADOW);
+        let ring = canvas::gradient::Linear::new(
+            Point::new(center.x, center.y - radius),
+            Point::new(center.x, center.y + radius),
+        )
+        .add_stop(0.0, theme::KNOB_RING_HIGHLIGHT)
+        .add_stop(1.0, theme::KNOB_RING_SHADOW);
 
         frame.stroke(
             &border,
@@ -142,9 +149,8 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
 
 impl<'a, Message: 'a> From<Knob<Message>> for Element<'a, Message> {
     fn from(knob: Knob<Message>) -> Self {
-        container(canvas(knob).width(Fill).height(Fill))
-            .padding(20)
-            .into()
+        let size = knob.size;
+        canvas(knob).width(size).height(size).into()
     }
 }
 

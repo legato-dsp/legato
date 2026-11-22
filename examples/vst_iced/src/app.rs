@@ -1,4 +1,5 @@
 use iced::Padding;
+use iced::alignment::{Horizontal, Vertical};
 use iced::border;
 use iced::gradient;
 use iced::keyboard;
@@ -6,7 +7,7 @@ use iced::mouse;
 use iced::widget::container::background;
 use iced::widget::{
     button, canvas, center, center_y, checkbox, column, container, pick_list, pin, responsive, row,
-    rule, scrollable, space, stack, text,
+    rule, scrollable, space, stack, svg, text,
 };
 use iced::{
     Center, Degrees, Element, Fill, FillPortion, Font, Length, Point, Rectangle, Renderer, Shrink,
@@ -76,8 +77,8 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Message> {
         let header = row![
-            text("Grain Sync").font(theme::SATOSHI).size(16),
-            text("Delay Sync").font(theme::SATOSHI).size(16)
+            text("Grain Sync").font(theme::SATOSHI).size(14),
+            text("Delay Sync").font(theme::SATOSHI).size(14)
         ]
         .spacing(24);
 
@@ -89,11 +90,11 @@ impl App {
         let diffusion = labeled_knob("Diffusion", self.state.diffusion, Message::Diffusion);
 
         let grain_knobs = row![
-            column![grain_size, grains],
-            column![feedback, jitter],
-            column![dampening, diffusion]
+            column![grain_size, grains].spacing(32),
+            column![feedback, jitter].spacing(32),
+            column![dampening, diffusion].spacing(32)
         ]
-        .spacing(12);
+        .spacing(32);
 
         let knobs = row![grain_knobs].spacing(24);
 
@@ -101,7 +102,21 @@ impl App {
             .add_stop(0.3, theme::BACKGROUND_TOP)
             .add_stop(1.0, theme::BACKGROUND_BOTTOM);
 
-        let content = container(column![header, knobs].spacing(24))
+        let logo = container(
+            svg(svg::Handle::from_memory(theme::LOGO_SVG))
+                .width(144)
+                .height(30),
+        )
+        .width(Fill)
+        .height(Fill)
+        .align_x(Horizontal::Right)
+        .align_y(Vertical::Bottom);
+
+        let layers = stack![column![header, knobs].spacing(24), logo]
+            .width(Fill)
+            .height(Fill);
+
+        let content = container(layers)
             .width(Fill)
             .height(Fill)
             .padding(Padding {
@@ -116,6 +131,8 @@ impl App {
     }
 }
 
+const KNOB_SIZE: f32 = 128.0;
+
 fn labeled_knob<'a>(
     label: &'a str,
     value: f32,
@@ -123,8 +140,9 @@ fn labeled_knob<'a>(
 ) -> Element<'a, Message> {
     column![
         text(label).font(theme::CHILLAX).size(16),
-        Knob::new(value, on_change)
+        Knob::new(value, on_change).size(KNOB_SIZE)
     ]
+    .spacing(8)
     .align_x(Center)
     .into()
 }
