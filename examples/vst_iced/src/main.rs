@@ -2,10 +2,12 @@
 
 // use gain_iced::Gain;
 
-use gain_iced::knob::Knob;
+use gain_iced::app::App;
 
 pub fn main() -> iced::Result {
-    iced::application(Knob::new, Knob::update, Knob::view).run()
+    iced::application(App::new, App::update, App::view)
+        .window_size(iced::Size::new(960.0, 480.0))
+        .run()
 }
 
 // fn main(){

@@ -3,185 +3,166 @@ use std::f32::consts::PI;
 use iced::gradient::ColorStop;
 use iced::mouse;
 use iced::widget::canvas::Gradient;
-use iced::widget::canvas::{Cache, LineCap, Path, Stroke, stroke};
+use iced::widget::canvas::{LineCap, Path, Stroke, stroke};
 use iced::widget::{Action, canvas, container};
 use iced::{Color, Element, Event};
 use iced::{Fill, Point, Rectangle, Renderer, Theme};
 
 const SENSITIVITY: f32 = 1.0 / 200.0;
 
-/// A basic radial knob
-#[derive(Debug)]
-pub struct Knob {
+/// A basic radial knob. The value is owned by the app and passed in each view.
+///
+/// This decision was made in order to keep the Knob in-sync with any changes
+/// that could occur from say host automation.
+pub struct Knob<Message> {
     /// The normalized value from [0, 1] for the parameter
-    normalized: f32,
-    last_pos: Option<Point>,
-    dragging: bool,
-    cache: Cache,
+    value: f32,
+    on_change: fn(f32) -> Message,
 }
 
-impl Knob {
-    pub fn new() -> Self {
+impl<Message> Knob<Message> {
+    pub fn new(value: f32, on_change: fn(f32) -> Message) -> Self {
         Knob {
-            dragging: false,
-            last_pos: None,
-            normalized: 0.5,
-            cache: Cache::default(),
+            value: value.clamp(0.0, 1.0),
+            on_change,
         }
     }
-
-    pub fn update(&mut self, message: KnobMsg) {
-        match message {
-            KnobMsg::Update { delta, pos } => {
-                dbg!(self.normalized);
-                self.last_pos = Some(pos);
-                self.normalized = (self.normalized + delta).clamp(0.0, 1.0);
-                self.cache.clear();
-            }
-            KnobMsg::StartDrag => {
-                dbg!("Start Drag");
-                self.dragging = true;
-                self.last_pos = None
-            }
-            KnobMsg::EndDrag => {
-                self.dragging = false;
-                self.last_pos = None;
-            }
-        }
-    }
-
-    pub fn view(&self) -> Element<'_, KnobMsg> {
-        let canvas = canvas(self).width(Fill).height(Fill);
-        container(canvas).padding(20).into()
-    }
 }
 
-impl Default for Knob {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Default)]
+pub struct DragState {
+    /// We do need owned state for the last position our cursor was in.
+    ///
+    /// If it is `None`, then we have not yet pressed down with our cursor.
+    last_pos: Option<Point>,
 }
 
-pub enum KnobMsg {
-    StartDrag,
-    EndDrag,
-    Update { delta: f32, pos: Point },
-}
-
-impl canvas::Program<KnobMsg> for Knob {
-    type State = ();
+impl<Message> canvas::Program<Message> for Knob<Message> {
+    type State = DragState;
 
     fn update(
         &self,
-        _state: &mut Self::State,
-        event: &iced::Event,
-        _bounds: Rectangle,
-        _cursor: nice_plug_iced::iced::core::mouse::Cursor,
-    ) -> Option<Action<KnobMsg>> {
-        if let Event::Mouse(inner) = event {
-            match inner {
-                mouse::Event::ButtonPressed(_inner) => {
-                    Some(Action::publish(KnobMsg::StartDrag).and_capture())
-                }
-                mouse::Event::ButtonReleased(_) => {
-                    Some(Action::publish(KnobMsg::EndDrag).and_capture())
-                }
-                mouse::Event::CursorMoved { position } => {
-                    if !self.dragging {
-                        return None;
-                    }
+        state: &mut DragState,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<Action<Message>> {
+        let Event::Mouse(event) = event else {
+            return None;
+        };
 
-                    let last = self.last_pos.unwrap_or(*position);
-
-                    let diff = last.x - position.x;
-
-                    dbg!(&diff);
-
-                    let delta = diff * SENSITIVITY;
-
-                    Some(
-                        Action::publish(KnobMsg::Update {
-                            delta,
-                            pos: *position,
-                        })
-                        .and_capture(),
-                    )
-                }
-                _ => None,
+        match event {
+            mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                let pos = cursor.position_over(bounds)?;
+                state.last_pos = Some(pos);
+                Some(Action::capture())
             }
-        } else {
-            None
+            mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                // Note: Take the existing state value. This is important,
+                // as we only publish cursor moving events when we do have
+                // a last_pos. So us removing this means we stop, and are
+                // effectively not dragging anymore.
+                state.last_pos.take()?;
+                Some(Action::capture())
+            }
+            mouse::Event::CursorMoved { position } => match state.last_pos.as_mut() {
+                // If we do have a last set position, then we have already clicked
+                // and started the drag.
+                Some(last) => {
+                    let delta = (last.y - position.y) * SENSITIVITY;
+                    *last = *position;
+                    let value = (self.value + delta).clamp(0.0, 1.0);
+
+                    Some(Action::publish((self.on_change)(value)).and_capture())
+                }
+                // Otherwise, we haven't started dragging yet, and we just ignore
+                None => return None,
+            },
+            _ => None,
         }
     }
 
     fn draw(
         &self,
-        _state: &(),
+        _state: &DragState,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
-        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
-            const WIDTH: f32 = 4.0;
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-            let center = frame.center();
+        const WIDTH: f32 = 4.0;
 
-            let top = (frame.height() / 2.0) + center.y;
-            let bottom = center.y - (frame.height() / 2.0);
+        let center = frame.center();
 
-            // TODO: proper padding?
-            let radius = 0.9 * (frame.width().min(frame.height()) / 2.0) - WIDTH * 2.0;
+        let top = (frame.height() / 2.0) + center.y;
+        let bottom = center.y - (frame.height() / 2.0);
 
-            let border = Path::circle(center, radius);
+        // TODO: proper padding?
+        let radius = 0.9 * (frame.width().min(frame.height()) / 2.0) - WIDTH * 2.0;
 
-            // TODO: Why is this on the other side?
-            //
-            // Is this a different coordinate system?
-            let indicator_phase = -self.normalized * PI;
+        let border = Path::circle(center, radius);
 
-            // TODO: Diff with padding as opposed to some
-            // fraction
-            let indicator_pos = Point::new(
-                (indicator_phase.cos() * radius * 1.06) + center.x,
-                (indicator_phase.sin() * radius * 1.06) + center.y,
-            );
+        let indicator_phase = indicator_angle(self.value);
 
-            frame.fill(
-                &Path::circle(indicator_pos, 4.0),
-                Color::from_rgb8(255, 255, 255),
-            );
+        const INDICATOR_ARM_RADIUS: f32 = 1.12;
+        const INDICATOR_RADIUS: f32 = 2.0;
 
-            frame.stroke(
-                &border,
-                Stroke {
-                    width: WIDTH,
-                    style: stroke::Style::Gradient(Gradient::Linear(canvas::gradient::Linear {
-                        start: Point::new(center.x, bottom),
-                        end: Point::new(center.x, top),
-                        stops: [
-                            Some(ColorStop {
-                                offset: 0.0,
-                                color: Color::from_rgb8(212, 167, 255),
-                            }),
-                            Some(ColorStop {
-                                offset: 1.0,
-                                color: Color::from_rgb8(50, 38, 55),
-                            }),
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                        ],
-                    })),
-                    line_cap: LineCap::Round,
-                    ..Stroke::default()
-                },
-            );
-        });
+        // TODO: Diff with padding as opposed to some fraction
+        let indicator_pos = Point::new(
+            (indicator_phase.cos() * radius * INDICATOR_ARM_RADIUS) + center.x,
+            (indicator_phase.sin() * radius * INDICATOR_ARM_RADIUS) + center.y,
+        );
 
-        vec![geometry]
+        frame.fill(
+            &Path::circle(indicator_pos, INDICATOR_RADIUS),
+            Color::from_rgb8(255, 255, 255),
+        );
+
+        frame.stroke(
+            &border,
+            Stroke {
+                width: WIDTH,
+                style: stroke::Style::Gradient(Gradient::Linear(canvas::gradient::Linear {
+                    start: Point::new(center.x, bottom),
+                    end: Point::new(center.x, top),
+                    stops: [
+                        Some(ColorStop {
+                            offset: 0.0,
+                            color: Color::from_rgb8(212, 167, 255),
+                        }),
+                        Some(ColorStop {
+                            offset: 1.0,
+                            color: Color::from_rgb8(50, 38, 55),
+                        }),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ],
+                })),
+                line_cap: LineCap::Round,
+                ..Stroke::default()
+            },
+        );
+
+        vec![frame.into_geometry()]
     }
+}
+
+impl<'a, Message: 'a> From<Knob<Message>> for Element<'a, Message> {
+    fn from(knob: Knob<Message>) -> Self {
+        container(canvas(knob).width(Fill).height(Fill))
+            .padding(20)
+            .into()
+    }
+}
+
+// Get the angle of the indicator with a given normalized phase
+// from 0 to 1. We start with an offset to keep it symetric.
+fn indicator_angle(normalized: f32) -> f32 {
+    0.75 * PI + normalized * 1.5 * PI
 }

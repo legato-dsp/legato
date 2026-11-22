@@ -1,3 +1,4 @@
+pub mod app;
 pub mod knob;
 
 // use nice_plug::{editor::dpi::LogicalSize, prelude::*};
