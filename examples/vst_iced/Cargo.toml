@@ -2,6 +2,7 @@
 name = "legato_grain_delay"
 version = "0.1.0"
 edition = "2024"
+license = "AGPLv3"
 
 [dependencies]
 iced = { version = "0.14.0", features = ["canvas", "svg"] }
