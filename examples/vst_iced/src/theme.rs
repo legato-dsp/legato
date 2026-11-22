@@ -4,6 +4,8 @@ use iced::{Color, Font};
 pub const BACKGROUND_TOP: Color = Color::from_rgb8(0x11, 0x0C, 0x0E);
 pub const BACKGROUND_BOTTOM: Color = Color::from_rgb8(0x10, 0x11, 0x1C);
 
+pub const DIVIDER: Color = Color::from_rgba8(157, 235, 255, 0.15);
+
 pub const KNOB_RING_HIGHLIGHT: Color = Color::from_rgb8(167, 240, 255);
 pub const KNOB_RING_SHADOW: Color = Color::from_rgba8(52, 40, 57, 0.51);
 pub const KNOB_INDICATOR: Color = Color::WHITE;

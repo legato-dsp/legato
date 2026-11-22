@@ -1,13 +1,9 @@
-use iced::Padding;
 use iced::alignment::{Horizontal, Vertical};
 use iced::gradient;
 use iced::widget::container::background;
-use iced::widget::{
-    column, container, row, stack, svg, text,
-};
-use iced::{
-    Center, Degrees, Element, Fill,
-};
+use iced::widget::{column, container, row, rule, stack, svg, text};
+use iced::{Center, Degrees, Element, Fill};
+use iced::{Padding, Rectangle};
 
 use crate::knob::Knob;
 use crate::theme;
@@ -75,7 +71,7 @@ impl App {
             text("Grain Sync").font(theme::SATOSHI).size(14),
             text("Delay Sync").font(theme::SATOSHI).size(14)
         ]
-        .spacing(24);
+        .spacing(48);
 
         let grain_size = labeled_knob("Grain Size", self.state.grain_size, Message::GrainSize);
         let grains = labeled_knob("Grains", self.state.grains, Message::Grains);
@@ -91,7 +87,23 @@ impl App {
         ]
         .spacing(32);
 
-        let knobs = row![grain_knobs].spacing(24);
+        let decay = labeled_knob("Decay", self.state.decay, Message::Decay);
+        let reverb_mix = labeled_knob("Reverb Mix", self.state.reverb_mix, Message::ReverbMix);
+
+        let wet_dry = labeled_knob("Mix", self.state.wet_dry, Message::WetDry);
+
+        let divider = || {
+            rule::vertical(1).style(|_| rule::Style {
+                color: theme::DIVIDER,
+                radius: 0.0.into(),
+                fill_mode: rule::FillMode::Full,
+                snap: true,
+            })
+        };
+
+        let reverb_knobs = column![decay, reverb_mix].spacing(32);
+
+        let knobs = row![grain_knobs, divider(), reverb_knobs, divider(), wet_dry].spacing(24);
 
         let backdrop = gradient::Linear::new(Degrees(13.0))
             .add_stop(0.3, theme::BACKGROUND_TOP)
@@ -107,7 +119,7 @@ impl App {
         .align_x(Horizontal::Right)
         .align_y(Vertical::Bottom);
 
-        let layers = stack![column![header, knobs].spacing(24), logo]
+        let layers = stack![column![header, knobs].spacing(32), logo]
             .width(Fill)
             .height(Fill);
 
