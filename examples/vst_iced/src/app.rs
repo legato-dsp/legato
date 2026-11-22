@@ -1,17 +1,12 @@
 use iced::Padding;
 use iced::alignment::{Horizontal, Vertical};
-use iced::border;
 use iced::gradient;
-use iced::keyboard;
-use iced::mouse;
 use iced::widget::container::background;
 use iced::widget::{
-    button, canvas, center, center_y, checkbox, column, container, pick_list, pin, responsive, row,
-    rule, scrollable, space, stack, svg, text,
+    column, container, row, stack, svg, text,
 };
 use iced::{
-    Center, Degrees, Element, Fill, FillPortion, Font, Length, Point, Rectangle, Renderer, Shrink,
-    Subscription, Theme, color,
+    Center, Degrees, Element, Fill,
 };
 
 use crate::knob::Knob;
