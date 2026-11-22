@@ -1,3 +1,4 @@
+use iced::Padding;
 use iced::border;
 use iced::gradient;
 use iced::keyboard;
@@ -13,6 +14,7 @@ use iced::{
 };
 
 use crate::knob::Knob;
+use crate::theme;
 
 pub enum Message {
     GrainSize(f32),
@@ -73,14 +75,18 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let header = row![text("Grain Sync"), text("Delay Sync")].spacing(12);
+        let header = row![
+            text("Grain Sync").font(theme::SATOSHI).size(16),
+            text("Delay Sync").font(theme::SATOSHI).size(16)
+        ]
+        .spacing(24);
 
-        let grain_size = Knob::new(self.state.grain_size, |x| Message::GrainSize(x));
-        let grains = Knob::new(self.state.grains, |x| Message::Grains(x));
-        let feedback = Knob::new(self.state.feedback, |x| Message::Feedback(x));
-        let jitter = Knob::new(self.state.jitter, |x| Message::Jitter(x));
-        let dampening = Knob::new(self.state.dampening, |x| Message::Dampening(x));
-        let diffusion = Knob::new(self.state.diffusion, |x| Message::Diffusion(x));
+        let grain_size = labeled_knob("Grain Size", self.state.grain_size, Message::GrainSize);
+        let grains = labeled_knob("Grains", self.state.grains, Message::Grains);
+        let feedback = labeled_knob("Feedback", self.state.feedback, Message::Feedback);
+        let jitter = labeled_knob("Jitter", self.state.jitter, Message::Jitter);
+        let dampening = labeled_knob("Dampening", self.state.dampening, Message::Dampening);
+        let diffusion = labeled_knob("Diffusion", self.state.diffusion, Message::Diffusion);
 
         let grain_knobs = row![
             column![grain_size, grains],
@@ -89,17 +95,36 @@ impl App {
         ]
         .spacing(12);
 
-        let knobs = row![grain_knobs].spacing(32);
+        let knobs = row![grain_knobs].spacing(24);
 
-        let backdrop = gradient::Linear::new(Degrees(32.0))
-            .add_stop(0.0, color!(0x110C0E))
-            .add_stop(1.0, color!(0x10111C));
+        let backdrop = gradient::Linear::new(Degrees(13.0))
+            .add_stop(0.3, theme::BACKGROUND_TOP)
+            .add_stop(1.0, theme::BACKGROUND_BOTTOM);
 
-        let content = container(column![header, knobs].padding(12).spacing(24))
+        let content = container(column![header, knobs].spacing(24))
             .width(Fill)
             .height(Fill)
+            .padding(Padding {
+                top: 12.0,
+                bottom: 12.0,
+                left: 24.0,
+                right: 24.0,
+            })
             .style(move |_| background(backdrop));
 
         container(content).into()
     }
+}
+
+fn labeled_knob<'a>(
+    label: &'a str,
+    value: f32,
+    on_change: fn(f32) -> Message,
+) -> Element<'a, Message> {
+    column![
+        text(label).font(theme::CHILLAX).size(16),
+        Knob::new(value, on_change)
+    ]
+    .align_x(Center)
+    .into()
 }

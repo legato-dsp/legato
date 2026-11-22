@@ -1,5 +1,6 @@
 pub mod app;
 pub mod knob;
+pub mod theme;
 
 // use nice_plug::{editor::dpi::LogicalSize, prelude::*};
 // use nice_plug_iced::{

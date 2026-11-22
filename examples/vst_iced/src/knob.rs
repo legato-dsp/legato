@@ -1,11 +1,12 @@
 use std::f32::consts::PI;
 
-use iced::gradient::ColorStop;
 use iced::mouse;
 use iced::widget::canvas::Gradient;
 use iced::widget::canvas::{LineCap, Path, Stroke, stroke};
 use iced::widget::{Action, canvas, container};
-use iced::{Color, Element, Event};
+use iced::{Element, Event};
+
+use crate::theme;
 use iced::{Fill, Point, Rectangle, Renderer, Theme};
 
 const SENSITIVITY: f32 = 1.0 / 200.0;
@@ -106,7 +107,7 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
 
         let indicator_phase = indicator_angle(self.value);
 
-        const INDICATOR_ARM_RADIUS: f32 = 1.12;
+        const INDICATOR_ARM_RADIUS: f32 = 1.3;
         const INDICATOR_RADIUS: f32 = 2.0;
 
         // TODO: Diff with padding as opposed to some fraction
@@ -117,33 +118,19 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
 
         frame.fill(
             &Path::circle(indicator_pos, INDICATOR_RADIUS),
-            Color::from_rgb8(255, 255, 255),
+            theme::KNOB_INDICATOR,
         );
+
+        let ring =
+            canvas::gradient::Linear::new(Point::new(center.x, bottom), Point::new(center.x, top))
+                .add_stop(0.0, theme::KNOB_RING_HIGHLIGHT)
+                .add_stop(1.0, theme::KNOB_RING_SHADOW);
 
         frame.stroke(
             &border,
             Stroke {
                 width: WIDTH,
-                style: stroke::Style::Gradient(Gradient::Linear(canvas::gradient::Linear {
-                    start: Point::new(center.x, bottom),
-                    end: Point::new(center.x, top),
-                    stops: [
-                        Some(ColorStop {
-                            offset: 0.0,
-                            color: Color::from_rgb8(212, 167, 255),
-                        }),
-                        Some(ColorStop {
-                            offset: 1.0,
-                            color: Color::from_rgb8(50, 38, 55),
-                        }),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    ],
-                })),
+                style: stroke::Style::Gradient(Gradient::Linear(ring)),
                 line_cap: LineCap::Round,
                 ..Stroke::default()
             },

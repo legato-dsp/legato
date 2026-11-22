@@ -3,9 +3,12 @@
 // use gain_iced::Gain;
 
 use gain_iced::app::App;
+use gain_iced::theme;
 
 pub fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
+        .font(theme::SATOSHI_BYTES)
+        .font(theme::CHILLAX_BYTES)
         .window_size(iced::Size::new(960.0, 480.0))
         .run()
 }
