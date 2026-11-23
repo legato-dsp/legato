@@ -155,7 +155,9 @@ impl<'a, Message: 'a> From<Knob<Message>> for Element<'a, Message> {
 }
 
 // Get the angle of the indicator with a given normalized phase
-// from 0 to 1. We start with an offset to keep it symetric.
+// from 0 to 1. We start with an offset to keep it symetric,
+// and we aren't using a complete 2 pi phase range as we want
+// it more like a tachometer or plugin.
 fn indicator_angle(normalized: f32) -> f32 {
     0.75 * PI + normalized * 1.5 * PI
 }

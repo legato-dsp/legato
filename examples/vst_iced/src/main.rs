@@ -9,7 +9,7 @@ pub fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .font(theme::SATOSHI_BYTES)
         .font(theme::CHILLAX_BYTES)
-        .window_size(iced::Size::new(960.0, 480.0))
+        .window_size(iced::Size::new(960.0, 524.0))
         .run()
 }
 
