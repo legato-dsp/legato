@@ -10,6 +10,8 @@ pub const KNOB_RING_HIGHLIGHT: Color = Color::from_rgb8(167, 240, 255);
 pub const KNOB_RING_SHADOW: Color = Color::from_rgba8(52, 40, 57, 0.51);
 pub const KNOB_INDICATOR: Color = Color::WHITE;
 
+pub const SECONDARY: Color = Color::from_rgba8(228, 228, 252, 0.7);
+
 /// Font required for building.
 ///
 /// Note: For licensing reasons, I am not including this in the source repository.

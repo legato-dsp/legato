@@ -1,9 +1,9 @@
-use iced::alignment::{Horizontal, Vertical};
+use iced::Padding;
+use iced::alignment::Horizontal;
 use iced::gradient;
 use iced::widget::container::background;
-use iced::widget::{column, container, row, rule, stack, svg, text};
-use iced::{Center, Degrees, Element, Fill};
-use iced::{Padding, Rectangle};
+use iced::widget::{column, container, row, rule, space, svg, text};
+use iced::{Center, Degrees, Element, Fill, Shrink};
 
 use crate::knob::Knob;
 use crate::theme;
@@ -103,7 +103,15 @@ impl App {
 
         let reverb_knobs = column![decay, reverb_mix].spacing(32);
 
-        let knobs = row![grain_knobs, divider(), reverb_knobs, divider(), wet_dry].spacing(24);
+        let sections = row![
+            section("Grain", grain_knobs),
+            divider(),
+            section("Reverb", reverb_knobs),
+            divider(),
+            section("Master", wet_dry)
+        ]
+        .spacing(24)
+        .height(Shrink);
 
         let backdrop = gradient::Linear::new(Degrees(13.0))
             .add_stop(0.3, theme::BACKGROUND_TOP)
@@ -115,15 +123,12 @@ impl App {
                 .height(30),
         )
         .width(Fill)
-        .height(Fill)
-        .align_x(Horizontal::Right)
-        .align_y(Vertical::Bottom);
+        .align_x(Horizontal::Right);
 
-        let layers = stack![column![header, knobs].spacing(32), logo]
-            .width(Fill)
-            .height(Fill);
+        let controls = column![header, sections].spacing(32);
+        let layout = column![controls, space::vertical(), logo];
 
-        let content = container(layers)
+        let content = container(layout)
             .width(Fill)
             .height(Fill)
             .padding(Padding {
@@ -139,6 +144,18 @@ impl App {
 }
 
 const KNOB_SIZE: f32 = 128.0;
+
+fn section<'a>(label: &'a str, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    column![
+        content.into(),
+        text(label)
+            .font(theme::SATOSHI)
+            .color(theme::SECONDARY)
+            .size(14)
+    ]
+    .spacing(16)
+    .into()
+}
 
 fn labeled_knob<'a>(
     label: &'a str,
