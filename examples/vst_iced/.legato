@@ -1,0 +1,62 @@
+// This is a grain delay, later fed into a plate-style dattorro reverb.
+//
+// Both of these nodes are internal Legato nodes rather than interpreted,
+// so performance is what you would expect from a VST.
+//
+// We take in a information about the host tempo and turn this into a phasor
+// that we can use to keep the grains and delay line in sync musically.
+
+audio {
+    // Fed by the host's main input, see `Engine::process`.
+    external: host_in { interface_name: "main", chans: 2 },
+    external: host_phase { interface_name: "phase", chans: 1 },
+    // We can set the actual grain delay line length up to the maximum size
+    grain_delay: grains {
+        chans: 2,
+        delay_length: 1000,
+        max_delay_length: 4000,
+        grain_size: 400,
+        spray: 6.0,
+        scan: 1.0,
+        shape: 0.01,
+        pitch: 0.0,
+        feedback: 0.8,
+        damping: 0.8,
+        diffusion: 1.0,
+        overlap: 2,
+        jitter: 0.0,
+        sync: false
+    },
+    // Datorro-style plate reverb
+    plate480: verb { mix: 0.8, decay: 0.8 },
+
+    mult: dry_l { val: 0.5 },
+    mult: dry_r { val: 0.5 },
+    mult: wet_l { val: 0.5 },
+    mult: wet_r { val: 0.5 },
+
+    track_mixer: out { tracks: 2, chans_per_track: 2, gain: [1.0, 1.0] },
+
+    mult: negate_mix { val: -1.0 },
+    add: dry_amount { val: 1.0 },
+}
+
+control {
+    signal: mix { name: "mix", min: 0.0, max: 1.0, default: 0.5, glide: 5 },
+}
+
+host_in >> grains >> verb
+host_phase >> grains.phase
+
+host_in[0] >> dry_l >> out[0]
+host_in[1] >> dry_r >> out[1]
+verb[0] >> wet_l >> out[2]
+verb[1] >> wet_r >> out[3]
+
+mix >> wet_l.val
+mix >> wet_r.val
+mix >> negate_mix >> dry_amount
+dry_amount >> dry_l.val
+dry_amount >> dry_r.val
+
+{ out }

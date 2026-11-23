@@ -103,6 +103,14 @@
           "include": "#params"
         },
         {
+          "match": "\\b(muted|bypassed|suspended)\\s+(?=[A-Za-z_])",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.legato"
+            }
+          }
+        },
+        {
           "match": "([A-Za-z_]\\w*)\\s*(:)\\s*([A-Za-z_]\\w*)",
           "captures": {
             "1": {
@@ -124,17 +132,6 @@
             },
             "2": {
               "name": "constant.numeric.integer.legato"
-            }
-          }
-        },
-        {
-          "match": "(\\|)\\s*([A-Za-z_]\\w*)",
-          "captures": {
-            "1": {
-              "name": "keyword.operator.legato"
-            },
-            "2": {
-              "name": "entity.name.function.legato"
             }
           }
         },

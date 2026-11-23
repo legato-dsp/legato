@@ -406,6 +406,27 @@
       "type": "SEQ",
       "members": [
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "state",
+              "content": {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "identifier"
+                },
+                "named": true,
+                "value": "node_state"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "FIELD",
           "name": "node_type",
           "content": {
@@ -478,17 +499,6 @@
               "type": "BLANK"
             }
           ]
-        },
-        {
-          "type": "REPEAT",
-          "content": {
-            "type": "FIELD",
-            "name": "pipe",
-            "content": {
-              "type": "SYMBOL",
-              "name": "pipe"
-            }
-          }
         }
       ]
     },
@@ -572,60 +582,6 @@
             "type": "SYMBOL",
             "name": "value"
           }
-        }
-      ]
-    },
-    "pipe": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "|"
-        },
-        {
-          "type": "FIELD",
-          "name": "name",
-          "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
-          }
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": "("
-                },
-                {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "FIELD",
-                      "name": "params",
-                      "content": {
-                        "type": "SYMBOL",
-                        "name": "value"
-                      }
-                    },
-                    {
-                      "type": "BLANK"
-                    }
-                  ]
-                },
-                {
-                  "type": "STRING",
-                  "value": ")"
-                }
-              ]
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
         }
       ]
     },
@@ -1189,12 +1145,7 @@
       "name": "comment"
     }
   ],
-  "conflicts": [
-    [
-      "params",
-      "object"
-    ]
-  ],
+  "conflicts": [],
   "precedences": [],
   "externals": [
     {

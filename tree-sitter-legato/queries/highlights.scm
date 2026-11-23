@@ -27,9 +27,7 @@
 ; Node declarations
 (node_declaration node_type: (identifier) @type)
 (node_declaration alias: (identifier) @variable)
-
-; Pipes
-(pipe name: (identifier) @function.method)
+(node_state) @keyword.modifier
 
 ; Params / object keys
 (param key: (identifier) @property)
@@ -49,4 +47,4 @@
 
 ; Punctuation
 [ "{" "}" "(" ")" "[" "]" ] @punctuation.bracket
-[ "," ":" "|" "=" "*" "." ">>" ".." ] @punctuation.delimiter
+[ "," ":" "=" "*" "." ">>" ".." ] @punctuation.delimiter

@@ -28,7 +28,7 @@
 (node_declaration node_type: (identifier) @type)
 (node_declaration alias: (identifier) @variable)
 (node_declaration count: (uint) @number)
-(pipe name: (identifier) @function)
+(node_state) @keyword
 
 ; ---- Object / param keys ----
 (param key: (identifier) @property)
@@ -45,7 +45,6 @@
 ; ---- Operators ----
 [
   ">>"
-  "|"
   "*"
   "="
   ".."
