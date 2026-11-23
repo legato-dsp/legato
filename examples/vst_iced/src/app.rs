@@ -1,11 +1,11 @@
-use iced::Padding;
 use iced::alignment::Horizontal;
-use iced::gradient;
 use iced::widget::container::background;
-use iced::widget::{Column, column, container, row, rule, space, svg, text};
+use iced::widget::{Column, column, container, responsive, row, rule, space, svg, text};
 use iced::{Center, Degrees, Element, Fill, Pixels, Shrink};
+use iced::{gradient, padding};
 
 use crate::knob::Knob;
+use crate::metrics::Metrics;
 use crate::theme;
 
 pub enum Message {
@@ -67,30 +67,34 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let header = row![
-            text("Grain Sync").font(theme::SATOSHI).size(14),
-            text("Delay Sync").font(theme::SATOSHI).size(14)
-        ]
-        .spacing(48);
+        responsive(move |size| self.view_at(Metrics::fit(size))).into()
+    }
 
-        let grain_size = labeled_knob("Grain Size", self.state.grain_size, Message::GrainSize);
-        let grains = labeled_knob("Grains", self.state.grains, Message::Grains);
-        let feedback = labeled_knob("Feedback", self.state.feedback, Message::Feedback);
-        let jitter = labeled_knob("Jitter", self.state.jitter, Message::Jitter);
-        let dampening = labeled_knob("Dampening", self.state.dampening, Message::Dampening);
-        let diffusion = labeled_knob("Diffusion", self.state.diffusion, Message::Diffusion);
+    fn view_at(&self, m: Metrics) -> Element<'_, Message> {
+        let header = row![
+            text("Grain Sync").font(theme::SATOSHI).size(m.label_text()),
+            text("Delay Sync").font(theme::SATOSHI).size(m.label_text())
+        ]
+        .spacing(m.header_gap());
+
+        let grain_size = labeled_knob(m, "Grain Size", self.state.grain_size, Message::GrainSize);
+        let grains = labeled_knob(m, "Grains", self.state.grains, Message::Grains);
+        let feedback = labeled_knob(m, "Feedback", self.state.feedback, Message::Feedback);
+        let jitter = labeled_knob(m, "Jitter", self.state.jitter, Message::Jitter);
+        let dampening = labeled_knob(m, "Dampening", self.state.dampening, Message::Dampening);
+        let diffusion = labeled_knob(m, "Diffusion", self.state.diffusion, Message::Diffusion);
 
         let grain_knobs = row![
-            knob_column([grain_size, grains]),
-            knob_column([feedback, jitter]),
-            knob_column([dampening, diffusion])
+            knob_column(m, [grain_size, grains]),
+            knob_column(m, [feedback, jitter]),
+            knob_column(m, [dampening, diffusion])
         ]
-        .spacing(32);
+        .spacing(m.knob_column_gap());
 
-        let decay = labeled_knob("Decay", self.state.decay, Message::Decay);
-        let reverb_mix = labeled_knob("Reverb Mix", self.state.reverb_mix, Message::ReverbMix);
+        let decay = labeled_knob(m, "Decay", self.state.decay, Message::Decay);
+        let reverb_mix = labeled_knob(m, "Reverb Mix", self.state.reverb_mix, Message::ReverbMix);
 
-        let wet_dry = labeled_knob("Mix", self.state.wet_dry, Message::WetDry);
+        let wet_dry = labeled_knob(m, "Mix", self.state.wet_dry, Message::WetDry);
 
         let divider = || {
             rule::vertical(1).style(|_| rule::Style {
@@ -101,21 +105,21 @@ impl App {
             })
         };
 
-        let reverb_knobs = knob_column([decay, reverb_mix]);
+        let reverb_knobs = knob_column(m, [decay, reverb_mix]);
 
         // TODO: is there a better way of automatically spacing?
         //
         // I was kind of hoping for something like a .flex(), .justify_between()?
         let sections = row![
-            section("Grain", grain_knobs),
+            section(m, "Grain", grain_knobs),
             space::horizontal(),
             divider(),
             space::horizontal(),
-            floor_section("Reverb", reverb_knobs),
+            floor_section(m, "Reverb", reverb_knobs),
             space::horizontal(),
             divider(),
             space::horizontal(),
-            floor_section("Master", wet_dry),
+            floor_section(m, "Master", wet_dry),
             space::horizontal(),
         ]
         .height(Shrink);
@@ -124,51 +128,47 @@ impl App {
             .add_stop(0.3, theme::BACKGROUND_TOP)
             .add_stop(1.0, theme::BACKGROUND_BOTTOM);
 
+        let logo_size = m.logo_size();
         let logo = container(
             svg(svg::Handle::from_memory(theme::LOGO_SVG))
-                .width(144)
-                .height(30),
+                .width(logo_size.width)
+                .height(logo_size.height),
         )
         .width(Fill)
-        .padding(Padding {
-            top: 32.0,
-            ..Padding::default()
-        })
+        .padding(padding::top(m.logo_top()))
         .align_x(Horizontal::Right);
 
-        let controls = column![header, sections].spacing(32);
+        let controls = column![header, sections].spacing(m.controls_gap());
         let layout = column![controls, space::vertical(), logo];
 
-        let content = container(layout)
+        container(layout)
             .width(Fill)
             .height(Fill)
-            .padding(Padding {
-                top: 12.0,
-                bottom: 12.0,
-                left: 24.0,
-                right: 24.0,
-            })
-            .style(move |_| background(backdrop));
-
-        container(content).into()
+            .padding(m.padding())
+            .style(move |_| background(backdrop))
+            .into()
     }
 }
 
-const KNOB_SIZE: f32 = 128.0;
-const KNOB_TITLE_HEIGHT: f32 = 20.0;
-const KNOB_TITLE_GAP: f32 = 8.0;
-const KNOB_ROW_GAP: f32 = 32.0;
-
-fn knob_column<'a>(knobs: impl IntoIterator<Item = Element<'a, Message>>) -> Element<'a, Message> {
-    Column::with_children(knobs).spacing(KNOB_ROW_GAP).into()
+fn knob_column<'a>(
+    m: Metrics,
+    knobs: impl IntoIterator<Item = Element<'a, Message>>,
+) -> Element<'a, Message> {
+    Column::with_children(knobs)
+        .spacing(m.knob_row_gap())
+        .into()
 }
 
 /// These are the groupings of different parameters by what area they effect.
 ///
 /// For instance, grain, reverb, and master.
-fn section<'a>(label: &'a str, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    column![content.into(), section_label(label)]
-        .spacing(SECTION_LABEL_GAP)
+fn section<'a>(
+    m: Metrics,
+    label: &'a str,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    column![content.into(), section_label(m, label)]
+        .spacing(m.section_label_gap())
         .into()
 }
 
@@ -177,35 +177,32 @@ fn section<'a>(label: &'a str, content: impl Into<Element<'a, Message>>) -> Elem
 /// The row needs at least one plain [`section`] to define that height, otherwise
 /// every child is `Fill` in a `Shrink` row and the whole row collapses to zero.
 fn floor_section<'a>(
+    m: Metrics,
     label: &'a str,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     column![
         content.into(),
         space::vertical().height(Fill),
-        section_label(label)
+        section_label(m, label)
     ]
-    .spacing(SECTION_LABEL_GAP / 2.0)
+    .spacing(m.section_label_gap() / 2.0)
     .into()
 }
 
-const SECTION_LABEL_GAP: f32 = 16.0;
-
-fn section_label<'a>(label: &'a str) -> Element<'a, Message> {
+fn section_label<'a>(m: Metrics, label: &'a str) -> Element<'a, Message> {
     container(
         text(label)
             .font(theme::SATOSHI)
             .color(theme::SECONDARY)
-            .size(14),
+            .size(m.label_text()),
     )
-    .padding(Padding {
-        left: 12.0,
-        ..Padding::default()
-    })
+    .padding(padding::left(m.section_label_indent()))
     .into()
 }
 
 fn labeled_knob<'a>(
+    m: Metrics,
     label: &'a str,
     value: f32,
     on_change: fn(f32) -> Message,
@@ -213,12 +210,12 @@ fn labeled_knob<'a>(
     column![
         text(label)
             .font(theme::CHILLAX)
-            .size(16)
-            .line_height(Pixels(KNOB_TITLE_HEIGHT)),
-        Knob::new(value, on_change).size(KNOB_SIZE)
+            .size(m.knob_title_text())
+            .line_height(Pixels(m.knob_title_height())),
+        Knob::new(value, on_change).size(m.knob_size())
     ]
-    .spacing(KNOB_TITLE_GAP)
-    .width(KNOB_SIZE)
+    .spacing(m.knob_title_gap())
+    .width(m.knob_size())
     .align_x(Center)
     .into()
 }

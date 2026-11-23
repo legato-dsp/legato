@@ -9,7 +9,15 @@ use iced::{Element, Event};
 use crate::theme;
 use iced::{Point, Rectangle, Renderer, Theme};
 
-const SENSITIVITY: f32 = 1.0 / 200.0;
+/// Vertical drag distance, in knob heights, that sweeps the full value range.
+const DRAG_RANGE: f32 = 200.0 / 128.0;
+
+/// Ring stroke width as a fraction of the knob's half-extent.
+const RING_WIDTH: f32 = 1.0 / 16.0;
+/// Indicator dot radius as a fraction of the knob's half-extent.
+const INDICATOR_RADIUS: f32 = 1.0 / 32.0;
+/// How far the indicator orbits outside the ring, as a multiple of the ring radius.
+const INDICATOR_ARM_RADIUS: f32 = 1.3;
 
 /// A basic radial knob. The value is owned by the app and passed in each view.
 ///
@@ -80,7 +88,7 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
                 // If we do have a last set position, then we have already clicked
                 // and started the drag.
                 Some(last) => {
-                    let delta = (last.y - position.y) * SENSITIVITY;
+                    let delta = (last.y - position.y) / (bounds.height * DRAG_RANGE);
                     *last = *position;
                     let value = (self.value + delta).clamp(0.0, 1.0);
 
@@ -103,14 +111,11 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-        const WIDTH: f32 = 4.0;
-        const INDICATOR_ARM_RADIUS: f32 = 1.3;
-        const INDICATOR_RADIUS: f32 = 2.0;
-
         let center = frame.center();
         let half = frame.width().min(frame.height()) / 2.0;
+        let indicator_radius = half * INDICATOR_RADIUS;
 
-        let arm = half - INDICATOR_RADIUS;
+        let arm = half - indicator_radius;
         let radius = arm / INDICATOR_ARM_RADIUS;
 
         let border = Path::circle(center, radius);
@@ -122,7 +127,7 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
         );
 
         frame.fill(
-            &Path::circle(indicator_pos, INDICATOR_RADIUS),
+            &Path::circle(indicator_pos, indicator_radius),
             theme::KNOB_INDICATOR,
         );
 
@@ -136,7 +141,7 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
         frame.stroke(
             &border,
             Stroke {
-                width: WIDTH,
+                width: half * RING_WIDTH,
                 style: stroke::Style::Gradient(Gradient::Linear(ring)),
                 line_cap: LineCap::Round,
                 ..Stroke::default()
