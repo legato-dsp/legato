@@ -1,15 +1,18 @@
-use iced::font::Weight;
-use iced::{Color, Font};
+use nice_plug_iced::iced::font::Weight;
+use nice_plug_iced::iced::{Color, Font};
 
 pub const BACKGROUND_TOP: Color = Color::from_rgb8(0x11, 0x0C, 0x0E);
 pub const BACKGROUND_BOTTOM: Color = Color::from_rgb8(0x10, 0x11, 0x1C);
 
 pub const DIVIDER: Color = Color::from_rgba8(157, 235, 255, 0.15);
 
-pub const KNOB_RING_HIGHLIGHT: Color = Color::from_rgb8(167, 240, 255);
+pub const ACCENT: Color = Color::from_rgb8(167, 240, 255);
+
+pub const KNOB_RING_HIGHLIGHT: Color = ACCENT;
 pub const KNOB_RING_SHADOW: Color = Color::from_rgba8(52, 40, 57, 0.51);
 pub const KNOB_INDICATOR: Color = Color::WHITE;
 
+pub const PRIMARY: Color = Color::WHITE;
 pub const SECONDARY: Color = Color::from_rgba8(228, 228, 252, 0.7);
 
 /// Font required for building.

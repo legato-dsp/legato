@@ -1,13 +1,13 @@
 use std::f32::consts::PI;
 
-use iced::mouse;
-use iced::widget::canvas::Gradient;
-use iced::widget::canvas::{LineCap, Path, Stroke, stroke};
-use iced::widget::{Action, canvas};
-use iced::{Element, Event};
+use nice_plug_iced::iced::mouse;
+use nice_plug_iced::iced::widget::canvas::Gradient;
+use nice_plug_iced::iced::widget::canvas::{LineCap, Path, Stroke, stroke};
+use nice_plug_iced::iced::widget::{Action, canvas};
+use nice_plug_iced::iced::{Element, Event};
 
 use crate::theme;
-use iced::{Point, Rectangle, Renderer, Theme};
+use nice_plug_iced::iced::{Point, Rectangle, Renderer, Theme};
 
 /// Vertical drag distance, in knob heights, that sweeps the full value range.
 const DRAG_RANGE: f32 = 200.0 / 128.0;
@@ -23,21 +23,29 @@ const INDICATOR_ARM_RADIUS: f32 = 1.3;
 ///
 /// This decision was made in order to keep the Knob in-sync with any changes
 /// that could occur from say host automation.
-pub struct Knob<Message> {
+pub struct Knob<F> {
     /// The normalized value from [0, 1] for the parameter
     value: f32,
-    on_change: fn(f32) -> Message,
+    on_gesture: F,
     /// Side length of the knob's square bounds, in logical pixels
     size: f32,
 }
 
-impl<Message> Knob<Message> {
+/// Grab and Release bracket a drag so the host can group it into one automation edit.
+#[derive(Debug, Clone, Copy)]
+pub enum Gesture {
+    Grab,
+    Drag(f32),
+    Release,
+}
+
+impl<F> Knob<F> {
     pub const DEFAULT_SIZE: f32 = 96.0;
 
-    pub fn new(value: f32, on_change: fn(f32) -> Message) -> Self {
+    pub fn new(value: f32, on_gesture: F) -> Self {
         Knob {
             value: value.clamp(0.0, 1.0),
-            on_change,
+            on_gesture,
             size: Self::DEFAULT_SIZE,
         }
     }
@@ -50,13 +58,18 @@ impl<Message> Knob<Message> {
 
 #[derive(Default)]
 pub struct DragState {
-    /// We do need owned state for the last position our cursor was in.
-    ///
     /// If it is `None`, then we have not yet pressed down with our cursor.
-    last_pos: Option<Point>,
+    drag: Option<Drag>,
 }
 
-impl<Message> canvas::Program<Message> for Knob<Message> {
+struct Drag {
+    last_y: f32,
+    /// Tracked here rather than read back from `Knob::value`, as stepped params
+    /// snap and would otherwise swallow small movements.
+    value: f32,
+}
+
+impl<Message, F: Fn(Gesture) -> Message> canvas::Program<Message> for Knob<F> {
     type State = DragState;
 
     fn update(
@@ -73,30 +86,24 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
         match event {
             mouse::Event::ButtonPressed(mouse::Button::Left) => {
                 let pos = cursor.position_over(bounds)?;
-                state.last_pos = Some(pos);
-                Some(Action::capture())
+                state.drag = Some(Drag {
+                    last_y: pos.y,
+                    value: self.value,
+                });
+                Some(Action::publish((self.on_gesture)(Gesture::Grab)).and_capture())
             }
             mouse::Event::ButtonReleased(mouse::Button::Left) => {
-                // Note: Take the existing state value. This is important,
-                // as we only publish cursor moving events when we do have
-                // a last_pos. So us removing this means we stop, and are
-                // effectively not dragging anymore.
-                state.last_pos.take()?;
-                Some(Action::capture())
+                state.drag.take()?;
+                Some(Action::publish((self.on_gesture)(Gesture::Release)).and_capture())
             }
-            mouse::Event::CursorMoved { position } => match state.last_pos.as_mut() {
-                // If we do have a last set position, then we have already clicked
-                // and started the drag.
-                Some(last) => {
-                    let delta = (last.y - position.y) / (bounds.height * DRAG_RANGE);
-                    *last = *position;
-                    let value = (self.value + delta).clamp(0.0, 1.0);
+            mouse::Event::CursorMoved { position } => {
+                let drag = state.drag.as_mut()?;
+                let delta = (drag.last_y - position.y) / (bounds.height * DRAG_RANGE);
+                drag.last_y = position.y;
+                drag.value = (drag.value + delta).clamp(0.0, 1.0);
 
-                    Some(Action::publish((self.on_change)(value)).and_capture())
-                }
-                // Otherwise, we haven't started dragging yet, and we just ignore
-                None => return None,
-            },
+                Some(Action::publish((self.on_gesture)(Gesture::Drag(drag.value))).and_capture())
+            }
             _ => None,
         }
     }
@@ -152,8 +159,8 @@ impl<Message> canvas::Program<Message> for Knob<Message> {
     }
 }
 
-impl<'a, Message: 'a> From<Knob<Message>> for Element<'a, Message> {
-    fn from(knob: Knob<Message>) -> Self {
+impl<'a, Message: 'a, F: Fn(Gesture) -> Message + 'a> From<Knob<F>> for Element<'a, Message> {
+    fn from(knob: Knob<F>) -> Self {
         let size = knob.size;
         canvas(knob).width(size).height(size).into()
     }

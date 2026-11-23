@@ -1,11 +1,11 @@
-use iced::{Padding, Size};
+use nice_plug_iced::iced::{Padding, Size};
 
 /// NOTE: this was AI generated, but seemed to have given me pretty nice results.
 
 /// The original window size the UI was designed at in Figma.
 ///
 /// Every dimension is relative to this.
-pub const DESIGN_SIZE: Size = Size::new(960.0, 524.0);
+pub const DESIGN_SIZE: Size = Size::new(1120.0, 524.0);
 
 #[derive(Debug, Clone, Copy)]
 pub struct Metrics {
